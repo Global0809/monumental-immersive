@@ -1,0 +1,124 @@
+import { useEffect, useRef, useState } from 'react';
+import { ArrowUp } from '@phosphor-icons/react/dist/csr/ArrowUp';
+import { Check } from '@phosphor-icons/react/dist/csr/Check';
+import { X } from '@phosphor-icons/react/dist/csr/X';
+import { playSound, setAmbientScene, type SoundType } from '../services/audio';
+import type { Notice } from '../services/feedback';
+import './experience.css';
+import { usePersistentStorage } from '../services/viewer';
+
+export default function ExperienceLayer({ path, reducedMotion }: { path: string; reducedMotion: boolean }) {
+  const progress = useRef<HTMLDivElement>(null);
+  const [notice, setNotice] = useState<(Notice & { id: number }) | null>(null);
+  const [scrolled, setScrolled] = useState(false);
+  const [noticePaused, setNoticePaused] = useState(false);
+  const previous = useRef(path);
+  const persistentStorage = usePersistentStorage();
+  const [storageNoticeDismissed, setStorageNoticeDismissed] = useState(false);
+
+  useEffect(() => { if (persistentStorage) setStorageNoticeDismissed(false); }, [persistentStorage]);
+
+  useEffect(() => {
+    setAmbientScene(path === '/' ? 'home' : path === '/world' ? 'world' : path === '/time-machine' ? 'time' : 'library');
+    if (previous.current !== path && !reducedMotion) {
+      const stage = document.querySelector('.route-stage');
+      const animation = stage?.animate([
+        { opacity: .65, transform: 'translateY(12px)', clipPath: 'inset(0 0 2% 0)' },
+        { opacity: 1, transform: 'translateY(0)', clipPath: 'inset(0 0 0% 0)' },
+      ], { duration: 380, easing: 'cubic-bezier(.16,1,.3,1)' });
+      previous.current = path;
+      return () => animation?.cancel();
+    }
+    previous.current = path;
+  }, [path, reducedMotion]);
+
+  useEffect(() => {
+    const receive = (e: Event) => { setNoticePaused(false); setNotice({ ...(e as CustomEvent<Notice>).detail, id: Date.now() }); };
+    window.addEventListener('monumental:notice', receive);
+    return () => window.removeEventListener('monumental:notice', receive);
+  }, []);
+  useEffect(() => {
+    if (!notice || noticePaused) return;
+    const timeout = window.setTimeout(() => setNotice(null), notice.undo ? 8000 : 4500);
+    return () => clearTimeout(timeout);
+  }, [notice,noticePaused]);
+
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const total = document.documentElement.scrollHeight - innerHeight;
+      progress.current?.style.setProperty('--progress', String(total > 0 ? scrollY / total : 0));
+      setScrolled(scrollY > innerHeight * .7);
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(update); };
+    const resize = new ResizeObserver(schedule);
+    resize.observe(document.body);
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule, { passive: true });
+    update();
+    return () => { cancelAnimationFrame(frame); resize.disconnect(); window.removeEventListener('scroll', schedule); window.removeEventListener('resize', schedule); };
+  }, []);
+
+  useEffect(() => {
+    let lastHover = 0;
+    let previousTarget: Element | null = null;
+    const excluded = (el: Element) => el.closest('[data-sound-owned],.ms-player-dialog,.sound-studio');
+    const click = (e: MouseEvent) => {
+      const control = (e.target as Element).closest<HTMLElement>('button,a,summary');
+      if (!control || excluded(control) || control.matches(':disabled,[aria-disabled="true"]')) return;
+      const label = (control.getAttribute('aria-label') || control.textContent || '').toLowerCase();
+      const explicit = control.dataset.sound as SoundType | undefined;
+      const type: SoundType = explicit || (control.tagName === 'A' && control.getAttribute('href')?.startsWith('#/') ? 'navigate' : /close|cancel/.test(label) ? 'close' : /open|index|search/.test(label) ? 'open' : /save|follow/.test(label) ? 'save' : 'select');
+      playSound(type);
+    };
+    const hover = (e: PointerEvent) => {
+      if (e.pointerType !== 'mouse') return;
+      const control = (e.target as Element).closest<HTMLElement>('a,button');
+      if (control === previousTarget) return;
+      previousTarget = control;
+      if (!control || excluded(control) || control.matches(':disabled') || performance.now() - lastHover < 160) return;
+      lastHover = performance.now();
+      playSound('hover', { intensity: .35, pan: Math.max(-.7, Math.min(.7, e.clientX / innerWidth * 1.4 - .7)) });
+    };
+    document.addEventListener('click', click);
+    document.addEventListener('pointerover', hover, { passive: true });
+    return () => { document.removeEventListener('click', click); document.removeEventListener('pointerover', hover); };
+  }, []);
+
+  useEffect(() => {
+    if (reducedMotion || !matchMedia('(hover:hover) and (pointer:fine)').matches) return;
+    let frame = 0;
+    let target: HTMLElement | null = null;
+    let x = 0, y = 0;
+    const reset = () => { target?.style.removeProperty('--surface-x'); target?.style.removeProperty('--surface-y'); target?.style.removeProperty('--tilt-x'); target?.style.removeProperty('--tilt-y'); target = null; };
+    const draw = () => {
+      frame = 0;
+      if (!target) return;
+      const bounds = target.getBoundingClientRect();
+      const px = (x - bounds.left) / bounds.width, py = (y - bounds.top) / bounds.height;
+      target.style.setProperty('--surface-x', `${px * 100}%`);
+      target.style.setProperty('--surface-y', `${py * 100}%`);
+      target.style.setProperty('--tilt-x', `${(py - .5) * -3}deg`);
+      target.style.setProperty('--tilt-y', `${(px - .5) * 3}deg`);
+    };
+    const move = (e: PointerEvent) => {
+      const next = (e.target as Element).closest<HTMLElement>('.film-image,.portal,.hero-feature,.category-index a,.journey-stop');
+      if (next !== target) { reset(); target = next; }
+      x = e.clientX; y = e.clientY;
+      if (!frame && target) frame = requestAnimationFrame(draw);
+    };
+    document.addEventListener('pointermove', move, { passive: true });
+    document.addEventListener('pointerleave', reset);
+    return () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerleave', reset); cancelAnimationFrame(frame); reset(); };
+  }, [reducedMotion, path]);
+
+  return <>
+    <div ref={progress} className="reading-progress" aria-hidden="true"><span/></div>
+    {!persistentStorage && !storageNoticeDismissed && <div className="storage-status" role="status"><strong>Saved for this visit.</strong><span>Browser storage is unavailable. Your collection and notes will reset when you reload.</span><button aria-label="Dismiss storage message" onClick={()=>setStorageNoticeDismissed(true)}><X size={17}/></button></div>}
+    <button className={`back-to-top ${scrolled ? 'is-visible' : ''}`} tabIndex={scrolled ? 0 : -1} aria-label="Back to top" onClick={() => scrollTo({ top: 0, behavior: reducedMotion ? 'instant' : 'smooth' })}><ArrowUp size={18}/></button>
+    <div className="notice-region" aria-live="polite" aria-atomic="true">
+      {notice && <div className="experience-notice" key={notice.id} onPointerEnter={()=>setNoticePaused(true)} onPointerLeave={event=>{if(!event.currentTarget.contains(document.activeElement))setNoticePaused(false);}} onFocusCapture={()=>setNoticePaused(true)} onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget))setNoticePaused(false);}}><Check size={18}/><span>{notice.message}</span>{notice.undo && <button onClick={() => { notice.undo?.(); setNotice(null); }}>{notice.action || 'Undo'}</button>}<button className="notice-close" aria-label="Dismiss message" onClick={() => setNotice(null)}><X size={16}/></button></div>}
+    </div>
+  </>;
+}

@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-21T16:20:00Z",
+  "title": "Design System: Monumental Streams",
+  "extensions": {
+    "colorMeta": {
+      "signal": { "role": "primary", "displayName": "Signal", "canonical": "#ff4d32" },
+      "background": { "role": "neutral", "displayName": "Background", "canonical": "#080909" },
+      "surface": { "role": "neutral", "displayName": "Surface", "canonical": "#111212" },
+      "text": { "role": "neutral", "displayName": "Text", "canonical": "#efeee9" },
+      "muted": { "role": "neutral", "displayName": "Muted", "canonical": "#a9aaa6" },
+      "paper": { "role": "neutral", "displayName": "Paper", "canonical": "#e8e8e1" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Home Display", "purpose": "Three-line monumental home headline; other routes use their own fluid display sizes." },
+      "headline": { "displayName": "Section Headline", "purpose": "Editorial section headings." },
+      "body": { "displayName": "Body", "purpose": "Descriptions, explanatory text and controls." }
+    },
+    "motion": [
+      { "name": "control-transition", "value": "200ms ease", "purpose": "Button tone and navigation feedback." },
+      { "name": "film-image", "value": "700ms cubic-bezier(.2,.7,.2,1)", "purpose": "Subtle media enlargement on hover." },
+      { "name": "hero-entry", "value": "1.2s power4.out; 0.09s stagger", "purpose": "GSAP home headline entrance; bypassed in reduced motion." }
+    ],
+    "breakpoints": [
+      { "name": "explore-small", "value": "500px" },
+      { "name": "navigation-mobile", "value": "760px" },
+      { "name": "explore-stacked", "value": "800px" },
+      { "name": "explore-medium", "value": "1100px" },
+      { "name": "layout-medium", "value": "1200px" },
+      { "name": "hero-wide", "value": "1700px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Primary forward action.",
+      "html": "<button class=\"ds-primary\">Explore the world <span aria-hidden=\"true\">↗</span></button>",
+      "css": ".ds-primary{display:inline-flex;align-items:center;gap:16px;min-height:48px;padding:14px 22px;border:1px solid transparent;border-radius:2px;background:var(--accent,#ff4d32);color:var(--bg,#080909);font:600 12px/1.3 'DM Sans Variable',sans-serif;cursor:pointer;transition:background .2s,transform .2s}.ds-primary:hover{background:#ff7d65}.ds-primary:focus-visible{outline:2px solid var(--accent,#ff4d32);outline-offset:5px}.ds-primary:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Outlined Action",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Save and secondary actions.",
+      "html": "<button class=\"ds-outline\">+ Save for later</button>",
+      "css": ".ds-outline{min-height:48px;padding:14px 22px;border:1px solid #ffffff40;border-radius:2px;background:transparent;color:var(--text,#efeee9);font:600 12px/1.3 'DM Sans Variable',sans-serif;cursor:pointer;transition:background .2s,border-color .2s}.ds-outline:hover{border-color:var(--text,#efeee9);background:#ffffff0b}.ds-outline:focus-visible{outline:2px solid var(--accent,#ff4d32);outline-offset:5px}.ds-outline:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Light Action",
+      "kind": "button",
+      "refersTo": "button-light",
+      "description": "Alternate action on photographic and dark editorial surfaces.",
+      "html": "<button class=\"ds-light\">Discover the series ↗</button>",
+      "css": ".ds-light{min-height:48px;padding:14px 22px;border:1px solid transparent;border-radius:2px;background:var(--text,#efeee9);color:var(--bg,#080909);font:600 12px/1.3 'DM Sans Variable',sans-serif;cursor:pointer;transition:background .2s}.ds-light:hover{background:#c9c8c2}.ds-light:focus-visible{outline:2px solid var(--accent,#ff4d32);outline-offset:5px}.ds-light:active{transform:translateY(1px)}"
+    },
+    {
+      "name": "Search Field",
+      "kind": "input",
+      "description": "Transparent catalogue search with a fine lower rule.",
+      "html": "<label class=\"ds-search\"><span>Search catalogue</span><input placeholder=\"A city, artist, sound or story…\"></label>",
+      "css": ".ds-search{display:block;color:var(--muted,#a9aaa6);font:12px/1.5 'DM Sans Variable',sans-serif}.ds-search input{display:block;width:100%;border:0;border-bottom:1px solid #ffffff50;background:transparent;color:var(--text,#efeee9);font:20px 'DM Sans Variable',sans-serif;padding:12px 0;caret-color:var(--accent,#ff4d32)}.ds-search input::placeholder{color:#92978d}.ds-search input:focus-visible{outline:2px solid var(--accent,#ff4d32);outline-offset:5px}"
+    },
+    {
+      "name": "Active Navigation",
+      "kind": "nav",
+      "description": "Fine-rule navigation with the selected route in signal color.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Example navigation\"><a href=\"#/\">Home</a><a href=\"#/world\" aria-current=\"page\">World</a><a href=\"#/time-machine\">Time Machine</a></nav>",
+      "css": ".ds-nav{display:flex;background:#101111;border-top:1px solid #ffffff2a;font:10px 'DM Sans Variable',sans-serif}.ds-nav a{position:relative;padding:18px;color:#b8b9b3;text-decoration:none}.ds-nav a:hover{background:#ffffff07;color:var(--text,#efeee9)}.ds-nav a[aria-current]{color:var(--accent,#ff4d32);border-top:2px solid var(--accent,#ff4d32);margin-top:-1px}.ds-nav a:focus-visible{outline:2px solid var(--accent,#ff4d32);outline-offset:-4px}"
+    },
+    {
+      "name": "Programme Status",
+      "kind": "chip",
+      "description": "Content status over media; this is information rather than an interactive chip.",
+      "html": "<span class=\"ds-status\">In development</span>",
+      "css": ".ds-status{display:inline-block;background:#0b0c0bd9;color:var(--text,#efeee9);padding:7px 9px;font:8px 'DM Sans Variable',sans-serif;text-transform:uppercase;letter-spacing:.1em}"
+    }
+  ],
+  "narrative": {
+    "northStar": "A Living Atlas of Culture",
+    "overview": "The implemented world combines assertive editorial typography with physical, interactive objects. A dark stage and bright signal accent frame the content; the hero sculpture, geographic globe and overlapping era frames supply depth. This records the shipped design rather than prescribing a new direction.",
+    "keyCharacteristics": [
+      "Monumental condensed headlines with occasional outlined words.",
+      "Thin rules, square media, deliberate negative space and visible content provenance.",
+      "A single warm signal accent for selected state, forward action and cultural connections.",
+      "Direct conventional controls accompany immersive interactions."
+    ],
+    "rules": [],
+    "dos": [
+      "Do keep the shared catalogue and page controls connected.",
+      "Do preserve the exact thirteen-category Index and dedicated World and Time Machine pages.",
+      "Do keep status, credits, focus and content caveats readable on mobile.",
+      "Do retain sound consent, reduced motion, native scroll and non-WebGL controls."
+    ],
+    "donts": [
+      "Don't replace content discovery with inert decorative interactions.",
+      "Don't imply planned programmes, subscriptions or broadcasts are already available.",
+      "Don't turn contemporary destination imagery into claimed archival footage.",
+      "Don't overwrite the existing design language with unrelated effects when adding content."
+    ]
+  }
+}

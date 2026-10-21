@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.env
+.env.local
+*.tsbuildinfo
+test-results/
+.sites/
+.work/
+
+.playwright-cli/
+outputs/
+
+# Local verification artifacts; portable test sources remain tracked.
+.openai/audio-qa/
+.openai/catalogue-qa/
+.openai/companion-qa/
+.openai/integration-review/
+output/
