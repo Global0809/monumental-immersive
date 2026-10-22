@@ -12,7 +12,6 @@ export default function ExperienceLayer({ path, reducedMotion }: { path: string;
   const [notice, setNotice] = useState<(Notice & { id: number }) | null>(null);
   const [scrolled, setScrolled] = useState(false);
   const [noticePaused, setNoticePaused] = useState(false);
-  const previous = useRef(path);
   const persistentStorage = usePersistentStorage();
   const [storageNoticeDismissed, setStorageNoticeDismissed] = useState(false);
 
@@ -20,17 +19,7 @@ export default function ExperienceLayer({ path, reducedMotion }: { path: string;
 
   useEffect(() => {
     setAmbientScene(path === '/' ? 'home' : path === '/world' ? 'world' : path === '/time-machine' ? 'time' : 'library');
-    if (previous.current !== path && !reducedMotion) {
-      const stage = document.querySelector('.route-stage');
-      const animation = stage?.animate([
-        { opacity: .65, transform: 'translateY(12px)', clipPath: 'inset(0 0 2% 0)' },
-        { opacity: 1, transform: 'translateY(0)', clipPath: 'inset(0 0 0% 0)' },
-      ], { duration: 380, easing: 'cubic-bezier(.16,1,.3,1)' });
-      previous.current = path;
-      return () => animation?.cancel();
-    }
-    previous.current = path;
-  }, [path, reducedMotion]);
+  }, [path]);
 
   useEffect(() => {
     const receive = (e: Event) => { setNoticePaused(false); setNotice({ ...(e as CustomEvent<Notice>).detail, id: Date.now() }); };
