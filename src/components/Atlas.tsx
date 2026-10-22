@@ -1,3 +1,4 @@
+import { attachXray } from '../services/xrayMaterial';
 /**
  * Land geometry: Natural Earth, 1:110m land, public domain.
  * https://www.naturalearthdata.com/about/terms-of-use/
@@ -149,6 +150,7 @@ export default function Atlas({
       }),
     );
     globe.add(body);
+    const xray = attachXray(renderer, [body.material], [body]);
     const haloMaterial = new THREE.ShaderMaterial({
       uniforms: { tint: { value: new THREE.Color("#e9eee2") } },
       vertexShader:
@@ -375,6 +377,7 @@ export default function Atlas({
       )
         globe.rotation.y += delta * 0.006;
       updateLabels();
+      xray.update(!motionRef.current);
       renderer.render(scene, camera);
       if (targetRotation || zooming || connectionReveal < 1 || (!motionRef.current && !pauseRef.current))
         frame = window.requestAnimationFrame(draw);
@@ -586,6 +589,7 @@ export default function Atlas({
 
     return () => {
       disposed = true;
+      xray.dispose();
       abort.abort();
       cancelAnimationFrame(frame);
       observer.disconnect();

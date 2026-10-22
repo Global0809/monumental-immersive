@@ -1,3 +1,4 @@
+import { attachXray } from '../services/xrayMaterial';
 import { useEffect, useId, useRef, useState } from 'react';
 import { ArrowsInSimple } from '@phosphor-icons/react/dist/csr/ArrowsInSimple';
 import { ArrowsOutSimple } from '@phosphor-icons/react/dist/csr/ArrowsOutSimple';
@@ -315,6 +316,7 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
     ember.position.set(-2.4, -1.8, 2.4);
     scene.add(ember);
 
+    const xray = attachXray(renderer, [chrome,paleChrome,darkChrome], [...bands,core,...innerRings]);
     let disposed = false;
     let visible = true;
     let failed = false;
@@ -472,6 +474,7 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
       resonanceWave.scale.setScalar(0.65 + pulseAge * 1.2);
       waveMaterial.opacity = Math.max(0, 1 - pulseAge) * pulseStrength * 0.28;
       satellites.forEach((node, i) => node.scale.setScalar(i === activeRef.current ? 1.7 : 1));
+      xray.update(!reduced);
       renderer.render(scene, camera);
       for (let i = 0; i < satellites.length; i += 1) {
         const button = buttonsRef.current[i];
@@ -628,6 +631,7 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
       host.removeEventListener('pointerleave', pointerLeave);
       renderer.domElement.removeEventListener('webglcontextlost', contextLost);
       const geometries = new Set<THREE.BufferGeometry>();
+      xray.dispose();
       const materials = new Set<THREE.Material>();
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
