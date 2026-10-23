@@ -1,4 +1,5 @@
 import { reactiveField as input } from './reactiveField';
+import { createMatrixField } from './matrixField';
 
 // One viewport canvas reveals the real layout. No duplicated video or backdrop filter.
 const mediaSelector = 'video,iframe,.motion-stage,.film-image,.film-instrument__preview,[data-xray="off"]';
@@ -6,6 +7,7 @@ const quietSelector = `${mediaSelector},input,textarea,select,[contenteditable="
 const surfaceSelector = 'main h1,main h2,main h3,main h4,main .portal,main .category-index a,main .film-card,main .ex-era-frame,main .ex-location-photo,main .ex-destinations button,main .ex-connection-link,main .collider-orbit,main .collider-tokens button,main .city-location-list button,main .personal-monument__piece,main .world-stats>span,main .membership-grid>div,main .settings-list>div,main .journey-stop,main .journey-place-thread a,main .motion-index button,main .button,main .text-link';
 type Surface = { element: HTMLElement; rect: DOMRect; pageY: number; heading: boolean; round: boolean };
 type Letter = { text: string; left: number; pageY: number; width: number; height: number; font: string };
+type CopyZone = { left: number; pageY: number; width: number; height: number };
 
 export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: boolean) {
   input.reduced = reducedMotion;
@@ -14,12 +16,18 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
   if (!context) return () => {};
   const ctx: CanvasRenderingContext2D = context;
   if (reducedMotion) { ctx.clearRect(0, 0, canvas.width, canvas.height); return () => {}; }
+  // A reusable offscreen layer keeps the X-ray feather from erasing the ambient field.
+  const fieldCanvas = document.createElement('canvas');
+  const fieldContext = fieldCanvas.getContext('2d');
+  if (!fieldContext) return () => {};
+  const field: CanvasRenderingContext2D = fieldContext;
   const fine = matchMedia('(hover:hover) and (pointer:fine)').matches;
-  const points = Array.from({ length: fine ? 42 : 20 }, (_, i) => ({ x: (i * 167.73 % 997) / 997, y: (i * 239.1 % 991) / 991, depth: .25 + i % 5 / 7 }));
+  const drawMatrix = createMatrixField(fine);
   let width = innerWidth, height = innerHeight, frame = 0, last = 0, time = 0, disposed = false;
   let x = -1000, y = -1000, scan = 0, speed = 0, lastScroll = scrollY;
   let hidden = document.hidden, dirty = true, refresh = true, lastMeasure = -1000;
   let candidates: HTMLElement[] = [], surfaces: Surface[] = [], media: Element[] = [], letters: Letter[] = [];
+  let copy: HTMLElement[] = [], copyZones: CopyZone[] = [];
   let heading: HTMLElement | null = null, pointerTarget: Element | null = null;
   let lastKind = '', lastMediaCount = -1, keyboard = false;
 
@@ -28,6 +36,8 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
     width = innerWidth; height = innerHeight;
     const ratio = Math.min(devicePixelRatio, 1.5);
     canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
+    fieldCanvas.width = canvas.width; fieldCanvas.height = canvas.height;
+    field.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0); dirty = true; schedule();
   }
   function allowed(element: Element | null) {
@@ -82,6 +92,7 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
   function measure(now: number) {
     if (refresh) {
       candidates = Array.from(document.querySelectorAll<HTMLElement>(surfaceSelector));
+      copy = Array.from(document.querySelectorAll<HTMLElement>('main h1,main h2,main h3,main h4,main p,main a,main button,main label,main input,main textarea,main select'));
       // The sculpture owns its depth-tested material reveal. Keep this 2D layer
       // outside its viewport so curved VideoTexture windows stay clear as well.
       media = Array.from(document.querySelectorAll(`${mediaSelector},.culture-sculpture__canvas`));
@@ -92,6 +103,11 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
         const rect = element.getBoundingClientRect();
         return { element, rect, pageY: rect.top + scrollY, heading: element.matches('h1,h2,h3,h4'), round: element.matches('.collider-orbit') };
       }).filter(({ rect }) => rect.width > 0 && rect.height > 0 && rect.bottom > -230 && rect.top < height + 230).slice(0, 70);
+      // Dim only the ambient layer under reading/control areas; the X-ray remains intact.
+      copyZones = copy.filter(element => element.isConnected && !element.closest('[inert],[aria-hidden="true"]')).map(element => {
+        const rect = element.getBoundingClientRect();
+        return { left: rect.left, pageY: rect.top + scrollY, width: rect.width, height: rect.height };
+      }).filter(rect => rect.width > 0 && rect.height > 0 && rect.pageY + rect.height > scrollY - 230 && rect.pageY < scrollY + height + 230);
       dirty = false; lastMeasure = now;
       if (heading) letters = readLetters(heading);
     }
@@ -145,15 +161,11 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
     if (holes.length !== lastMediaCount) { canvas.dataset.mediaExclusions = String(holes.length); lastMediaCount = holes.length; }
     ctx.clearRect(0, 0, width, height);
     if (forbidden) { schedule(); return; }
-    // A low density field across every route, repelled by the visitor's signal.
-    points.forEach((point, i) => {
-      let px = point.x * width + Math.sin(time * .15 + i) * 12;
-      let py = ((point.y * height - input.scroll * .045 * point.depth + time * 3 * point.depth) % height + height) % height;
-      const dx = px - x, dy = py - y, distance = Math.hypot(dx, dy);
-      if (input.active && distance < 220) { const force = (1 - distance / 220) * 30; px += dx / (distance || 1) * force; py += dy / (distance || 1) * force; }
-      ctx.fillStyle = i % 6 === 0 ? 'rgba(255,93,60,.29)' : 'rgba(228,231,218,.13)';
-      ctx.fillRect(px, py, point.depth * 1.6, point.depth * 1.6);
-    });
+    field.clearRect(0, 0, width, height);
+    drawMatrix(field, { width, height, time, scroll: input.scroll, speed, x, y, active: input.active });
+    field.save(); field.globalCompositeOperation = 'destination-out'; field.fillStyle = 'rgba(0,0,0,.84)';
+    copyZones.forEach(r => field.fillRect(r.left - 4, r.pageY - scrollY - 4, r.width + 8, r.height + 8));
+    field.restore();
     if (scan > .015 && fine) {
       const radius = keyboard ? 165 : 218 + Math.min(18, Math.abs(speed));
       ctx.save(); ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.clip();
@@ -188,6 +200,8 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
       ctx.fillStyle = feather; ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
       ctx.restore();
     }
+    ctx.save(); ctx.globalCompositeOperation = 'destination-over';
+    ctx.drawImage(fieldCanvas, 0, 0, width, height); ctx.restore();
     // Clear after all drawing: even a neighbouring lens cannot spill onto a film.
     holes.forEach(r => ctx.clearRect(r.left - 5, r.top - 5, r.width + 10, r.height + 10));
     schedule();
@@ -203,6 +217,7 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
   document.addEventListener('focusin', focus); document.addEventListener('visibilitychange', visibility); window.addEventListener('monumental:playback', playback);
   return () => {
     disposed = true; cancelAnimationFrame(frame); mutation.disconnect(); observer.disconnect();
+    fieldCanvas.width = 0; fieldCanvas.height = 0;
     window.removeEventListener('resize', resize); window.removeEventListener('scroll', scroll);
     document.removeEventListener('pointermove', move); document.removeEventListener('pointerleave', leave);
     document.removeEventListener('focusin', focus); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('monumental:playback', playback);
