@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import gsap from 'gsap';
+import { attachXray } from '../services/xrayMaterial';
 
 export interface CitySceneController { select: (index: number | null, immediate?: boolean) => void; dispose: () => void }
 interface CityOptions { reducedMotion: boolean; onSelect: (index: number) => void; onProject: (index: number, x: number, y: number, visible: boolean) => void; onUnavailable: () => void }
@@ -97,6 +98,18 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   }
   locationGroups.forEach((group, index) => group.traverse(object => { object.userData.location = index; if (object instanceof THREE.Mesh) clickTargets.push(object); }));
 
+  // Each location gets a small, deliberate structural overlay budget.
+  const scanMeshes = locationGroups.flatMap(group => {
+    const candidates: { mesh: THREE.Mesh; size: number }[] = [];
+    group.traverse(object => {
+      if (!(object instanceof THREE.Mesh)) return;
+      object.geometry.computeBoundingSphere();
+      candidates.push({ mesh: object, size: (object.geometry.boundingSphere?.radius || 0) * object.scale.length() });
+    });
+    return candidates.sort((a, b) => b.size - a.size).slice(0, 8).map(candidate => candidate.mesh);
+  });
+  const xray = attachXray(renderer, [chrome, pale, black, red, glass], scanMeshes);
+
   let disposed = false, raf = 0, width = 0, height = 0, inView = true, playingFilm = false, dirty = true, active: number | null = null;
   let tween: gsap.core.Tween | undefined;
   const cameraState = { azimuth: .47, elevation: .58, radius: 25, x: 0, y: .5, z: 0 };
@@ -112,6 +125,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
     if (!canRender()) return;
     updateCamera();
     if (!options.reducedMotion) { pulse.position.copy(route.getPointAt((time * .000065) % 1)); pulses.forEach((ring, index) => { const scale = 1 + Math.sin(time * .002 + index) * .08; ring.scale.setScalar(active === index ? scale * 1.6 : scale); }); }
+    xray.update(!options.reducedMotion && !playingFilm);
     renderer.render(scene, camera);
     markers.forEach((position, index) => { projected.copy(position).project(camera); options.onProject(index, (projected.x + 1) * width / 2, (1 - projected.y) * height / 2, projected.z < 1 && Math.abs(projected.x) < .93 && Math.abs(projected.y) < .85); });
     dirty = false;
@@ -158,6 +172,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   const resize = new ResizeObserver(fit); resize.observe(host); fit(); select(null, true);
   return { select, dispose() {
     disposed = true; cancelAnimationFrame(raf); tween?.kill(); observer.disconnect(); resize.disconnect();
+    xray.dispose();
     canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerup', up); canvas.removeEventListener('pointercancel', cancel); canvas.removeEventListener('webglcontextlost', contextLost);
     document.removeEventListener('visibilitychange', visibility); window.removeEventListener('monumental:playback', playback);
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
