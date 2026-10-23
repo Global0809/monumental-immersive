@@ -1,5 +1,5 @@
 import { assetUrl as asset } from '../services/assets';
-import { lazy, Suspense, useEffect, useRef, type CSSProperties, type RefObject, type PointerEvent } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type RefObject, type PointerEvent } from "react";
 import { ArrowDown } from '@phosphor-icons/react/dist/csr/ArrowDown';
 import { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft';
 import { ArrowRight } from '@phosphor-icons/react/dist/csr/ArrowRight';
@@ -23,7 +23,9 @@ import { go, href } from "../services/router";
 import { createJourney, togglePlace, toggleSaved, useViewer } from "../services/viewer";
 import { playSound, type SoundType } from "../services/audio";
 import "./explore.css";
+import { selectDestination } from "../services/exploration";
 
+const CityExperience = lazy(() => import("./CityExperience"));
 const Atlas = lazy(() => import("./Atlas"));
 type ExploreProps = { params: URLSearchParams; reducedMotion: boolean; onWatch: (video: Video) => void };
 const channels = ["All", "Movies", "Music", "Fashion", "Culture"];
@@ -32,6 +34,7 @@ function channelOf(video: Video) {
   if (["Art & Design", "Documentary", "Food", "Culture"].includes(video.category)) return "Culture";
   return video.category;
 }
+
 function updateRoute(path: string, params: URLSearchParams, changes: Record<string, string>, sound: SoundType = "select") {
   const next = Object.fromEntries(params.entries());
   Object.entries(changes).forEach(([key, value]) => { if (value) next[key] = value; else delete next[key]; });
@@ -85,6 +88,8 @@ function StoryCards({ items, onWatch, empty, onReset }: { items: Video[]; onWatc
 
 export function WorldPage({ params, reducedMotion, onWatch }: ExploreProps) {
   const selected = places.find(place => place.id === params.get("place")) || places[0];
+  const [cityRequest, setCityRequest] = useState(0);
+  useEffect(() => selectDestination(selected.id), [selected.id]);
   const category = channels.includes(params.get("category") || "") ? params.get("category")! : "All";
   const viewer = useViewer();
   const root = useRef<HTMLDivElement>(null);
@@ -112,10 +117,12 @@ export function WorldPage({ params, reducedMotion, onWatch }: ExploreProps) {
         <p className="ex-location-tagline">{selected.tagline}</p>
         <button className="ex-location-explore" onClick={() => section.current?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" })}>Explore {selected.name}<ArrowDown size={21} /></button>
         <div className="ex-location-inventory ex-reactive"><span><strong>{String(available.length).padStart(2, "0")}</strong> playable stories</span><span><strong>{durationLabel(available.reduce((sum, video) => sum + video.duration, 0))}</strong> to discover</span></div>
+        {selected.id === "miami" && <button className="button button-outline city-entry-link" onClick={() => { setCityRequest(value => value + 1); document.getElementById("city-experience")?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" }); }}>Step inside Miami <ArrowUpRight size={18}/></button>}
       </aside>
     </div>
     <div className="ex-world-tools"><span><Path size={18} /> CULTURE IS A CONNECTION.</span><div><button data-sound-owned aria-pressed={linksVisible} onClick={() => updateRoute("/world", params, { links: linksVisible ? "off" : "" })}><span className={linksVisible ? "ex-toggle-light is-on" : "ex-toggle-light"} />Cultural connections {linksVisible ? "on" : "off"}</button><button data-sound-owned onClick={() => { const options = places.filter(place => place.id !== selected.id); selectPlace(options[Math.floor(Math.random() * options.length)].id); }}><Shuffle size={17} />Take a different turn</button></div></div>
     <nav className="ex-destinations" aria-label="Choose a destination" data-sound-owned>{places.map((place, index) => <button key={place.id} onClick={() => selectPlace(place.id)} aria-current={selected.id === place.id ? "location" : undefined}><span>{String(index + 1).padStart(2, "0")}</span>{place.name}<ArrowUpRight size={18} /></button>)}</nav>
+    <Suspense fallback={null}><CityExperience openRequest={cityRequest} placeId={selected.id} reducedMotion={reducedMotion} onWatch={onWatch}/></Suspense>
     {connections.length > 0 && <section className="ex-connections" aria-label={`Cultural connections from ${selected.name}`}><div className="ex-connection-intro"><span className="ex-kicker">FOLLOW THE THREAD</span><h2>{selected.name}<br /><span>is a beginning.</span></h2><p>These lines connect shared themes and collections. Choose a place to see its perspective.</p></div><div className="ex-connection-links">{connections.map((connection, index) => <button className="ex-connection-link ex-reactive" key={connection.place.id} data-sound-owned onClick={() => { selectPlace(connection.place.id); root.current?.scrollIntoView({ block: "start", behavior: reducedMotion ? "instant" : "smooth" }); }}><img src={asset(connection.place.image)} alt="" loading="lazy" /><span className="ex-connection-number">0{index + 1}</span><span className="ex-connection-copy"><small>{connection.reason}</small><strong>{connection.place.name}</strong><span>{connection.films} playable {connection.films === 1 ? "story" : "stories"}</span></span><ArrowUpRight size={23} /></button>)}</div></section>}
     <section className="ex-results" ref={section}>
       <div className="ex-section-heading"><div><span className="ex-kicker">STORIES WITH A SENSE OF PLACE</span><h2>Inside {selected.name}<span>({String(items.length).padStart(2, "0")})</span></h2></div><a href={href("/time-machine", { place: selected.id })}>Travel through time <ArrowUpRight size={19} /></a></div>

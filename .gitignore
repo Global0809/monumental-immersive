@@ -16,3 +16,4 @@ outputs/
 .openai/companion-qa/
 .openai/integration-review/
 output/
+.impeccable/review/

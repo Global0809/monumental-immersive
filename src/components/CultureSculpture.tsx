@@ -1,5 +1,5 @@
 import { attachXray } from '../services/xrayMaterial';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArrowsInSimple } from '@phosphor-icons/react/dist/csr/ArrowsInSimple';
 import { ArrowsOutSimple } from '@phosphor-icons/react/dist/csr/ArrowsOutSimple';
 import { ArrowCounterClockwise } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise';
@@ -9,15 +9,22 @@ import { Waveform } from '@phosphor-icons/react/dist/csr/Waveform';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { playSound } from '../services/audio';
+import { videos, type Video } from '../data/catalogue';
+import { durationLabel } from '../services/discovery';
+import { href } from '../services/router';
+import { SaveButton } from './FilmCard';
+import { filmWindowGeometry, filmAsset } from './FilmInstrumentGeometry';
 import './sculpture.css';
 
 type CultureSculptureProps = {
   active: number;
   onSelect: (index: number) => void;
   reducedMotion: boolean;
+  onWatch: (video: Video) => void;
 };
 
 const places = ['Miami', 'Puerto Rico', 'New York', 'London', 'Tokyo', 'Rio'];
+const placeIds = ['miami', 'puerto-rico', 'new-york', 'london', 'tokyo', 'rio'];
 const TAU = Math.PI * 2;
 type SculptureActions = { rotate: (amount: number) => void; reset: () => void; pulse: (strength: number) => void };
 
@@ -64,7 +71,7 @@ function ribbonGeometry(radius: number, stretch: number, width: number, phase: n
   return geometry;
 }
 
-export default function CultureSculpture({ active, onSelect, reducedMotion }: CultureSculptureProps) {
+export default function CultureSculpture({ active, onSelect, reducedMotion, onWatch }: CultureSculptureProps) {
   const instructionId = useId();
   const hostRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -87,6 +94,93 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
   const [paused, setPaused] = useState(false);
   const [charging, setCharging] = useState(false);
   const [status, setStatus] = useState('');
+  const [storiesMode, setStoriesMode] = useState(false);
+  const [storyIndex, setStoryIndex] = useState(0);
+  const [storyOpen, setStoryOpen] = useState(false);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewBlocked, setPreviewBlocked] = useState(false);
+  const [previewPaused, setPreviewPaused] = useState(reducedMotion);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [previewIssue, setPreviewIssue] = useState('');
+  const [previewAttempt, setPreviewAttempt] = useState(0);
+  const previewRef = useRef<HTMLVideoElement>(null);
+  const storyButtonsRef = useRef<(HTMLButtonElement | null)[]>([]);
+  const returnRef = useRef<HTMLButtonElement>(null);
+  const instrumentSyncRef = useRef<(() => void) | null>(null);
+  const portalUntilRef = useRef(0);
+  const storyFilms = useMemo(() => videos.filter(video => video.places.includes(placeIds[active]) && video.status === 'available' && video.access === 'free' && video.src).slice(0, 3), [active]);
+  const selectedStory = storyFilms[Math.min(storyIndex, storyFilms.length - 1)];
+  const instrumentRef = useRef({ enabled: false, open: false, index: 0, films: storyFilms, playing: false });
+  instrumentRef.current = { enabled: storiesMode, open: storyOpen, index: storyIndex, films: storyFilms, playing: previewPlaying };
+
+  function chooseStory(index: number) {
+    pointHoveredRef.current = false;
+    setStoryIndex(index); setStoryOpen(true); setPreviewIssue(''); setPreviewPaused(false);
+    setPreviewAttempt(value => value + 1);
+    actionsRef.current?.pulse(0.55);
+    playSound('sculpture-unfold');
+    setStatus(`${storyFilms[index]?.title}. Film window opened.`);
+  }
+  function returnToSculpture() {
+    setStoryOpen(false);
+    playSound('sculpture-fold');
+    requestAnimationFrame(() => storyButtonsRef.current[storyIndex]?.focus());
+  }
+  function toggleStories() {
+    setStoriesMode(value => !value); setStoryOpen(false); setStoryIndex(0);
+    setPreviewPaused(reducedMotion); setPreviewIssue('');
+    playSound('select');
+  }
+  const pickStoryRef = useRef(chooseStory);
+  pickStoryRef.current = chooseStory;
+
+  useEffect(() => { setStoryIndex(0); setStoryOpen(false); setPreviewIssue(''); setPreviewPaused(reducedMotion); }, [active, reducedMotion]);
+  useEffect(() => {
+    instrumentSyncRef.current?.(); redrawRef.current?.();
+  }, [storiesMode, storyOpen, storyIndex, storyFilms, previewPlaying]);
+  useEffect(() => {
+    if (!storyOpen) return;
+    const frame = requestAnimationFrame(() => {
+      returnRef.current?.focus({ preventScroll: true });
+      const panel = returnRef.current?.closest<HTMLElement>('.film-instrument__panel');
+      const host = hostRef.current;
+      if (!panel || !host) return;
+      const top = host.getBoundingClientRect().top + panel.offsetTop;
+      const header = document.querySelector('.site-header')?.getBoundingClientRect().height || 82;
+      if (top < header + 12 || top + panel.offsetHeight > innerHeight - 70) {
+        window.scrollBy({ top: top - header - 20, behavior: reducedMotion ? 'instant' : 'smooth' });
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [storyOpen, reducedMotion]);
+  // The media lifecycle also works when WebGL is unavailable or loses context.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    let playerActive = Boolean(document.querySelector('.ms-player-dialog[open]'));
+    const observer = new IntersectionObserver(([entry]) => setPreviewVisible(entry.isIntersecting && entry.intersectionRatio >= .1), { threshold: [0, .1] });
+    const visibility = () => setPreviewBlocked(document.hidden || playerActive);
+    const playback = (event: Event) => { playerActive = Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active); visibility(); };
+    observer.observe(host);
+    document.addEventListener('visibilitychange', visibility);
+    window.addEventListener('monumental:playback', playback);
+    visibility();
+    return () => { observer.disconnect(); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('monumental:playback', playback); };
+  }, []);
+  useEffect(() => {
+    const video = previewRef.current;
+    if (!video) return;
+    let canceled = false;
+    const shouldPlay = storiesMode && previewVisible && !previewBlocked && !previewPaused && (!fallback || storyOpen);
+    if (shouldPlay) {
+      video.muted = true; video.defaultMuted = true;
+      void video.play().catch(error => {
+        if (canceled || error?.name === 'AbortError') return;
+        setPreviewIssue(error?.name === 'NotAllowedError' ? 'Tap Play preview to start.' : 'Preview could not load. Try again.');
+      });
+    } else video.pause();
+    return () => { canceled = true; video.pause(); };
+  }, [selectedStory?.id, storiesMode, previewVisible, previewBlocked, previewPaused, previewAttempt, fallback, storyOpen]);
 
   function unfold() {
     const next = !expandedRef.current;
@@ -211,6 +305,26 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
       orbitAssembly.add(band);
       bands.push(band);
     });
+    // These are actual media surfaces on the chrome, not a second video grid.
+    // Only the selected band's single HTML video creates a live GPU texture.
+    const filmWindows = bands.map((band, index) => {
+      const window = new THREE.Mesh(filmWindowGeometry(index), new THREE.MeshBasicMaterial({
+        color: 0xffffff, side: THREE.DoubleSide, toneMapped: false,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      }));
+      window.visible = false;
+      band.add(window);
+      return window;
+    });
+    const filmLoader = new THREE.TextureLoader();
+    const posterTextures: (THREE.Texture | null)[] = [null, null, null];
+    let textureGeneration = 0;
+    let filmKey = '';
+    let mediaTexture: THREE.VideoTexture | null = null;
+    let textureVideo: HTMLVideoElement | null = null;
+    const bandLift = [0, 0, 0];
+    const filmRaycaster = new THREE.Raycaster();
+    const filmPointer = new THREE.Vector2();
 
     // A curved spinal shell, built from solid ribs of different lengths.
     // Its open faces reveal the core rather than closing into a generic sphere.
@@ -345,6 +459,7 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
     let dragStart = 0;
     let activeAngle = activeRef.current * 0.16;
     let opening = 0;
+    let aperture = 0;
     let pressure = 0;
     let pulseAge = 3;
     let pulseStrength = 0;
@@ -400,6 +515,8 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
       if (idle && !frozen) time += dt;
       const ease = reduced ? 1 : 1 - Math.exp(-dt * 4.5);
       const morphEase = reduced ? 1 : 1 - Math.exp(-dt * 3.8);
+      const instrument = instrumentRef.current;
+      aperture += ((portalUntilRef.current > now ? 1 : 0) - aperture) * (reduced ? 1 : 1 - Math.exp(-dt * 15));
       opening += ((expandedRef.current ? 1 : 0) - opening) * morphEase;
       pressure += ((pressureRef.current ? Math.min(1, (now - chargeStartedRef.current) / 1200) : 0) - pressure) * (reduced ? 1 : 1 - Math.exp(-dt * 7));
       pulseAge = Math.min(3, pulseAge + dt);
@@ -425,12 +542,18 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
       const breathe = reduced ? 0 : Math.sin(time * 0.7) * 0.005;
       orbitAssembly.rotation.y = (reduced ? 0.08 : Math.sin(time * 0.15) * 0.12) + opening * 0.2;
       bands.forEach((band, i) => {
+        bandLift[i] += ((instrument.enabled && instrument.open && instrument.index === i ? 1 : 0) - bandLift[i]) * morphEase;
         const spread = opening * (i + 1) * 0.045;
-        band.scale.setScalar(1 + spread + breathe + (reduced ? 0 : pressure * 0.035 + energy * 0.018));
-        band.rotation.x = bandRotations[i][0] + opening * (i === 1 ? -0.26 : 0.2);
+        band.scale.setScalar(1 + spread + bandLift[i] * 0.14 + aperture * (0.15 + i * 0.1) + breathe + (reduced ? 0 : pressure * 0.035 + energy * 0.018));
+        band.rotation.x = (bandRotations[i][0] + opening * (i === 1 ? -0.26 : 0.2)) * (1 - aperture * 0.95);
+        band.rotation.y = bandRotations[i][1] * (1 - aperture * 0.95);
         band.rotation.z = bandRotations[i][2] + opening * (i - 1) * 0.22;
-        band.position.z = opening * (i - 1) * 0.16;
+        band.position.z = opening * (i - 1) * 0.16 + bandLift[i] * 0.72 + aperture * (i - 1) * 0.25;
+        band.position.x = bandLift[i] * 0.27;
       });
+      shell.scale.setScalar(1 - aperture * 0.7);
+      core.visible = aperture < 0.35;
+      turbine.visible = aperture < 0.35;
       ribs.forEach((rib, i) => {
         const latitude = -1.18 + i / 35 * 2.36;
         const wave = reduced ? 0 : Math.sin(i * 0.28 - pulseAge * 10) * impulse * 0.025;
@@ -488,15 +611,61 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
         button.style.setProperty('--point-depth', `${world.z < -0.6 ? 0.58 : 1}`);
         button.dataset.labelSide = x > width * 0.67 ? 'left' : 'right';
       }
+      filmWindows.forEach((surface, index) => {
+        const button = storyButtonsRef.current[index];
+        if (!button || !instrument.enabled) return;
+        projected.copy(surface.geometry.boundingSphere!.center).applyMatrix4(surface.matrixWorld).project(camera);
+        const x = (projected.x * 0.5 + 0.5) * width;
+        const y = (-projected.y * 0.5 + 0.5) * height;
+        button.style.setProperty('--window-x', `${Math.max(28, Math.min(width - 28, x)).toFixed(1)}px`);
+        button.style.setProperty('--window-y', `${Math.max(80, Math.min(height - 160, y)).toFixed(1)}px`);
+      });
       const rotationSettling = Math.abs(activeAngle - activeRef.current * 0.16) + Math.abs(dragTarget - dragRotation) + Math.abs(pitchTarget - dragPitch) + Math.abs((reduced ? 0 : pointerY * 0.1) - rotationX) + Math.abs((reduced ? 0 : pointerX * 0.15) - rotationY) + Math.abs(angularVelocity) > 0.003;
       const settling = (!frozen && rotationSettling) || Math.abs((expandedRef.current ? 1 : 0) - opening) > 0.003;
       if (resetPending && !settling) resetPending = false;
-      if (idle || dragging || pressureRef.current || pressure > 0.005 || pulseAge < 2.1 || sonicEnergy > 0.005 || settling || resetPending) frame = requestAnimationFrame(draw);
+      const filmSettling = bandLift.some((lift, index) => Math.abs(lift - (instrument.enabled && instrument.open && instrument.index === index ? 1 : 0)) > .003);
+      if (idle || dragging || pressureRef.current || pressure > 0.005 || pulseAge < 2.1 || sonicEnergy > 0.005 || settling || resetPending || instrument.playing || filmSettling || aperture > 0.003 || portalUntilRef.current > now) frame = requestAnimationFrame(draw);
     };
     const requestDraw = () => {
       if (!disposed && !frame && visible && !document.hidden && !failed && !playbackActive) frame = requestAnimationFrame(draw);
     };
     redrawRef.current = requestDraw;
+    const syncInstrument = () => {
+      const instrument = instrumentRef.current;
+      const nextKey = instrument.enabled ? instrument.films.map(film => film.id).join('|') : '';
+      if (nextKey !== filmKey) {
+        filmKey = nextKey;
+        const generation = ++textureGeneration;
+        posterTextures.forEach((texture, index) => { texture?.dispose(); posterTextures[index] = null; });
+        if (instrument.enabled) instrument.films.forEach((film, index) => {
+          filmLoader.load(filmAsset(film.poster), texture => {
+            if (disposed || generation !== textureGeneration) { texture.dispose(); return; }
+            texture.colorSpace = THREE.SRGBColorSpace;
+            posterTextures[index] = texture;
+            syncInstrument();
+          }, undefined, () => { /* The labelled story controls remain available. */ });
+        });
+      }
+      const video = previewRef.current;
+      if (textureVideo !== video) {
+        mediaTexture?.dispose(); mediaTexture = null; textureVideo = video;
+        if (video) {
+          mediaTexture = new THREE.VideoTexture(video);
+          mediaTexture.colorSpace = THREE.SRGBColorSpace;
+          mediaTexture.minFilter = THREE.LinearFilter;
+          mediaTexture.magFilter = THREE.LinearFilter;
+          mediaTexture.generateMipmaps = false;
+        }
+      }
+      filmWindows.forEach((surface, index) => {
+        surface.visible = instrument.enabled && Boolean(instrument.films[index]);
+        surface.material.map = index === instrument.index && video && video.readyState >= 2 ? mediaTexture : posterTextures[index];
+        surface.material.color.set(surface.material.map ? 0xffffff : 0x6c3024);
+        surface.material.needsUpdate = true;
+      });
+      requestDraw();
+    };
+    instrumentSyncRef.current = syncInstrument;
     actionsRef.current = {
       rotate: amount => { dragTarget += amount; angularVelocity = 0; pointHoveredRef.current = false; requestDraw(); },
       reset: () => { dragTarget = 0; pitchTarget = 0; angularVelocity = 0; pointHoveredRef.current = false; pointerX = 0; pointerY = 0; resetPending = true; requestDraw(); },
@@ -520,7 +689,7 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
       previousTime = 0;
       if (visible) requestDraw();
       else if (frame) { cancelAnimationFrame(frame); frame = 0; }
-    }, { rootMargin: '100px' });
+    }, { threshold: [0, 0.1, 0.3] });
     intersectionObserver.observe(host);
     const visibilityChange = () => {
       previousTime = 0;
@@ -529,7 +698,7 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
       else requestDraw();
     };
     const pointerDown = (event: PointerEvent) => {
-      if ((event.target as HTMLElement).closest('button') || event.button !== 0 || !event.isPrimary) return;
+      if ((event.target as HTMLElement).closest('button, a, .film-instrument__panel, .film-instrument__index') || event.button !== 0 || !event.isPrimary) return;
       dragging = true;
       capturedPointer = event.pointerId;
       angularVelocity = 0;
@@ -576,6 +745,13 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
       if (host.hasPointerCapture(event.pointerId)) host.releasePointerCapture(event.pointerId);
       if (event.type === 'pointercancel' || event.timeStamp - lastDragTime > 100 || reducedRef.current) angularVelocity = 0;
       if (wasDragging && dragDistance > 18 && event.type !== 'pointercancel') playSound('sculpture-turn', { intensity: Math.min(0.65, 0.25 + Math.abs(angularVelocity) / 5), pan: pointerX * 0.5 });
+      if (wasDragging && dragDistance < 8 && event.type !== 'pointercancel' && instrumentRef.current.enabled) {
+        const bounds = host.getBoundingClientRect();
+        filmPointer.set((event.clientX - bounds.left) / width * 2 - 1, -((event.clientY - bounds.top) / height) * 2 + 1);
+        filmRaycaster.setFromCamera(filmPointer, camera);
+        const hit = filmRaycaster.intersectObjects(filmWindows.filter(surface => surface.visible), false)[0];
+        if (hit) pickStoryRef.current(filmWindows.indexOf(hit.object as typeof filmWindows[number]));
+      }
       host.classList.remove('is-dragging');
       requestDraw();
     };
@@ -601,6 +777,11 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
       if (playbackActive && frame) { cancelAnimationFrame(frame); frame = 0; }
       else requestDraw();
     };
+    const portalDepart = () => {
+      portalUntilRef.current = performance.now() + 580;
+      startPulse(1);
+      requestDraw();
+    };
     host.addEventListener('pointerdown', pointerDown);
     host.addEventListener('pointermove', pointerMove);
     host.addEventListener('pointerup', pointerUp);
@@ -610,6 +791,8 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
     document.addEventListener('visibilitychange', visibilityChange);
     window.addEventListener('monumental:sonic-pulse', sonicPulse);
     window.addEventListener('monumental:playback', playbackChange);
+    window.addEventListener('monumental:portal-depart', portalDepart);
+    visibilityChange();
     resize();
     setReady(true);
     requestDraw();
@@ -618,12 +801,17 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
       disposed = true;
       redrawRef.current = null;
       actionsRef.current = null;
+      instrumentSyncRef.current = null;
+      textureGeneration += 1;
+      mediaTexture?.dispose();
+      posterTextures.forEach(texture => texture?.dispose());
       cancelAnimationFrame(frame);
       resizeObserver.disconnect();
       intersectionObserver.disconnect();
       document.removeEventListener('visibilitychange', visibilityChange);
       window.removeEventListener('monumental:sonic-pulse', sonicPulse);
       window.removeEventListener('monumental:playback', playbackChange);
+      window.removeEventListener('monumental:portal-depart', portalDepart);
       host.removeEventListener('pointerdown', pointerDown);
       host.removeEventListener('pointermove', pointerMove);
       host.removeEventListener('pointerup', pointerUp);
@@ -650,7 +838,8 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
   }, []);
 
   return (
-    <div ref={hostRef} className={`culture-sculpture${ready ? ' is-ready' : ''}${fallback ? ' has-fallback' : ''}${expanded ? ' is-unfolded' : ''}${charging ? ' is-charging' : ''}${paused ? ' is-paused' : ''}`} role="group" tabIndex={fallback ? -1 : 0} aria-label="Interactive cultural sculpture" aria-describedby={instructionId} onKeyDown={event => {
+    <div ref={hostRef} className={`culture-sculpture${ready ? ' is-ready' : ''}${fallback ? ' has-fallback' : ''}${expanded ? ' is-unfolded' : ''}${charging ? ' is-charging' : ''}${paused ? ' is-paused' : ''}${storiesMode ? ' is-story-mode' : ''}${storyOpen ? ' is-story-open' : ''}`} role="group" tabIndex={fallback ? -1 : 0} aria-label="Interactive cultural sculpture" aria-describedby={instructionId} onKeyDown={event => {
+      if (event.key === 'Escape' && storyOpen) { event.preventDefault(); returnToSculpture(); return; }
       if (event.target !== event.currentTarget || fallback) return;
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
         event.preventDefault();
@@ -662,6 +851,10 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
     }}>
       <div ref={canvasRef} className="culture-sculpture__canvas" />
       <div className="culture-sculpture__fallback" aria-hidden="true"><i /><i /><i /><span /></div>
+      <div className="film-instrument__mode">
+        <button type="button" data-sound-owned aria-pressed={storiesMode} onClick={toggleStories}><span aria-hidden="true" className="film-instrument__signal"/>{storiesMode ? 'Return to sculpture' : 'Explore stories'}<span aria-hidden="true">{storiesMode ? '−' : '+'}</span></button>
+        {storiesMode && <p>{places[active]} · {storyFilms.length} {storyFilms.length === 1 ? 'story' : 'stories'} inside</p>}
+      </div>
       <div className="culture-sculpture__points">
         {places.map((place, index) => (
           <button
@@ -682,8 +875,27 @@ export default function CultureSculpture({ active, onSelect, reducedMotion }: Cu
           </button>
         ))}
       </div>
+      {storiesMode && <>
+        <div className="film-instrument__window-points" aria-label="Film windows">
+          {storyFilms.map((film, index) => <button key={film.id} ref={element => { storyButtonsRef.current[index] = element; }} type="button" className={`film-instrument__window-point${storyIndex === index ? ' is-selected' : ''}`} aria-label={`Inspect ${film.title}`} aria-expanded={storyOpen && storyIndex === index} onPointerEnter={() => { pointHoveredRef.current = true; }} onPointerLeave={() => { pointHoveredRef.current = false; redrawRef.current?.(); }} onClick={() => chooseStory(index)}><span>{String(index + 1).padStart(2, '0')}</span><Play size={14} weight="fill"/></button>)}
+        </div>
+        <div className="film-instrument__index" aria-label={`${places[active]} stories`}>
+          <p>SELECT A FILM WINDOW <span>Original motion studies</span></p>
+          {storyFilms.map((film, index) => <button type="button" key={film.id} onClick={() => chooseStory(index)} aria-label={`Open ${film.title} film window`} aria-pressed={storyOpen && storyIndex === index}><span>{String(index + 1).padStart(2, '0')}</span><strong>{film.title}</strong><small>{durationLabel(film.duration)}</small><Play size={13}/></button>)}
+          {!storyFilms.length && <p>No playable studies for this destination yet. Choose another signal.</p>}
+        </div>
+        {selectedStory && <section className={`film-instrument__panel${storyOpen ? ' is-open' : ''}`} inert={!storyOpen} aria-label={selectedStory.title}>
+          <div className="film-instrument__panel-top"><span>{places[active]} / {String(storyIndex + 1).padStart(2, '0')}</span><button ref={returnRef} type="button" onClick={returnToSculpture}>Return to bands <ArrowsInSimple size={15}/></button></div>
+          <div className="film-instrument__preview">
+            <video key={selectedStory.id} ref={previewRef} src={filmAsset(selectedStory.src!)} poster={filmAsset(selectedStory.poster)} loop muted playsInline preload="metadata" aria-label={`${selectedStory.title} silent preview`} onLoadedData={() => { instrumentSyncRef.current?.(); redrawRef.current?.(); }} onPlaying={() => { setPreviewPlaying(true); setPreviewIssue(''); }} onPause={() => setPreviewPlaying(false)} onWaiting={() => setPreviewPlaying(false)} onError={() => { setPreviewPlaying(false); setPreviewIssue('Preview could not load. Try again.'); }}/>
+            <button type="button" className="film-instrument__preview-control" onClick={() => { if (previewPlaying) setPreviewPaused(true); else { if (previewRef.current?.error) previewRef.current.load(); setPreviewPaused(false); setPreviewAttempt(value => value + 1); } }} aria-label={previewPlaying ? 'Pause sculpture preview' : 'Play sculpture preview'}>{previewPlaying ? <Pause size={14}/> : <Play size={14} weight="fill"/>}{previewPlaying ? 'Pause preview' : previewIssue ? 'Retry preview' : 'Play preview'}</button>
+            <span className="film-instrument__silent">Silent preview</span>
+          </div>
+          <div className="film-instrument__details"><span>{selectedStory.category} · {durationLabel(selectedStory.duration)}</span><h2>{selectedStory.title}</h2><p>{selectedStory.context || selectedStory.description}</p>{previewIssue && <p role="status">{previewIssue}</p>}<div className="film-instrument__actions"><button type="button" className="button button-primary" onClick={() => onWatch(selectedStory)}><Play size={16} weight="fill"/>Play film</button><SaveButton video={selectedStory}/><a href={href(`/film/${selectedStory.id}`)}>Story details</a></div></div>
+        </section>}
+      </>}
       <div className="culture-sculpture__interaction">
-        <p id={instructionId} className="culture-sculpture__instruction"><span />{fallback ? 'Select a destination to explore' : 'Drag to turn. Select a signal to explore.'}<span className="culture-sculpture__keyboard">Arrow keys turn · Enter unfolds · Space pulses</span></p>
+        <p id={instructionId} className="culture-sculpture__instruction"><span />{storiesMode ? 'Drag to turn. Open a numbered film window.' : fallback ? 'Select a destination to explore' : 'Drag to turn. Select a signal to explore.'}<span className="culture-sculpture__keyboard">Arrow keys turn · Enter unfolds · Space pulses</span></p>
         {!fallback && <div className="culture-sculpture__controls" role="group" aria-label="Sculpture controls">
           <button type="button" className="culture-sculpture__tool culture-sculpture__tool--unfold" onClick={unfold} aria-pressed={expanded} data-sound-owned="true">{expanded ? <ArrowsInSimple size={17}/> : <ArrowsOutSimple size={17}/>}<span>{expanded ? 'Reassemble' : 'Unfold'}</span></button>
           <button type="button" className="culture-sculpture__tool culture-sculpture__tool--pulse" aria-label="Resonate. Hold to charge, release to send a signal." data-sound-owned="true" onPointerDown={event => { if (event.button !== 0) return; event.currentTarget.setPointerCapture(event.pointerId); charge(); }} onPointerUp={event => { if (!pressureRef.current) return; lastPointerPulseRef.current = performance.now(); resonate(); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); }} onPointerCancel={cancelCharge} onKeyDown={event => { if (event.key === ' ' && !event.repeat) { keyChargeCanceledRef.current = false; charge(); } if (event.key === 'Escape') { keyChargeCanceledRef.current = true; cancelCharge(); } }} onKeyUp={event => { if (event.key === ' ' && keyChargeCanceledRef.current) { event.preventDefault(); keyChargeCanceledRef.current = false; } }} onClick={event => { if (event.detail === 0 || performance.now() - lastPointerPulseRef.current > 350) resonate(); }} onBlur={cancelCharge}><Waveform size={17}/><span>{charging ? 'Charging' : 'Resonate'}</span></button>

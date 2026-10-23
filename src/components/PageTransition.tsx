@@ -58,6 +58,7 @@ export default function PageTransition({path,reducedMotion}:{path:string;reduced
   const host=useRef<HTMLDivElement>(null);const previous=useRef(path);const scene=passageFor(path);
   useLayoutEffect(()=>{
     if(previous.current===path)return;previous.current=path;
+    if(document.documentElement.dataset.worldPortal)return;
     const overlay=host.current;const stage=document.querySelector('.route-stage');if(!overlay||!stage)return;
     let completed=false;
     const finish=()=>{completed=true;overlay.dataset.active='false';};

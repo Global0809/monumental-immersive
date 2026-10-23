@@ -168,3 +168,58 @@
   .culture-sculpture__point-name,
   .culture-sculpture__tool { transition: none; }
 }
+
+/* The film instrument lives on the existing sculpture. Its index is the
+   keyboard/touch equivalent of selecting a curved video surface. */
+.film-instrument__mode { position: absolute; top: 3%; left: 36%; z-index: 5; cursor: default; }
+.film-instrument__mode > button { display: flex; align-items: center; gap: 11px; min-height: 44px; padding: 0 15px; color: #efeee9; background: #0b0d0bf2; border: 1px solid #62665b; font-size: 11px; cursor: pointer; }
+.film-instrument__mode > button > span:last-child { margin-left: 15px; font-size: 20px; }
+.film-instrument__mode > button[aria-pressed=true] { border-color: #ff4d32; }
+.film-instrument__signal { width: 5px; height: 5px; border-radius: 50%; background: #ff4d32; }
+.film-instrument__mode p { margin: 8px 0; color: #d0d1c8; font-size: 10px; }
+.film-instrument__window-points { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+.film-instrument__window-point { position: absolute; left: 0; top: 0; transform: translate(calc(var(--window-x, -200px) - 25px), calc(var(--window-y, -200px) - 22px)); display: flex; align-items: center; justify-content: center; gap: 5px; width: 50px; height: 44px; border: 1px solid #efeee99c; background: #0a0b0be8; color: #efeee9; pointer-events: auto; cursor: pointer; font-size: 10px; font-variant-numeric: tabular-nums; }
+.film-instrument__window-point:hover, .film-instrument__window-point.is-selected { border-color: #ff4d32; color: #ff806b; }
+.film-instrument__index { position: absolute; bottom: 18%; right: 5%; width: min(380px, 62%); z-index: 4; cursor: default; background: #090b09e8; padding: 11px 14px; }
+.film-instrument__index > p { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px; margin: 0 0 9px; font-size: 8px; letter-spacing: .08em; color: #e1e2d9; }
+.film-instrument__index > p > span { letter-spacing: 0; color: #abaea3; }
+.film-instrument__index > button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; background: transparent; border: 0; border-top: 1px solid #ffffff25; color: #e9eae2; text-align: left; cursor: pointer; }
+.film-instrument__index > button > span { color: #ff806b; font-size: 9px; }
+.film-instrument__index strong { font: 400 11px/1.3 'DM Sans Variable', sans-serif; }
+.film-instrument__index small { margin-left: auto; white-space: nowrap; color: #b6b8ac; font-size: 9px; }
+.film-instrument__index > button:hover { color: #ff806b; }
+.is-story-open .film-instrument__index, .is-story-open .film-instrument__window-points { visibility: hidden; pointer-events: none; }
+.film-instrument__panel { position: absolute; top: 13%; right: 4%; width: min(420px, 66%); background: #10130f; color: #efeee9; z-index: 7; cursor: default; box-shadow: -14px 22px 64px #0009; visibility: hidden; opacity: 0; transform: translate(-20px, 24px) scale(.87); transform-origin: 20% 45%; transition: transform 480ms cubic-bezier(.16,1,.3,1), opacity 280ms ease, visibility 480ms; }
+.film-instrument__panel.is-open { visibility: visible; opacity: 1; transform: none; }
+.hero:has(.is-story-open) .hero-sculpture { z-index: 5; }
+.film-instrument__panel-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; min-height: 44px; border-bottom: 1px solid #ffffff24; }
+.film-instrument__panel-top > span { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: #d6d8ca; }
+.film-instrument__panel-top button { display: flex; align-items: center; gap: 8px; background: none; border: 0; color: #efeee9; font-size: 10px; cursor: pointer; min-height: 44px; padding: 0; }
+.film-instrument__preview { position: relative; aspect-ratio: 16/9; background: #070807; }
+.film-instrument__preview video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.film-instrument__preview-control { position: absolute; bottom: 10px; left: 10px; display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px; border: 1px solid #ffffff65; color: #efeee9; background: #080a08ec; cursor: pointer; font-size: 10px; }
+.film-instrument__silent { position: absolute; bottom: 18px; right: 10px; padding: 3px 5px; background: #080a08dc; color: #e4e6dc; font-size: 9px; }
+.film-instrument__details { padding: 14px 16px 18px; user-select: text; }
+.film-instrument__details > span { display: block; font-size: 10px; color: #ff806b; }
+.film-instrument__details h2 { margin: 5px 0 8px; font-family: var(--display); font-size: clamp(24px, 2.6vw, 37px); line-height: 1; font-weight: 500; text-transform: uppercase; }
+.film-instrument__details p { margin: 0; font-size: 10px; line-height: 1.55; color: #bdc1b2; }
+.film-instrument__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.film-instrument__actions .button { min-height: 40px; padding: 0 12px; font-size: 10px; gap: 7px; }
+.film-instrument__actions > a { font-size: 10px; text-decoration: underline; text-underline-offset: 4px; margin-left: auto; padding: 12px 0; }
+.film-instrument__mode button:focus-visible, .film-instrument__window-point:focus-visible, .film-instrument__index button:focus-visible, .film-instrument__panel button:focus-visible, .film-instrument__panel a:focus-visible { outline: 2px solid #ff806b; outline-offset: 3px; }
+.is-story-mode .culture-sculpture__points { opacity: .65; }
+.is-story-open .culture-sculpture__points { opacity: .25; }
+.has-fallback .film-instrument__window-points { display: none; }
+@media (max-width: 760px) {
+  .film-instrument__mode { top: 2%; left: 7%; }
+  .film-instrument__index { right: 6%; bottom: 20%; width: 68%; }
+  .film-instrument__panel { left: 50%; right: auto; top: 12%; width: min(390px, calc(100vw - 48px)); transform: translate(-50%, 18px) scale(.92); }
+  .film-instrument__panel.is-open { transform: translate(-50%, 0); }
+  .film-instrument__details h2 { font-size: 27px; }
+  .film-instrument__panel .film-instrument__preview { aspect-ratio: 2/1; }
+  .film-instrument__details { padding: 10px 14px 13px; }
+  .film-instrument__details p { font-size: 10px; }
+  .film-instrument__actions { margin-top: 10px; }
+  .is-story-open .culture-sculpture__interaction { visibility: hidden; }
+}
+@media (prefers-reduced-motion: reduce) { .film-instrument__panel { transition: none; transform: none; } }
