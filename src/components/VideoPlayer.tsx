@@ -495,6 +495,13 @@ export function VideoPlayer({
               if (value && Number.isFinite(value)) setDuration(value);
             }}
             onTimeUpdate={() => setPosition(media.current?.currentTime || 0)}
+            onSeeking={(event) => {
+              // Native controls, the scrubber and transcript links can all leave
+              // an ended film paused at an earlier frame. Retire its end screen
+              // and auto-continue countdown as soon as that seek begins.
+              if (event.currentTarget.currentTime < event.currentTarget.duration)
+                setState((current) => current === "ended" ? "ready" : current);
+            }}
             onPlay={() => {
               setPaused(false);
               setState("ready");

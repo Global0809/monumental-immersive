@@ -33,6 +33,8 @@ export default function CityExperience({ placeId, reducedMotion, onWatch, openRe
   const heading = useRef<HTMLHeadingElement>(null);
   const markers = useRef<(HTMLButtonElement | null)[]>([]);
   const controller = useRef<CitySceneController | null>(null);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   const handledRequest = useRef(0);
   const activeLocation = selected === null ? null : locations[selected];
   const film = activeLocation ? videos.find(video => video.id === activeLocation.videoId) : undefined;
@@ -74,7 +76,7 @@ export default function CityExperience({ placeId, reducedMotion, onWatch, openRe
         },
         onUnavailable: () => { if (!disposed) setUnavailable(true); },
       });
-      controller.current.select(selected, true);
+      controller.current.select(selectedRef.current, true);
       setReady(true);
     }).catch(() => { if (!disposed) setUnavailable(true); });
     return () => { disposed = true; controller.current?.dispose(); controller.current = null; };

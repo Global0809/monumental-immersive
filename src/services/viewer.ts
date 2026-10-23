@@ -23,6 +23,7 @@ export type ViewerState = {
 };
 
 const STORAGE_KEY = "monumental.viewer.v1";
+export const MAX_SAVED_JOURNEYS = 100;
 const listeners = new Set<() => void>();
 const defaults: ViewerState = {
   saved: [],
@@ -86,7 +87,7 @@ function validate(value: unknown): ViewerState {
           name: item.name.slice(0, 100),
           videoIds: strings(item.videoIds),
         }))
-        .slice(0, 100)
+        .slice(0, MAX_SAVED_JOURNEYS)
     : [];
   const moments: SavedMoment[] = [];
   const momentIds = new Set<string>();
@@ -150,10 +151,19 @@ export function updateViewer(
   update: Partial<ViewerState> | ((state: ViewerState) => Partial<ViewerState>),
 ): ViewerState {
   const before = getViewer();
+  const changes = typeof update === "function" ? update(before) : update;
   current = validate({
     ...before,
-    ...(typeof update === "function" ? update(before) : update),
+    ...changes,
   });
+  // Unchanged collections are already validated. Keep their identities so a
+  // progress or sound update does not rebuild collection-dependent 3D scenes.
+  if (!Object.hasOwn(changes, "saved")) current.saved = before.saved;
+  if (!Object.hasOwn(changes, "savedPlaces")) current.savedPlaces = before.savedPlaces;
+  if (!Object.hasOwn(changes, "interests")) current.interests = before.interests;
+  if (!Object.hasOwn(changes, "journeys")) current.journeys = before.journeys;
+  if (!Object.hasOwn(changes, "moments")) current.moments = before.moments;
+  if (!Object.hasOwn(changes, "history")) current.history = before.history;
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
     storageAvailable = true;
@@ -228,7 +238,8 @@ export function saveProgress(
   }));
 }
 
-export function createJourney(name: string, videoIds: string[]): Journey {
+export function createJourney(name: string, videoIds: string[]): Journey | null {
+  if (getViewer().journeys.length >= MAX_SAVED_JOURNEYS) return null;
   const journey: Journey = {
     id:
       typeof crypto !== "undefined" && crypto.randomUUID

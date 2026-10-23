@@ -20,8 +20,9 @@ import { gsap } from "gsap";
 import { places, periods, videos, type Video } from "../data/catalogue";
 import { durationLabel } from "../services/discovery";
 import { go, href } from "../services/router";
-import { createJourney, togglePlace, toggleSaved, useViewer } from "../services/viewer";
+import { createJourney, MAX_SAVED_JOURNEYS, togglePlace, toggleSaved, useViewer } from "../services/viewer";
 import { playSound, type SoundType } from "../services/audio";
+import { notify } from "../services/feedback";
 import "./explore.css";
 import { selectDestination } from "../services/exploration";
 
@@ -213,7 +214,7 @@ export function TimeMachinePage({ params, reducedMotion, onWatch }: ExploreProps
     </section>
     <section className="ex-results ex-era-results">
       <div className="ex-era-introduction ex-reactive"><div><span className="ex-kicker">{period.id === "now" ? "CONTEMPORARY CULTURE" : `AN OPEN WINDOW TO THE ${period.label.toUpperCase()}`}</span><h2>{current.title}</h2></div><p>{period.description}</p></div>
-      <div className="ex-chapter-actions" data-sound-owned><span>{durationLabel(playable.reduce((sum, video) => sum + video.duration, 0))} OF PLAYABLE CULTURE</span><div><button disabled={!playable.length || capsuleSaved} onClick={() => { createJourney(capsuleName, playable.map(video => video.id)); playSound("save"); }}>{capsuleSaved ? <Check size={17} /> : <BookmarkSimple size={17} />}{capsuleSaved ? "Time capsule saved" : "Save a time capsule"}</button><button aria-expanded={Boolean(comparePeriod)} onClick={() => updateRoute("/time-machine", params, { compare: comparePeriod ? "" : periods[(index + 1) % periods.length].id })}><ArrowsLeftRight size={18} />{comparePeriod ? "Close comparison" : "Compare another era"}</button></div></div>
+      <div className="ex-chapter-actions" data-sound-owned><span>{durationLabel(playable.reduce((sum, video) => sum + video.duration, 0))} OF PLAYABLE CULTURE</span><div><button disabled={!playable.length || capsuleSaved} onClick={() => { const created = createJourney(capsuleName, playable.map(video => video.id)); if (!created) { notify(`You have ${MAX_SAVED_JOURNEYS} saved journeys. Remove one in My World, then save again.`); return; } playSound("save"); }}>{capsuleSaved ? <Check size={17} /> : <BookmarkSimple size={17} />}{capsuleSaved ? "Time capsule saved" : "Save a time capsule"}</button><button aria-expanded={Boolean(comparePeriod)} onClick={() => updateRoute("/time-machine", params, { compare: comparePeriod ? "" : periods[(index + 1) % periods.length].id })}><ArrowsLeftRight size={18} />{comparePeriod ? "Close comparison" : "Compare another era"}</button></div></div>
       {comparePeriod && <EraComparison current={period.id} comparison={comparePeriod.id} category={category} place={place?.id} onChange={value => updateRoute("/time-machine", params, { compare: value }, "era")} onClose={() => updateRoute("/time-machine", params, { compare: "" })} onWatch={onWatch} />}
       <div className="ex-time-filters"><ChannelFilter value={category} onChange={value => updateRoute("/time-machine", params, { category: value === "All" ? "" : value })} /><label className="ex-place-filter">DESTINATION<select aria-label="Filter eras by destination" value={place?.id || ""} onChange={event => updateRoute("/time-machine", params, { place: event.target.value })}><option value="">Everywhere</option>{places.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
       <div className="ex-results-count" aria-live="polite">{items.length} {items.length === 1 ? "story" : "stories"} in this chapter{place ? ` · ${place.name}` : ""}</div>

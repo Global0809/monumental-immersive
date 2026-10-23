@@ -14,7 +14,7 @@ import { Shuffle } from '@phosphor-icons/react/dist/csr/Shuffle';
 import { X } from '@phosphor-icons/react/dist/csr/X';
 import { places, type Video } from '../data/catalogue';
 import { buildJourney, durationLabel } from '../services/discovery';
-import { createJourney } from '../services/viewer';
+import { createJourney, MAX_SAVED_JOURNEYS } from '../services/viewer';
 import { playSound } from '../services/audio';
 import { notify } from '../services/feedback';
 import { href } from '../services/router';
@@ -25,6 +25,7 @@ const moods = ['Music', 'Culture', 'Fashion', 'Film', 'Art & Design', 'Food'];
 export default function JourneyWorkbench({ onPlayJourney }: { onPlayJourney: (videos: Video[], name: string) => void }) {
   const [mood, setMood] = useState('Music');
   const [minutes, setMinutes] = useState(5);
+  const [journeyMinutes, setJourneyMinutes] = useState(5);
   const [place, setPlace] = useState('miami');
   const [journey, setJourney] = useState<Video[]>([]);
   const [name, setName] = useState('');
@@ -44,6 +45,7 @@ export default function JourneyWorkbench({ onPlayJourney }: { onPlayJourney: (vi
     const nextPlace = surprise ? places[Math.floor(Math.random() * places.length)].id : place;
     if (surprise) { setMood(nextMood); setPlace(nextPlace); }
     setJourney(buildJourney(nextMood, minutes, nextPlace));
+    setJourneyMinutes(minutes);
     setName(`${nextMood} from ${places.find(p => p.id === nextPlace)?.name}`);
     setSaved(false); setGenerated(true); setEmptied(false); setActive(0); playSound('destination');
   }
@@ -70,13 +72,13 @@ export default function JourneyWorkbench({ onPlayJourney }: { onPlayJourney: (vi
     {!generated && <div className="journey-invitation" aria-hidden="true"><span>ONE FILM</span><div className="journey-invitation-thread"/><span>LEADS TO ANOTHER.</span></div>}
     {generated && journey.length === 0 && <div className="empty-inline"><h2>{emptied ? 'Your journey is empty.' : 'No films fit this time yet.'}</h2><p>{emptied ? 'You’ve removed every stop. Find a new route when you’re ready.' : 'Choose a longer duration to build your journey.'}</p>{emptied && <button className="button button-outline" data-sound-owned onClick={() => generate()}>Find another journey <ArrowUpRight/></button>}</div>}
     {journey.length > 0 && <div className="journey-results">
-      <div className="journey-manifest-heading"><div><span className="journey-manifest-label">YOUR CULTURAL ITINERARY</span><h2>{durationLabel(total).toUpperCase()}.<br/><span>{journey.length} DIFFERENT PERSPECTIVES.</span></h2></div><div><span>{journeyPlaces.length} connected places</span><div className="journey-duration-track" aria-label={`${Math.round(total)} seconds of ${minutes * 60} seconds available`}><i style={{ scale: `${Math.min(total / (minutes * 60),1)} 1` }}/></div><small>Fits within your {minutes} {minutes === 1 ? 'minute' : 'minutes'}</small></div></div>
+      <div className="journey-manifest-heading"><div><span className="journey-manifest-label">YOUR CULTURAL ITINERARY</span><h2>{durationLabel(total).toUpperCase()}.<br/><span>{journey.length} DIFFERENT PERSPECTIVES.</span></h2></div><div><span>{journeyPlaces.length} connected places</span><div className="journey-duration-track" aria-label={`${Math.round(total)} seconds of ${journeyMinutes * 60} seconds available`}><i style={{ scale: `${Math.min(total / (journeyMinutes * 60),1)} 1` }}/></div><small>Built for {journeyMinutes} {journeyMinutes === 1 ? 'minute' : 'minutes'}</small></div></div>
       {journeyPlaces.length > 0 && <div className="journey-place-thread" aria-label="Places in this journey">{journeyPlaces.map((p,i) => <a key={p.id} href={href('/world',{place:p.id})}><img src={p.image} alt=""/><span>{p.name}</span>{i < journeyPlaces.length-1 && <ArrowUpRight/>}</a>)}</div>}
       <div className="journey-edit-bar"><label>Give your journey a name<input aria-label="Journey name" value={name} maxLength={80} onChange={e => { setName(e.target.value); setSaved(false); }}/></label><span>Drag to reorder, or use the arrows.</span></div>
       <ol className="journey-stops">{journey.map((video,i) => <li className={`journey-stop ${active === i ? 'is-active' : ''} ${dragging === i ? 'is-dragging' : ''}`} key={video.id} draggable onDragStart={e => { dragFrom.current = i; setDragging(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain',video.id); }} onDragEnd={() => { dragFrom.current = null; setDragging(null); }} onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }} onDrop={e => { e.preventDefault(); if (dragFrom.current !== null) move(dragFrom.current,i); dragFrom.current = null; setDragging(null); }} onPointerEnter={() => setActive(i)} onFocusCapture={() => setActive(i)}>
         <span className="journey-stop-number">{String(i + 1).padStart(2,'0')}</span><span className="journey-drag-icon" aria-hidden="true"><DotsSixVertical size={20}/></span><a className="journey-stop-picture" aria-label={`Details: ${video.title}`} href={href('/film/' + video.id)} draggable={false}><img src={video.poster} alt="" draggable={false}/></a><div className="journey-stop-info"><small>{video.category} / {durationLabel(video.duration)}</small><a href={href('/film/' + video.id)}>{video.title}</a><span>{video.places.map(id => places.find(p => p.id === id)?.name).join(' → ') || 'Independent cinema'}</span></div><div className="journey-reorder"><button data-sound-owned disabled={i === 0} aria-label={`Move ${video.title} up`} onClick={() => move(i,i-1)}><ArrowUp size={17}/></button><button data-sound-owned disabled={i === journey.length - 1} aria-label={`Move ${video.title} down`} onClick={() => move(i,i+1)}><ArrowDown size={17}/></button></div><button className="journey-remove" aria-label={`Remove ${video.title} from journey`} onClick={() => { if(journey.length === 1) setEmptied(true); setJourney(items => items.filter(v => v.id !== video.id)); setSaved(false); }}><X size={17}/></button>
       </li>)}</ol>
-      <div className="journey-departure"><button className="button button-primary" onClick={() => onPlayJourney(journey,name.trim() || 'My cultural journey')}><Play weight="fill"/> Play entire journey</button><button data-sound-owned className="button button-outline" disabled={saved} onClick={() => { createJourney(name,journey.map(v => v.id)); setSaved(true); playSound('save'); notify('Journey saved to My World'); }}>{saved ? <Check/> : <Plus/>}{saved ? 'Saved to My World' : 'Save journey'}</button><span>Free films. Your chosen order.<br/>You can pause or skip any stop.</span></div>
+      <div className="journey-departure"><button className="button button-primary" onClick={() => onPlayJourney(journey,name.trim() || 'My cultural journey')}><Play weight="fill"/> Play entire journey</button><button data-sound-owned className="button button-outline" disabled={saved} onClick={() => { const created = createJourney(name,journey.map(v => v.id)); if (!created) { notify(`You have ${MAX_SAVED_JOURNEYS} saved journeys. Remove one in My World, then save again.`); return; } setSaved(true); playSound('save'); notify('Journey saved to My World'); }}>{saved ? <Check/> : <Plus/>}{saved ? 'Saved to My World' : 'Save journey'}</button><span>Free films. Your chosen order.<br/>You can pause or skip any stop.</span></div>
     </div>}
   </section>;
 }

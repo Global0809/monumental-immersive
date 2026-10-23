@@ -19,3 +19,11 @@
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}html[data-motion=reduced] *,html[data-motion=reduced] *:before,html[data-motion=reduced] *:after{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
 a,button,input,select,summary{scroll-margin-block:100px}
 .passport-stamps{min-width:0;grid-template-columns:repeat(3,minmax(0,1fr))}.passport-stamp{min-width:0}@media(max-width:1200px){.passport-stamps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Let the mobile sculpture follow the actual copy height, including larger text. */
+@media(max-width:760px){
+  .hero{display:flex;flex-direction:column;min-height:0}
+  .hero-copy{order:1}
+  .hero-sculpture{order:2;position:relative;top:auto;left:auto;width:calc(100% + 40px);height:480px;flex:none;margin:24px -20px 0}
+  .hero-bottom{order:3;position:relative;left:auto;right:auto;bottom:auto;margin:12px 0 25px}
+}

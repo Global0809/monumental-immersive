@@ -51,10 +51,14 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
   function leave() { input.active = false; pointerTarget = null; schedule(); }
   function focus(event: FocusEvent) {
     const element = event.target as HTMLElement;
-    if (!element.matches(':focus-visible') || !allowed(element)) return;
+    if (!element.matches(':focus-visible') || !allowed(element)) {
+      if (keyboard) { keyboard = false; leave(); }
+      return;
+    }
     const rect = element.getBoundingClientRect(); keyboard = true; pointerTarget = element;
     input.x = rect.left + rect.width / 2; input.y = rect.top + rect.height / 2; input.active = true; schedule();
   }
+  function blur() { if (keyboard) { keyboard = false; leave(); } }
   function scroll() {
     input.velocity = Math.max(-40, Math.min(40, scrollY - lastScroll));
     lastScroll = scrollY; input.scroll = scrollY; dirty = true; schedule();
@@ -147,7 +151,15 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
     const interval = fine && (input.active || scan > .02) ? 1000 / 40 : 1000 / 20;
     if (now - last < interval) { schedule(); return; }
     const dt = Math.min(.06, (now - last) / 1000 || .025); last = now; time += dt;
-    if (!keyboard && pointerTarget) { pointerTarget = document.elementFromPoint(input.x, input.y); input.active = allowed(pointerTarget); }
+    if (keyboard) {
+      if (pointerTarget !== document.activeElement || !pointerTarget?.isConnected || !pointerTarget.matches(':focus-visible') || !allowed(pointerTarget)) {
+        keyboard = false; pointerTarget = null; input.active = false;
+      } else {
+        // A focused control can move with scrolling or a scene projection.
+        const rect = pointerTarget.getBoundingClientRect();
+        input.x = rect.left + rect.width / 2; input.y = rect.top + rect.height / 2; input.active = true;
+      }
+    } else if (pointerTarget) { pointerTarget = document.elementFromPoint(input.x, input.y); input.active = allowed(pointerTarget); }
     const forbidden = !!document.querySelector('dialog[open],[popover]:popover-open');
     if (forbidden) input.active = false;
     x += (input.x - x) * .34; y += (input.y - y) * .34;
@@ -214,13 +226,13 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
   resize();
   window.addEventListener('resize', resize); window.addEventListener('scroll', scroll, { passive: true });
   document.addEventListener('pointermove', move, { passive: true }); document.addEventListener('pointerleave', leave);
-  document.addEventListener('focusin', focus); document.addEventListener('visibilitychange', visibility); window.addEventListener('monumental:playback', playback);
+  document.addEventListener('focusin', focus); document.addEventListener('focusout', blur); document.addEventListener('visibilitychange', visibility); window.addEventListener('monumental:playback', playback);
   return () => {
     disposed = true; cancelAnimationFrame(frame); mutation.disconnect(); observer.disconnect();
     fieldCanvas.width = 0; fieldCanvas.height = 0;
     window.removeEventListener('resize', resize); window.removeEventListener('scroll', scroll);
     document.removeEventListener('pointermove', move); document.removeEventListener('pointerleave', leave);
-    document.removeEventListener('focusin', focus); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('monumental:playback', playback);
+    document.removeEventListener('focusin', focus); document.removeEventListener('focusout', blur); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('monumental:playback', playback);
     input.active = false; ctx.clearRect(0, 0, width, height);
   };
 }
