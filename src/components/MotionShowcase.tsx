@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { playSound } from '../services/audio';
 import './motion-showcase.css';
@@ -26,21 +26,46 @@ const selections: Record<string,number[]> = { '/':[8,0,1,16,17], '/world':[0,5,1
 const asset = (name:string) => `${import.meta.env.BASE_URL}motion/${name}`;
 export default function MotionShowcase({ path, reducedMotion }: { path:string; reducedMotion:boolean }) {
  const selectedFilms = path === '/motion' ? films : (selections[path] || (path.includes('wavemakers') ? [16] : path.startsWith('/film/') ? [15,3] : path.startsWith('/category/') ? [6,3] : [])).map(i=>films[i]);
- const [selected,setSelected]=useState(0); const [paused,setPaused]=useState(reducedMotion); const [visible,setVisible]=useState(false); const [blocked,setBlocked]=useState(false); const [active,setActive]=useState(false); const [failed,setFailed]=useState(false);
- const host=useRef<HTMLElement>(null);const media=useRef<HTMLVideoElement>(null);const progress=useRef<HTMLSpanElement>(null);
+ const [selected,setSelected]=useState(0); const [paused,setPaused]=useState(reducedMotion); const [visible,setVisible]=useState(false); const [blocked,setBlocked]=useState(false); const [active,setActive]=useState(false); const [failed,setFailed]=useState(false); const [needsPlay,setNeedsPlay]=useState(false);
+ const host=useRef<HTMLElement>(null);const stage=useRef<HTMLDivElement>(null);const media=useRef<HTMLVideoElement>(null);const progress=useRef<HTMLSpanElement>(null);const playAttempt=useRef(0);
  const film=selectedFilms[selected] || selectedFilms[0];
+ const filmId=film?.[0];
+ const requestPlayback=useCallback((v:HTMLVideoElement)=>{
+  const attempt=++playAttempt.current;
+  v.muted=true;v.defaultMuted=true;
+  if(!v.getAttribute('src'))v.src=asset(filmId+'.mp4');
+  void v.play().catch((error:unknown)=>{
+   // An old clip or an offscreen pause can abort play; neither is a user pause.
+   if(attempt!==playAttempt.current || media.current!==v || !v.isConnected)return;
+   const name=error instanceof Error?error.name:'';
+   if(name==='AbortError')return;
+   if(name==='NotSupportedError')setFailed(true);
+   else setNeedsPlay(true);
+  });
+ },[filmId]);
  useEffect(()=>{if(reducedMotion)setPaused(true);},[reducedMotion]);
- useEffect(()=>{const el=host.current;if(!el)return;const observer=new IntersectionObserver(([entry])=>setVisible(entry.isIntersecting),{threshold:.15});observer.observe(el);const visibility=()=>setBlocked(document.hidden || Boolean(document.querySelector('.ms-player-dialog[open]')));const playback=(e:Event)=>setBlocked(document.hidden || (e as CustomEvent).detail.active);document.addEventListener('visibilitychange',visibility);window.addEventListener('monumental:playback',playback);visibility();return()=>{observer.disconnect();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('monumental:playback',playback);};},[]);
- useEffect(()=>{setFailed(false);setActive(false);if(progress.current)progress.current.style.transform='scaleX(0)';},[selected]);
- useEffect(()=>{const v=media.current;if(!v||!film)return;if(visible&&!paused&&!blocked&&!failed){if(!v.getAttribute('src'))v.src=asset(film[0]+'.mp4');void v.play().catch(()=>setPaused(true));}else v.pause();return()=>{v.pause();if(!v.isConnected){v.removeAttribute("src");v.load();}};},[visible,paused,blocked,selected,failed,film]);
+ useEffect(()=>{const el=stage.current;if(!el)return;const observer=new IntersectionObserver(([entry])=>setVisible(entry.isIntersecting && entry.intersectionRatio>=.1),{threshold:[0,.1]});observer.observe(el);const visibility=()=>setBlocked(document.hidden || Boolean(document.querySelector('.ms-player-dialog[open]')));const playback=(e:Event)=>setBlocked(document.hidden || (e as CustomEvent).detail.active);document.addEventListener('visibilitychange',visibility);window.addEventListener('monumental:playback',playback);visibility();return()=>{observer.disconnect();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('monumental:playback',playback);};},[]);
+ useEffect(()=>{setFailed(false);setNeedsPlay(false);setActive(false);if(progress.current)progress.current.style.transform='scaleX(0)';},[filmId]);
+ useEffect(()=>{
+  const v=media.current;if(!v||!filmId)return;
+  if(visible&&!paused&&!blocked&&!failed&&!needsPlay)requestPlayback(v);
+  else v.pause();
+  return()=>{++playAttempt.current;v.pause();if(!v.isConnected){v.removeAttribute('src');v.load();}};
+ },[visible,paused,blocked,failed,needsPlay,filmId,requestPlayback]);
  useEffect(()=>{if(reducedMotion||!visible)return;const ctx=gsap.context(()=>gsap.fromTo('.motion-caption',{y:12,opacity:.2},{y:0,opacity:1,duration:.45,ease:'power3.out'}),host);return()=>ctx.revert();},[selected,reducedMotion,visible]);
  const Heading = path === "/motion" ? "h1" : "h2";
  if(!film)return null;
- function choose(index:number){setSelected((index+selectedFilms.length)%selectedFilms.length);playSound('select');}
+ function startPreview(){
+  const v=media.current;
+  setPaused(false);setNeedsPlay(false);setFailed(false);
+  if(v&&!blocked){if(failed){v.removeAttribute('src');v.load();}requestPlayback(v);}
+ }
+ function choose(index:number){const next=(index+selectedFilms.length)%selectedFilms.length;if(next===selected)startPreview();else{setPaused(false);setNeedsPlay(false);setFailed(false);setSelected(next);}playSound('select');}
+ const showPlay=paused||needsPlay||failed;
  return <section ref={host} className={'motion-showcase page-section'+(path==='/motion'?' motion-showcase--full':'')} aria-label="Experience in motion">
  <header className="motion-heading"><div><span className="eyebrow">MONUMENTAL / IN MOTION</span><Heading>{path==='/motion'?'A WORLD OF':'SEE WHAT'}<br/><em>{path==='/motion'?'POSSIBILITIES.':'MOVES US.'}</em></Heading></div><p>Explore the ideas behind the experience.<br/>Motion concepts. Real possibilities.</p>{path!=='/motion'&&<a href="#/motion" className="text-link">Explore all 18 films ↗</a>}</header>
- <div className="motion-layout"><div className="motion-screen"><div className="motion-stage" data-cursor="WATCH"><video ref={media} key={film[0]} poster={asset(film[0]+'.jpg')} muted loop playsInline preload="none" aria-label={film[1]+' motion concept'} onPlay={()=>setActive(true)} onPause={()=>setActive(false)} onError={()=>{setFailed(true);setActive(false);}} onTimeUpdate={e=>{const v=e.currentTarget;if(progress.current&&v.duration)progress.current.style.transform=`scaleX(${v.currentTime/v.duration})`;}}/><div className="motion-status"><i className={active?'is-playing':''}/>{active?'IN MOTION':'STILL FRAME'}<span>08 SEC / LOOP</span></div><div className="motion-progress"><span ref={progress}/></div></div>
+ <div className="motion-layout"><div className="motion-screen"><div ref={stage} className="motion-stage" data-cursor="WATCH"><video ref={media} key={film[0]} poster={asset(film[0]+'.jpg')} muted loop playsInline preload="none" aria-label={film[1]+' motion concept'} onPlaying={e=>{if(e.currentTarget===media.current){setActive(true);setNeedsPlay(false);}}} onPause={e=>{if(e.currentTarget===media.current)setActive(false);}} onWaiting={()=>setActive(false)} onError={e=>{if(e.currentTarget===media.current){setFailed(true);setActive(false);}}} onTimeUpdate={e=>{const v=e.currentTarget;if(progress.current&&v.duration)progress.current.style.transform=`scaleX(${v.currentTime/v.duration})`;}}/><div className="motion-status"><i className={active?'is-playing':''}/>{active?'IN MOTION':failed?'PREVIEW UNAVAILABLE':showPlay?'PRESS PLAY':blocked||!visible?'PREVIEW READY':'LOADING MOTION'}<span>08 SEC / LOOP</span></div>{showPlay&&!blocked&&<button className="motion-stage-play" data-sound-owned aria-label={(failed?'Retry ':'Play ')+film[1]+' preview'} onClick={()=>{startPreview();playSound('select');}}><span aria-hidden="true">{failed?'↻':'▶'}</span><strong>{failed?'Retry preview':'Play preview'}</strong><small>{reducedMotion?'Motion is optional · Play this film':'8-second motion loop'}</small></button>}<div className="motion-progress"><span ref={progress}/></div></div>
  <div className="motion-caption"><div><span className="motion-number">{String(selected+1).padStart(2,'0')} / {String(selectedFilms.length).padStart(2,'0')}</span><h3>{film[1]}</h3><p>{film[2]}</p></div><a className="text-link" href={'#'+film[3]}>Explore this idea ↗</a></div>
- <div className="motion-controls" data-sound-owned>{selectedFilms.length>1&&<button onClick={()=>choose(selected-1)} aria-label="Previous motion film">←</button>}<button className="motion-play" aria-label={failed?'Retry motion preview':paused?'Play motion preview':'Pause motion preview'} aria-pressed={!paused} onClick={()=>{if(failed){setFailed(false);media.current?.removeAttribute('src');setPaused(false);}else setPaused(v=>!v);playSound('select');}}>{failed?'↻ Retry loop':paused?'▶ Play loop':'Ⅱ Pause loop'}</button>{selectedFilms.length>1&&<button onClick={()=>choose(selected+1)} aria-label="Next motion film">→</button>}<span>{failed?'Preview unavailable. Try Play again.':'Concept film · Silent preview'}</span></div></div>
+ <div className="motion-controls" data-sound-owned>{selectedFilms.length>1&&<button onClick={()=>choose(selected-1)} aria-label="Previous motion film">←</button>}<button className="motion-play" aria-label={failed?'Retry motion preview':showPlay?'Play motion preview':'Pause motion preview'} aria-pressed={!showPlay} onClick={()=>{if(showPlay)startPreview();else setPaused(true);playSound('select');}}>{failed?'↻ Retry loop':showPlay?'▶ Play loop':'Ⅱ Pause loop'}</button>{selectedFilms.length>1&&<button onClick={()=>choose(selected+1)} aria-label="Next motion film">→</button>}<span>{failed?'Preview unavailable. Try Play again.':'Concept film · Silent preview'}</span></div></div>
  {selectedFilms.length>1&&<div className="motion-index" aria-label="Choose a motion film">{selectedFilms.map((f,i)=><button key={f[0]} aria-pressed={selected===i} onClick={()=>choose(i)} data-sound-owned><span>{String(i+1).padStart(2,'0')}</span><img src={asset(f[0]+'.jpg')} loading="lazy" alt=""/><strong>{f[1]}</strong><span aria-hidden="true">↗</span></button>)}</div>}</div><p className="motion-note">Visual concepts supplied for this preview. Some scenes illustrate future experiences; available features are accessible through “Explore this idea”.</p></section>;
 }
