@@ -35,8 +35,6 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     const palettes: Record<ErosionTheme, Palette> = {
       black: { surface: black, ink: text, muted: token('--muted', '#a9aaa6'), accent: red, line: '#ffffff40' },
       charcoal: { surface: token('--surface', '#111212'), ink: text, muted: '#a9aaa6', accent: red, line: '#ffffff40' },
-      paper: { surface: token('--paper', '#e8e8e1'), ink, muted: '#444640', accent: '#a52c19', line: '#0b0c0b50' },
-      warm: { surface: text, ink, muted: '#444640', accent: '#a52c19', line: '#0b0c0b50' },
       red: { surface: red, ink, muted: '#27211e', accent: ink, line: '#0b0c0b70' },
     };
     let width = innerWidth, height = innerHeight, chapters: MeasuredChapter[] = [];
@@ -161,7 +159,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         markedInk.delete(el);
       });
       nextInk.forEach(el => markedInk.add(el));
-      rules = Array.from(root!.querySelectorAll<HTMLElement>('section,.results-line,.tab-row,.category-index>a,.film-meta,.notebook-entry,.world-stats'))
+      rules = Array.from(root!.querySelectorAll<HTMLElement>('section,.results-line,.tab-row,.category-index>a,.film-meta,.notebook-entry,.world-stats,.empty-inline,.passport-counter'))
         .filter(el => !el.closest(erosionProtected));
       rules.forEach(el => { el.dataset.erosionRule = ''; markedRule.add(el); });
       needsScan = false;
@@ -348,7 +346,11 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         style(element, '--erosion-current-ink', at(rect.left + rect.width / 2, rect.top + rect.height / 2)[role]);
       });
       field!.dataset.mixedInks = String(mixedCount);
-      visibleRules.forEach(({ element, rect }) => style(element, '--erosion-rule', at(rect.left + rect.width / 2, rect.top).line));
+      visibleRules.forEach(({ element, rect }) => {
+        style(element, '--erosion-rule', at(rect.left + rect.width / 2, rect.top).line);
+        // These two small editorial icons have no text node to inherit paint from.
+        if (element.matches('.empty-inline,.passport-counter')) style(element, '--erosion-icon', at(rect.left + 22, rect.top + 22).ink);
+      });
       if (current && !reducedMotion && performance.now() < alignmentUntil) schedule();
     }
 
@@ -400,7 +402,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       markedInk.forEach(el => { delete el.dataset.erosionInk; delete el.dataset.erosionFragment; delete el.dataset.erosionSplit; el.style.removeProperty('--erosion-ink-position'); el.style.removeProperty('--erosion-local-paint-size'); el.style.removeProperty('--erosion-current-ink'); el.style.removeProperty('--erosion-fragment-paint'); el.style.removeProperty('--erosion-local-paint'); });
       markedProtect.forEach(el => delete el.dataset.erosionProtect);
       markedCarriers.forEach(el => delete el.dataset.erosionCarrier);
-      markedRule.forEach(el => { delete el.dataset.erosionRule; el.style.removeProperty('--erosion-rule'); });
+      markedRule.forEach(el => { delete el.dataset.erosionRule; el.style.removeProperty('--erosion-rule'); el.style.removeProperty('--erosion-icon'); });
       ['--erosion-paint-size','--erosion-ink-paint','--erosion-muted-paint','--erosion-accent-paint','--erosion-ink-solid','--erosion-muted-solid','--erosion-accent-solid','--erosion-line-solid'].forEach(p => root.style.removeProperty(p));
       delete root.dataset.erosionPaint;
       delete doc.dataset.erosion; delete doc.dataset.erosionTheme; delete doc.dataset.erosionActive;

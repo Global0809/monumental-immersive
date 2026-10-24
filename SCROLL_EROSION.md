@@ -1,6 +1,6 @@
 # Scroll erosion
 
-Monumental uses one shared, scroll-controlled SVG surface to reveal black, warm off-white, paper and signal-red chapters. The system preserves native scrolling and the existing React content, media players and Three.js scenes.
+Monumental uses one shared, scroll-controlled SVG surface to reveal black and brand-orange chapters. The orange reuses `--accent` (`#ff4d32`, internally named `red`). Off-white remains a foreground color on dark surfaces, never a revealed chapter background. Orange surfaces use dark ink, warm dark secondary text, dark rules and outlined orange actions. The system preserves native scrolling and the existing React content, media players and Three.js scenes.
 
 ## Files and responsibilities
 
@@ -31,7 +31,7 @@ Whole-title inline links inherit their heading's paint, preserving ordinary link
 Add or adjust an entry returned by `erosionChapters(path)`. Its selector identifies existing content rather than a spacer or pinned scene.
 
 ```ts
-chapter('.story-context', 'warm', 'story-context', {
+chapter('.story-context', 'red', 'story-context', {
   start: 0.88,
   end: -0.1,
   macroAmplitude: 0.15,
@@ -39,7 +39,7 @@ chapter('.story-context', 'warm', 'story-context', {
 })
 ```
 
-`start` and `end` describe the section top's position in viewport heights. The example develops over approximately 98% of a viewport's scroll distance. Available parameters also include `fromTheme`, `toTheme`, `seed`, `direction`, `edgeSoftness` and `enabled`. Omitted `fromTheme` follows the preceding accepted chapter. Theme names are `black`, `charcoal`, `paper`, `warm` and `red`.
+`start` and `end` describe the section top's position in viewport heights. The example develops over approximately 98% of a viewport's scroll distance. Available parameters also include `fromTheme`, `toTheme`, `seed`, `direction`, `edgeSoftness` and `enabled`. Omitted `fromTheme` follows the preceding accepted chapter. Theme names are `black`, `charcoal` and `red`. Home's category chapter and My World's field notes return to black between orange chapters to preserve distinct section changes.
 
 Measurements sort anchors in document order, separate neighboring transitions, and skip transitions with less than 55% of a viewport's usable scroll distance. This keeps short pages short. Dynamic Journey results, filtered collections and optional sections participate when their real layout supports them. Existing Motion sections provide a later chapter on other routes. Footer transitions may be omitted when insufficient scroll distance remains.
 

@@ -1,5 +1,5 @@
 /* Shared paint sits behind the document, never in front of films or controls. */
-:root{--surface:#111212;--paper:#e8e8e1;--ink:#0b0c0b}
+:root{--surface:#111212;--ink:#0b0c0b}
 .erosion-field{position:fixed;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;contain:strict;visibility:hidden}
 html[data-erosion=ready] .erosion-field{visibility:visible}
 html[data-erosion=ready] main{position:relative;z-index:1}
@@ -31,7 +31,7 @@ html[data-erosion=ready] [data-erosion-carrier]>a{background-image:none!importan
 html[data-erosion=ready] [data-erosion-paint=solid] [data-erosion-ink]{background-image:none!important;color:var(--erosion-ink-solid)!important;-webkit-text-fill-color:currentColor!important}
 html[data-erosion=ready] [data-erosion-paint=solid] [data-erosion-ink=muted]{color:var(--erosion-muted-solid)!important}
 html[data-erosion=ready] [data-erosion-paint=solid] [data-erosion-ink=accent]{color:var(--erosion-accent-solid)!important}
-html[data-erosion=ready] [data-erosion-ink]::selection{background:var(--accent);color:var(--ink);-webkit-text-fill-color:var(--ink)}
+html[data-erosion=ready] [data-erosion-ink]::selection{background:var(--ink);color:var(--accent);-webkit-text-fill-color:var(--accent)}
 html[data-erosion=ready] [data-erosion-rule]{border-color:var(--erosion-rule,var(--line))}
 html[data-erosion=ready] [data-erosion-paint=solid] [data-erosion-rule]{border-color:var(--erosion-line-solid)}
 html[data-erosion=ready] .route-stage :focus-visible{outline:2px solid var(--text);outline-offset:4px;box-shadow:0 0 0 7px var(--ink)}
@@ -41,7 +41,11 @@ html[data-erosion=ready] :is(.hero,.ex-world-room,.ex-world-tools,.ex-destinatio
 html[data-erosion=ready] :is(.journey-builder,.journey-stop,.journey-edit-bar,.search-field,.active-filters,.notebook-editor){background-color:var(--bg);color:var(--text)}
 html[data-erosion=ready] :is(.button-outline,button[data-erosion-protect]:not([aria-pressed=true]):not(.toggle):not(.button-primary):not(.button-light)){background-color:var(--bg);color:var(--text)}
 html[data-erosion=ready] :is(.button-primary,.button-light){-webkit-text-fill-color:initial}
+/* Orange actions retain a readable silhouette on the revealed orange surface. */
+html[data-erosion=ready] .button-primary{border-color:var(--ink)}
+html[data-erosion=ready] .tab-row button[aria-selected=true]{box-shadow:inset 0 -2px 0 var(--accent)}
+html[data-erosion=ready] :is(.empty-inline,.passport-counter)>svg{color:var(--erosion-icon,var(--text))}
 html[data-erosion=ready] [data-erosion-protect] [data-erosion-ink]{background-image:none!important;-webkit-text-fill-color:initial!important}
 html[data-erosion-active=true] .reactive-world{opacity:.28}
-html[data-erosion-theme=paper] .reactive-world,html[data-erosion-theme=warm] .reactive-world,html[data-erosion-theme=red] .reactive-world{opacity:.16}
+html[data-erosion-theme=red] .reactive-world{opacity:.16}
 @media(forced-colors:active){.erosion-field{display:none!important}html[data-erosion=ready] [data-erosion-ink]{background:none!important;color:CanvasText!important;-webkit-text-fill-color:CanvasText!important}}
