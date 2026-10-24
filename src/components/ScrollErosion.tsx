@@ -1,15 +1,17 @@
 import { useLayoutEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { buildErosionContour, prepareErosionContour } from '../services/erosionContour';
-import { createFrameCadence } from '../services/frameCadence';
+import { buildTransitionContour, transitionExtent } from '../services/transitionContours';
+import type { ErosionContour } from '../services/erosionContour';
+import { transitionAnchor } from '../services/transitionLayout';
+import { useTransitionPreference } from '../services/transitionPreferences';
 import { erosionChapters, erosionProtected, type ErosionChapter, type ErosionTheme } from '../services/erosionChapters';
 import './scroll-erosion.css';
 
 gsap.registerPlugin(ScrollTrigger);
 type Palette = { surface: string; ink: string; muted: string; accent: string; line: string };
 type PaintableElement = HTMLElement | SVGElement;
-type MeasuredChapter = ErosionChapter & { element: HTMLElement; top: number; fromTheme: ErosionTheme; startY: number; endY: number };
+type MeasuredChapter = ErosionChapter & { element: HTMLElement; top: number; anchor: number; fromTheme: ErosionTheme; startY: number; endY: number };
 type Ink = {
   element: HTMLElement; role: 'ink' | 'muted' | 'accent'; layoutWidth: number; layoutHeight: number; fragmented: boolean;
   inlineParent?: { element: HTMLElement; width: number; height: number }; inlineRtl?: boolean;
@@ -17,14 +19,14 @@ type Ink = {
   paintCache?: { key: string; image: string };
 };
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
-const scrollDistanceScale = 2;
 const paintSelector = 'h1,h2,h3,h4,p,span,small,strong,em,a,label,summary,dt,dd,li,div';
 
 /** One noninteractive compositor, shared by every route. No application/media clones. */
 export default function ScrollErosion({ path, reducedMotion }: { path: string; reducedMotion: boolean }) {
   const svg = useRef<SVGSVGElement>(null);
   const base = useRef<SVGRectElement>(null);
-  const reveal = useRef<SVGPathElement>(null);
+  const reveal = useRef<SVGGElement>(null);
+  const { variant } = useTransitionPreference();
   useLayoutEffect(() => {
     const root = document.querySelector<HTMLElement>('.route-stage');
     const field = svg.current;
@@ -43,11 +45,8 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     let inks: Ink[] = [], protectedNodes: HTMLElement[] = [], rules: PaintableElement[] = [];
     let frame = 0, refreshFrame = 0, disposed = false, needsScan = true, lastKey = '';
     let alignmentUntil = 0, contourKey = '';
-    const cadence = createFrameCadence();
-    let contourCache: ReturnType<typeof buildErosionContour> | null = null;
-    let idlePreflight = 0, preflightSignature = '';
-    let preflightQueue: { key: string; chapter: MeasuredChapter; width: number; height: number }[] = [];
-    const preparedFields = new Set<string>();
+    type Layer = { chapter: MeasuredChapter; contour: ErosionContour; palette: Palette };
+    let contourCache: Layer[] = [];
     let playingFilm = document.body.classList.contains('monumental-player-active');
     const markedInk = new Set<HTMLElement>(), markedProtect = new Set<HTMLElement>();
     const markedRule = new Set<PaintableElement>();
@@ -71,43 +70,6 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     const context = gsap.context(() => {}, root);
     const config = erosionChapters(path);
 
-    const materialKey = (chapter: MeasuredChapter) => JSON.stringify([width, height, chapter.seed, chapter.macroAmplitude ?? .15, chapter.detailAmount ?? 1]);
-    function rememberPrepared(key: string) {
-      if (preparedFields.has(key)) return;
-      preparedFields.add(key);
-      if (preparedFields.size > 4) preparedFields.delete(preparedFields.values().next().value!);
-    }
-    function cancelPreflight() {
-      if (idlePreflight) window.cancelIdleCallback(idlePreflight);
-      idlePreflight = 0; preflightQueue = []; preflightSignature = '';
-    }
-    function runPreflight() {
-      if (idlePreflight || !preflightQueue.length) return;
-      idlePreflight = window.requestIdleCallback(deadline => {
-        idlePreflight = 0;
-        if (disposed || document.hidden || playingFilm || reducedMotion) { cancelPreflight(); return; }
-        // Optional work must never be forced into a busy animation/input frame.
-        // If no useful idle window exists, ordinary first-demand rendering wins.
-        if (deadline.timeRemaining() < 35) { preflightQueue = []; return; }
-        let next = preflightQueue.shift();
-        while (next && preparedFields.has(next.key)) next = preflightQueue.shift();
-        if (next) {
-          prepareErosionContour({ ...next.chapter, width: next.width, height: next.height, progress: 0 });
-          rememberPrepared(next.key);
-        }
-        // At most one field per idle callback, at most two nearby fields queued.
-        runPreflight();
-      });
-    }
-    function queuePreflight() {
-      if (reducedMotion || disposed || document.hidden || playingFilm || typeof window.requestIdleCallback !== 'function') return;
-      const nearby = chapters.filter(chapter => chapter.endY > scrollY && chapter.startY <= scrollY + height * 2.5).slice(0, 2);
-      const signature = nearby.map(materialKey).join('|');
-      if (signature === preflightSignature) return;
-      cancelPreflight(); preflightSignature = signature;
-      preflightQueue = nearby.map(chapter => ({ key: materialKey(chapter), chapter, width, height })).filter(item => !preparedFields.has(item.key));
-      runPreflight();
-    }
     function schedule() {
       if (!frame && !disposed && !document.hidden && !playingFilm) frame = requestAnimationFrame(draw);
     }
@@ -123,7 +85,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     }
     function refresh() {
       if (disposed || refreshFrame || playingFilm || document.hidden) return;
-      cancelPreflight();
+
       refreshFrame = requestAnimationFrame(() => { refreshFrame = 0; measure(); trackAlignment(); });
     }
     function scan() {
@@ -168,7 +130,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       needsScan = false;
     }
     function measure() {
-      cancelPreflight();
+
       width = innerWidth; height = innerHeight;
       if (needsScan) scan();
       // Preserve subpixel layout sizes; offsetWidth rounds narrow kinetic letters.
@@ -209,33 +171,30 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         for (let parent = el; parent; parent = parent.offsetParent as HTMLElement | null) top += parent.offsetTop;
         return el && el.getBoundingClientRect().height > 0 ? [{ ...c, element: el, top }] : [];
       }).sort((a,b) => a.top - b.top);
-      let previousTheme: ErosionTheme = 'black', previousEnd = -Infinity;
+      let previousTheme: ErosionTheme = 'black', previousAnchor = -Infinity;
+      const extent = transitionExtent(width, height);
       chapters = [];
       for (const c of candidates) {
         if (c.toTheme === previousTheme) continue;
-        const desiredStart = c.top - height * (c.start ?? 1.02);
-        const startY = Math.max(0, desiredStart, previousEnd + height * .12);
-        const originalEnd = Math.max(c.top - height * (c.end ?? .08), startY + height * .7);
-        // Keep the entry point, but travel through the same contour over twice the scroll.
-        const endY = Math.min(max, startY + (originalEnd - startY) * scrollDistanceScale);
-        // Preserve real page height; omit cramped trailing wipes instead of speeding them up.
-        if (endY - startY < height * .55 * scrollDistanceScale) continue;
-        chapters.push({ ...c, fromTheme: c.fromTheme ?? previousTheme, startY, endY });
-        previousEnd = endY; previousTheme = c.toTheme;
+        const position = transitionAnchor(c.top, height, extent, max, previousAnchor);
+        if (!position) continue;
+        chapters.push({ ...c, fromTheme: previousTheme, ...position });
+        previousAnchor = position.anchor; previousTheme = c.toTheme;
       }
       field!.setAttribute('viewBox', `0 0 ${width} ${height}`);
       root!.style.setProperty('--erosion-paint-size', `${width}px ${height}px`);
       field!.dataset.chapters = String(chapters.length);
-      field!.dataset.ranges = JSON.stringify(chapters.map(c => ({ seed: c.seed, start: Math.round(c.startY), end: Math.round(c.endY), from: c.fromTheme, to: c.toTheme })));
+      field!.dataset.ranges = JSON.stringify(chapters.map(c => ({ seed: c.seed, start: Math.round(c.startY), end: Math.round(c.endY), anchor: c.anchor, from: c.fromTheme, to: c.toTheme })));
       lastKey = '';
-      queuePreflight();
+      contourKey = '';
+
     }
-    function localPaint(item: Ink, rect: DOMRect, d: string, from: string, to: string, key: string) {
-      const paintKey = `${key}:${from}:${to}:${rect.left}:${rect.top}:${rect.width}:${rect.height}`;
+    function localPaint(item: Ink, rect: DOMRect, paint: string, key: string) {
+      const paintKey = `${key}:${item.role}:${rect.left}:${rect.top}:${rect.width}:${rect.height}`;
       if (item.paintCache?.key === paintKey) return item.paintCache.image;
       // Rasterize only the letters crossing the frontier, at their local size.
       // No inherited full-viewport bitmap changes across the entire document.
-      const image = `<svg xmlns="http://www.w3.org/2000/svg" width="${rect.width}" height="${rect.height}" viewBox="${rect.left} ${rect.top} ${rect.width} ${rect.height}" preserveAspectRatio="none"><path fill="${from}" d="M${rect.left} ${rect.top}h${rect.width}v${rect.height}h${-rect.width}Z"/><path fill="${to}" fill-rule="evenodd" d="${d}"/></svg>`;
+      const image = `<svg xmlns="http://www.w3.org/2000/svg" width="${rect.width}" height="${rect.height}" viewBox="${rect.left} ${rect.top} ${rect.width} ${rect.height}" preserveAspectRatio="none">${paint}</svg>`;
       const value = `url("data:image/svg+xml,${encodeURIComponent(image)}")`;
       item.paintCache = { key: paintKey, image: value };
       return value;
@@ -243,11 +202,11 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     function style(element: PaintableElement, property: string, value: string) {
       if (element.style.getPropertyValue(property) !== value) element.style.setProperty(property, value);
     }
-    function fragmentedPaint(item: Ink, fragments: DOMRect[], parentRect: DOMRect | undefined, d: string, from: string, to: string, contourKey: string) {
+    function fragmentedPaint(item: Ink, fragments: DOMRect[], parentRect: DOMRect | undefined, paint: string, contourKey: string) {
       const safeScale = (scale: number) => Number.isFinite(scale) && scale > .05 ? scale : 1;
       const sx = safeScale(parentRect && item.inlineParent ? parentRect.width / item.inlineParent.width : 1);
       const sy = safeScale(parentRect && item.inlineParent ? parentRect.height / item.inlineParent.height : 1);
-      const key = [contourKey, from, to, sx, sy, item.inlineRtl, ...fragments.flatMap(rect => [rect.left, rect.top, rect.width, rect.height])].join(':');
+      const key = [contourKey, item.role, sx, sy, item.inlineRtl, ...fragments.flatMap(rect => [rect.left, rect.top, rect.width, rect.height])].join(':');
       if (item.fragmentCache?.key === key) return item.fragmentCache;
       const stripWidth = fragments.reduce((sum, rect) => sum + rect.width / sx, 0);
       const stripHeight = Math.max(...fragments.map(rect => rect.height / sy));
@@ -261,56 +220,81 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         if (!item.inlineRtl) cursor += localWidth;
         return window;
       }).join('');
-      const image = `<svg xmlns="http://www.w3.org/2000/svg" width="${stripWidth}" height="${stripHeight}" viewBox="0 0 ${stripWidth} ${stripHeight}"><defs><g id="field"><path fill="${from}" d="M0 0H${width}V${height}H0Z"/><path fill="${to}" fill-rule="evenodd" d="${d}"/></g></defs>${windows}</svg>`;
+      const image = `<svg xmlns="http://www.w3.org/2000/svg" width="${stripWidth}" height="${stripHeight}" viewBox="0 0 ${stripWidth} ${stripHeight}"><defs><g id="field">${paint}</g></defs>${windows}</svg>`;
       item.fragmentCache = { key, image: `url("data:image/svg+xml,${encodeURIComponent(image)}")`, width: stripWidth, height: stripHeight };
       return item.fragmentCache;
     }
-    function draw(now = performance.now()) {
+    function draw() {
       frame = 0;
       if (disposed || document.hidden || playingFilm) return;
-      if (!cadence.ready(now)) { schedule(); return; }
       const y = scrollY;
-      let current: MeasuredChapter | undefined;
+      const activeChapters: MeasuredChapter[] = [];
       let settled: ErosionTheme = 'black';
       for (const chapter of chapters) {
         if (y >= chapter.endY) settled = chapter.toTheme;
-        else if (y >= chapter.startY) { current = chapter; break; }
+        else if (y >= chapter.startY) activeChapters.push(chapter);
         else break;
       }
+      const current = activeChapters[0];
       const progress = current ? clamp((y - current.startY) / (current.endY - current.startY)) : 1;
-      const from = palettes[current?.fromTheme ?? settled], to = palettes[current?.toTheme ?? settled];
-      const straightY = current ? Math.max(0, Math.min(height, current.top - y)) : 0;
-      const key = `${current?.seed ?? settled}:${progress}:${width}:${height}:${reducedMotion}`;
-      queuePreflight();
+      const basePalette = palettes[settled];
+      const key = `${variant}:${settled}:${activeChapters.map(c => `${c.seed}@${c.anchor}`).join(',')}:${current ? y : ''}:${width}:${height}:${reducedMotion}`;
       if (!current && key === lastKey) return;
       if (key !== contourKey) {
-        contourCache = current && !reducedMotion ? buildErosionContour({ width, height, progress, seed: current.seed, direction: current.direction, macroAmplitude: current.macroAmplitude, detailAmount: current.detailAmount, edgeSoftness: current.edgeSoftness }) : null;
-        if (contourCache && current && progress > 0 && progress < 1) rememberPrepared(materialKey(current));
+        contourCache = activeChapters.map(chapter => {
+          const frontY = chapter.anchor - y;
+          const straight: ErosionContour = {
+            path: frontY >= height ? '' : `M0 ${Math.max(0, frontY)}H${width}V${height}H0Z`,
+            incomingAt: (_x, pointY) => pointY >= frontY,
+            classifyRect: (_l, t, _r, b) => b < frontY ? 'from' : t > frontY ? 'to' : 'mixed',
+            frontierAt: () => frontY, pointCount: 4, edgeSoftness: 0,
+          };
+          return { chapter, palette: palettes[chapter.toTheme], contour: reducedMotion ? straight : buildTransitionContour({ width, height, frontY, seed: chapter.seed, variant }) };
+        });
         contourKey = key;
       }
-      const contour = contourCache;
-      const d = contour?.path ?? (current && reducedMotion ? `M0 ${straightY}H${width}V${height}H0Z` : `M0 0H${width}V${height}H0Z`);
-      const at = (x: number, pointY: number) => (contour ? contour.incomingAt(x, pointY) : pointY >= straightY) ? to : from;
+      const layers = contourCache;
+      const at = (x: number, pointY: number) => {
+        let palette = basePalette;
+        for (const layer of layers) if (layer.contour.incomingAt(x, pointY)) palette = layer.palette;
+        return palette;
+      };
+      const paintCache = new Map<Ink['role'], string>();
+      const paintFor = (role: Ink['role']) => {
+        if (!paintCache.has(role)) paintCache.set(role, `<path fill="${basePalette[role]}" d="M0 0H${width}V${height}H0Z"/>` + layers.map(layer => `<path fill="${layer.palette[role]}" fill-rule="evenodd" d="${layer.contour.path}"/>`).join(''));
+        return paintCache.get(role)!;
+      };
       // Batch geometry reads before style writes. Offscreen copy receives paint on entry.
       const visibleInk = Array.from(visibleInks).flatMap(item => {
         if (!item.element.isConnected) return [];
         const rect = item.element.getBoundingClientRect();
         if (rect.bottom < -60 || rect.top > height + 60 || !rect.width) return [];
         // Read every wrapped-line rectangle before changing any paint style.
-        const region = !current ? 'to' : contour ? contour.classifyRect(rect.left - 1, rect.top - 1, rect.right + 1, rect.bottom + 1) : rect.bottom < straightY ? 'from' : rect.top > straightY ? 'to' : 'mixed';
+        let region: 'solid' | 'mixed' = 'solid', palette = basePalette;
+        for (const layer of layers) {
+          const part = layer.contour.classifyRect(rect.left - 1, rect.top - 1, rect.right + 1, rect.bottom + 1);
+          if (part === 'to') { region = 'solid'; palette = layer.palette; }
+          else if (part === 'mixed') region = 'mixed';
+        }
         const fragments = region === 'mixed' && item.fragmented ? Array.from(item.element.getClientRects()).filter(fragment => fragment.width > 0 && fragment.height > 0) : [];
         const parentRect = region === 'mixed' ? item.inlineParent?.element.getBoundingClientRect() : undefined;
-        return [{ ...item, item, rect, fragments, parentRect, region }];
+        return [{ ...item, item, rect, fragments, parentRect, region, palette }];
       });
       const visibleRules = rules.map(element => ({ element, rect: element.getBoundingClientRect() })).filter(({rect}) => rect.bottom >= 0 && rect.top <= height);
       if (key !== lastKey) {
-        base.current!.setAttribute('fill', from.surface);
-        reveal.current!.setAttribute('fill', to.surface);
-        reveal.current!.setAttribute('d', d);
-        (['ink','muted','accent'] as const).forEach(role => style(root!, `--erosion-${role}-solid`, to[role]));
+        base.current!.setAttribute('fill', basePalette.surface);
+        // Nearby chapter edges coexist in document order rather than resetting
+        // one viewport mask when a new chapter starts. Text uses this same stack.
+        while (reveal.current!.children.length > layers.length) reveal.current!.lastElementChild!.remove();
+        layers.forEach((layer, index) => {
+          let node = reveal.current!.children[index] as SVGPathElement | undefined;
+          if (!node) { node = document.createElementNS('http://www.w3.org/2000/svg', 'path'); node.setAttribute('fill-rule','evenodd'); reveal.current!.appendChild(node); }
+          node.setAttribute('fill', layer.palette.surface); node.setAttribute('d', layer.contour.path);
+        });
+        (['ink','muted','accent'] as const).forEach(role => style(root!, `--erosion-${role}-solid`, basePalette[role]));
         const paintState = current ? 'split' : 'solid';
         if (root!.dataset.erosionPaint !== paintState) root!.dataset.erosionPaint = paintState;
-        style(root!, '--erosion-line-solid', to.line);
+        style(root!, '--erosion-line-solid', basePalette.line);
         const theme = current?.toTheme ?? settled, active = current ? 'true' : 'false';
         if (doc.dataset.erosionTheme !== theme) doc.dataset.erosionTheme = theme;
         if (doc.dataset.erosionActive !== active) doc.dataset.erosionActive = active;
@@ -318,17 +302,20 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         field!.dataset.seed = current?.seed ?? 'settled';
         field!.dataset.from = current?.fromTheme ?? settled;
         field!.dataset.to = current?.toTheme ?? settled;
+        field!.dataset.variant = variant;
+        field!.dataset.front = current ? String(current.anchor - y) : '';
+        field!.dataset.layers = String(layers.length);
         lastKey = key;
       }
       let mixedCount = 0;
-      visibleInk.forEach(({ item, element, rect, role, layoutWidth, layoutHeight, fragmented, fragments, parentRect, region }) => {
+      visibleInk.forEach(({ item, element, rect, role, layoutWidth, layoutHeight, fragmented, fragments, parentRect, region, palette }) => {
         if (region !== 'mixed') {
           if (element.hasAttribute('data-erosion-split')) {
             delete element.dataset.erosionSplit;
             element.style.removeProperty('--erosion-local-paint'); element.style.removeProperty('--erosion-fragment-paint');
             item.paintCache = undefined; item.fragmentCache = undefined;
           }
-          style(element, '--erosion-current-ink', (region === 'from' ? from : to)[role]);
+          style(element, '--erosion-current-ink', palette[role]);
           return;
         }
         mixedCount++;
@@ -340,11 +327,11 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         const sx = Number.isFinite(scaleX) && scaleX > .05 ? scaleX : 1;
         const sy = Number.isFinite(scaleY) && scaleY > .05 ? scaleY : 1;
         if (current && fragmented && fragments.length > 1) {
-          const strip = fragmentedPaint(item, fragments, parentRect, d, from[role], to[role], key);
+          const strip = fragmentedPaint(item, fragments, parentRect, paintFor(role), key);
           style(element, '--erosion-local-paint', strip.image);
           style(element, '--erosion-local-paint-size', `${strip.width}px ${strip.height}px`);
         } else {
-          style(element, '--erosion-local-paint', localPaint(item, rect, d, from[role], to[role], key));
+          style(element, '--erosion-local-paint', localPaint(item, rect, paintFor(role), key));
           style(element, '--erosion-local-paint-size', `${rect.width / sx}px ${rect.height / sy}px`);
         }
         // currentColor also gives icons, underlines, and focus decorations suitable contrast.
@@ -383,11 +370,11 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     window.addEventListener('monumental:typography-settled', schedule);
     const visibility = () => {
       if (!document.hidden) refresh();
-      else { cancelAnimationFrame(frame); frame = 0; cancelAnimationFrame(refreshFrame); refreshFrame = 0; alignmentUntil = 0; cancelPreflight(); }
+      else { cancelAnimationFrame(frame); frame = 0; cancelAnimationFrame(refreshFrame); refreshFrame = 0; alignmentUntil = 0; }
     };
     const playback = (event: Event) => {
       playingFilm = Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active);
-      if (playingFilm) { cancelAnimationFrame(frame); frame = 0; cancelAnimationFrame(refreshFrame); refreshFrame = 0; alignmentUntil = 0; cancelPreflight(); }
+      if (playingFilm) { cancelAnimationFrame(frame); frame = 0; cancelAnimationFrame(refreshFrame); refreshFrame = 0; alignmentUntil = 0; }
       else refresh();
     };
     document.addEventListener('visibilitychange', visibility);
@@ -396,7 +383,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     refresh();
     return () => {
       disposed = true; cancelAnimationFrame(frame); cancelAnimationFrame(refreshFrame);
-      cancelPreflight();
+
       mutation.disconnect(); passageObserver.disconnect(); resize.disconnect(); inkObserver.disconnect(); context.revert();
       root.removeEventListener('load', refresh, true);
       window.removeEventListener('scroll', trackAlignment); window.removeEventListener('resize', refresh);
@@ -413,6 +400,6 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       delete root.dataset.erosionPaint;
       delete doc.dataset.erosion; delete doc.dataset.erosionTheme; delete doc.dataset.erosionActive;
     };
-  }, [path, reducedMotion]);
-  return <svg ref={svg} className="erosion-field" aria-hidden="true" focusable="false" preserveAspectRatio="none"><rect ref={base} width="100%" height="100%"/><path ref={reveal} fillRule="evenodd"/></svg>;
+  }, [path, reducedMotion, variant]);
+  return <svg ref={svg} className="erosion-field" aria-hidden="true" focusable="false" preserveAspectRatio="none"><rect ref={base} width="100%" height="100%"/><g ref={reveal}/></svg>;
 }
