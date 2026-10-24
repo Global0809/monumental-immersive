@@ -51,7 +51,7 @@ export const erosionProtected = [
   '.ex-connection-link', '.film-image', '.ex-story-image', '.ex-location-photo',
   '.motion-stage', '.motion-index', '.motion-controls', '.passport-card', '.passport-detail',
   '.notebook-play', '.notebook-editor', '.sound-studio', '.journey-builder', '.journey-edit-bar',
-  '.journey-stop', '.search-field', '.browse-filters', '.filter-row', '.active-filters',
+  '.journey-stop', '.search-field', '.browse-filters', '.filter-row', '.ex-channel-filter', '.active-filters',
   '.catalogue-tools', '.frequency-tuner', '.settings-list > div', '.membership-grid > div',
   'button', 'input', 'textarea', 'select', '.button', '[contenteditable]',
   'video', 'img', 'canvas', 'iframe', 'dialog', '[popover]',

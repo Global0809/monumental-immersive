@@ -36,23 +36,25 @@ test('the contour has broad asymmetric variation, bounded detail and clean offsc
   assert.notEqual(middle.frontierAt(200), middle.frontierAt(options.width - 200));
 });
 
-test('scroll progression translates one coherent contour and direction mirrors the reveal', () => {
+test('a fixed material erodes monotonically with scroll and direction mirrors occupancy', () => {
   const earlier = buildErosionContour({ ...options, progress: 0.4 });
   const later = buildErosionContour({ ...options, progress: 0.6 });
   const down = buildErosionContour({ ...options, direction: 'down' });
   const up = buildErosionContour(options);
-  const displacement = later.frontierAt(0) - earlier.frontierAt(0);
-  assert.ok(displacement < 0);
   for (const x of [0, 37, 500, 1120, 1440]) {
-    assert.ok(Math.abs(later.frontierAt(x) - earlier.frontierAt(x) - displacement) < 1e-8);
+    assert.ok(later.frontierAt(x) < earlier.frontierAt(x));
     assert.equal(down.frontierAt(x), options.height - up.frontierAt(x));
+  }
+  for (let x = 0; x < options.width; x += 13) for (let y = 0; y < options.height; y += 11) {
+    if (earlier.incomingAt(x, y)) assert.ok(later.incomingAt(x, y));
+    assert.equal(up.incomingAt(x, y), down.incomingAt(x, options.height - y));
   }
 });
 
 test('mobile and wide masks bound SVG complexity and malformed options remain finite', () => {
   for (const width of [390, 760, 1440, 4096, 32768]) {
     const contour = buildErosionContour({ ...options, width });
-    assert.ok(contour.pointCount <= (width <= 760 ? 260 : 500));
+    assert.ok(contour.pointCount <= (width <= 760 ? 800 : 1600));
     assert.doesNotMatch(contour.path, /NaN|Infinity|undefined/);
   }
   for (const value of [NaN, Infinity, -Infinity, -10, 0]) {
@@ -64,6 +66,21 @@ test('mobile and wide masks bound SVG complexity and malformed options remain fi
     assert.ok(Number.isFinite(contour.frontierAt(value)));
     assert.ok(contour.edgeSoftness >= 0.25 && contour.edgeSoftness <= 1.5);
   }
+});
+
+test('the material produces genuine reentrant contours rather than a translated wave', () => {
+  const contour = buildErosionContour({ width: 900, height: 700, progress: .5, seed: 'go-somewhere', detailAmount: 1.2, macroAmplitude: .18 });
+  let reentrant = false;
+  for (let x = 3; x < 900 && !reentrant; x += 3) {
+    let entered = false;
+    for (let y = 150; y < 550; y += 1) {
+      const incoming = contour.incomingAt(x, y);
+      if (entered && !incoming) { reentrant = true; break; }
+      entered ||= incoming;
+    }
+  }
+  assert.ok(reentrant, 'A vertical slice should encounter a real curl or cavity');
+  assert.match(contour.path, /Q/, 'The connected frontier uses continuous curves');
 });
 
 test('zero detail and zero amplitude produce a plain frontier without hidden islands', () => {

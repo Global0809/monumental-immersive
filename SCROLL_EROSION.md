@@ -6,7 +6,7 @@ Monumental uses one shared, scroll-controlled SVG surface to reveal black, warm 
 
 - `src/components/ScrollErosion.tsx` owns route measurements, active chapter selection, palette paint, foreground coordination and cleanup.
 - `src/components/scroll-erosion.css` connects existing opaque section surfaces to the shared field, paints editorial text, and preserves protected interface islands.
-- `src/services/erosionContour.ts` generates the seeded contour and sparse nearby holes or fragments. It caches a bounded number of profiles.
+- `src/services/erosionContour.ts` samples a seeded two-dimensional material and traces its changing contour. It caches at most four bounded fields.
 - `src/services/erosionChapters.ts` maps existing route sections to palette changes and declares protected surfaces.
 - `src/App.tsx` mounts the controller once alongside the existing shared visual layers.
 - `tests/erosion-contour.test.ts` checks geometry, reversibility, exact endpoints and bounded complexity.
@@ -17,7 +17,13 @@ The fixed SVG sits behind the page content and cannot receive pointer events. Ex
 
 The contour is reused as SVG background paint clipped to actual editorial glyphs. This allows one line of text to have two coordinated foreground colors while the frontier crosses it. There is no second React application, text-content clone, screenshot texture or color filter over footage. Solid chapters use ordinary solid text and rule colors, avoiding unnecessary geometry work while scrolling through a settled treatment.
 
-The geometry combines stable low-frequency shape variation, smaller contour detail, asymmetric strokes and a small bounded set of edge islands. Scroll changes translate that seeded profile; elapsed time does not reshape it. At progress zero the incoming mask is empty; at progress one it is a solid viewport rectangle. SVG supplies the crisp antialiased edge. `edgeSoftness` is retained as bounded renderer metadata; this SVG implementation does not blur the boundary.
+The geometry combines a broad asymmetric progression field with domain-warped two-dimensional lobes, tears and elongated fine fibers. Scrolling changes a threshold through that fixed material. Marching squares traces connected regions, including actual overhangs, cavities and narrow necks; they are not manually placed circular holes beside a wave. Quadratic paths remove sampling corners while preserving fine torn details. A pixel that is revealed remains revealed as progress increases. Reversing to the same progress recovers the same material state, and elapsed time never reshapes it.
+
+Rows outside the active frontier skip full contour processing. Nearby materials may be prepared during a bounded browser idle window, one field per callback. At progress zero the incoming mask is empty; at progress one it is a solid viewport rectangle. SVG supplies the crisp antialiased edge. `edgeSoftness` is retained as bounded renderer metadata; this SVG implementation does not blur the boundary.
+
+Text alignment continues briefly while the existing entrance, hover and scroll animations settle. During this bounded alignment pass, contour geometry and encoded paint remain cached at the actual scroll position. Mask coordinates compensate for axis-aligned text scaling, and background-position transitions are disabled so color cannot lag behind the letters. Icons and rules sample the same two-dimensional material, including its cavities.
+
+Whole-title inline links inherit their heading's paint, preserving ordinary link wrapping. A wrapped inline emphasis span uses a cached SVG strip: each native line fragment samples the same viewport field at its own rectangle. Its existing ink, muted or accent role stays intact. Typography completion events request one final alignment pass after the existing kinetic text settles. No text or interactive DOM is cloned.
 
 ## Configure an existing chapter
 
@@ -52,7 +58,7 @@ Both the site's motion preference and the device preference feed the existing `r
 
 ## Verification
 
-Automated geometry checks cover stable seeds after reversal, different seed output, clean endpoints, asymmetric broad variation, monotonic scroll translation, mirrored direction, bounded mobile and desktop path complexity, finite malformed inputs, and zero-detail behavior.
+Automated geometry checks cover stable seeds after reversal, different seed output, clean endpoints, asymmetric broad variation, monotonic material occupancy, mirrored direction, actual reentrant contours, bounded mobile and desktop path complexity, finite malformed inputs, and zero-detail behavior.
 
 Geometry tests do not establish visual fidelity, actual browser compositing or device performance. Release verification should inspect 0%, 25%, 50%, 75% and 100% progress; slow and fast scrolling; repeated reversals; restored route positions; dynamic content; mobile layouts; reduced motion; and the unchanged film/globe/sculpture controls. Full-width protected photography can conceal part of a frontier, so inspect the visible transition into Home's portal section directly. Browser evidence and reference-comparison results belong to the release check rather than being inferred from these unit tests.
 
@@ -66,3 +72,11 @@ Geometry tests do not establish visual fidelity, actual browser compositing or d
 - All 39 automated tests passed, including six contour tests. Evidence is saved locally under `.impeccable/review/erosion/` (not part of the published site).
 
 These checks used the Chromium in-app browser and emulated mobile dimensions; physical iOS/Android device performance has not been measured.
+
+### Fluid contour refinement — 24 October 2026
+
+- Replaced the translated height profile with a fixed two-dimensional material field, tuned against `Screen Recording 2026-10-23 202648.mp4`.
+- Rechecked Home at five progress positions, exact path recovery after reversal, and stationary contour stability. Rechecked all 20 routes for field ownership, horizontal overflow and media protection.
+- Inspected wrapped destination titles, animated title alignment, the selected collection filter, and mobile multiline emphasis. Verified the 390px World midpoint and reduced-motion fallback.
+- Evidence for this refinement is saved under `.impeccable/review/erosion-fluid/`. The seven contour tests include reentrant geometry and monotonic reveal checks.
+- All 40 automated tests passed. The production typecheck/build passed, and the final browser check captured no console errors.

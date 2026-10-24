@@ -7,17 +7,24 @@ html[data-erosion=ready] .site-footer{position:relative;z-index:1}
 html[data-erosion=ready] :is(.discovery-section,.portal-section,.ex-page,.motion-showcase){background:transparent}
 /* Paint the actual glyphs from the same field; no duplicated semantic text or UI. */
 html[data-erosion=ready] [data-erosion-ink]{
+  --erosion-fragment-paint:initial;
   color:var(--erosion-current-ink)!important;
-  background-image:var(--erosion-ink-paint)!important;
-  background-size:var(--erosion-paint-size)!important;
+  background-image:var(--erosion-fragment-paint,var(--erosion-ink-paint))!important;
+  background-size:var(--erosion-local-paint-size,var(--erosion-paint-size))!important;
   background-position:var(--erosion-ink-position,0 0)!important;
   background-origin:border-box!important;
   background-repeat:no-repeat!important;
   background-clip:text!important;-webkit-background-clip:text!important;
   -webkit-text-fill-color:transparent!important;
+  /* Hover styles may transition the background shorthand. Mask coordinates must
+     stay exact; only the authored physical movement/decoration may interpolate. */
+  transition-property:opacity,transform,translate,scale,rotate,text-decoration-color,border-color!important;
 }
-html[data-erosion=ready] [data-erosion-ink=muted]{background-image:var(--erosion-muted-paint)!important}
-html[data-erosion=ready] [data-erosion-ink=accent]{background-image:var(--erosion-accent-paint)!important}
+html[data-erosion=ready] [data-erosion-ink=muted]{background-image:var(--erosion-fragment-paint,var(--erosion-muted-paint))!important}
+html[data-erosion=ready] [data-erosion-ink=accent]{background-image:var(--erosion-fragment-paint,var(--erosion-accent-paint))!important}
+html[data-erosion=ready] [data-erosion-fragment]{box-decoration-break:slice!important;-webkit-box-decoration-break:slice!important}
+/* A heading paints a sole inline title link across all of its wrapped lines. */
+html[data-erosion=ready] [data-erosion-carrier]>a{background-image:none!important;color:inherit!important;-webkit-text-fill-color:inherit!important}
 html[data-erosion=ready] [data-erosion-paint=solid] [data-erosion-ink]{background-image:none!important;color:var(--erosion-ink-solid)!important;-webkit-text-fill-color:currentColor!important}
 html[data-erosion=ready] [data-erosion-paint=solid] [data-erosion-ink=muted]{color:var(--erosion-muted-solid)!important}
 html[data-erosion=ready] [data-erosion-paint=solid] [data-erosion-ink=accent]{color:var(--erosion-accent-solid)!important}
@@ -27,7 +34,7 @@ html[data-erosion=ready] [data-erosion-paint=solid] [data-erosion-rule]{border-c
 html[data-erosion=ready] .route-stage :focus-visible{outline:2px solid var(--text);outline-offset:4px;box-shadow:0 0 0 7px var(--ink)}
 /* Explicit material islands retain the original dark palette and interactive state. */
 html[data-erosion=ready] [data-erosion-protect]{--text:#efeee9;--bg:#080909;--muted:#a9aaa6;--line:#ffffff25;--ex-ink:#efeee9;--ex-muted:#989a95;--ex-line:#ffffff24;-webkit-text-fill-color:initial}
-html[data-erosion=ready] :is(.hero,.ex-world-room,.ex-world-tools,.ex-destinations,.ex-time-room,.personal-monument,.culture-collider,.sound-studio,.motion-index,.motion-controls,.frequency-tuner,.browse-filters,.filter-row,.catalogue-tools,.settings-list>div,.membership-grid>div){background-color:var(--bg);color:var(--text)}
+html[data-erosion=ready] :is(.hero,.ex-world-room,.ex-world-tools,.ex-destinations,.ex-time-room,.personal-monument,.culture-collider,.sound-studio,.motion-index,.motion-controls,.frequency-tuner,.browse-filters,.filter-row,.ex-channel-filter,.catalogue-tools,.settings-list>div,.membership-grid>div){background-color:var(--bg);color:var(--text)}
 html[data-erosion=ready] :is(.journey-builder,.journey-stop,.journey-edit-bar,.search-field,.active-filters,.notebook-editor){background-color:var(--bg);color:var(--text)}
 html[data-erosion=ready] :is(.button-outline,button[data-erosion-protect]:not([aria-pressed=true]):not(.toggle):not(.button-primary):not(.button-light)){background-color:var(--bg);color:var(--text)}
 html[data-erosion=ready] :is(.button-primary,.button-light){-webkit-text-fill-color:initial}
