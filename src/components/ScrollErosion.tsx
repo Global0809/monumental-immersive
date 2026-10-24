@@ -8,6 +8,7 @@ import './scroll-erosion.css';
 
 gsap.registerPlugin(ScrollTrigger);
 type Palette = { surface: string; ink: string; muted: string; accent: string; line: string };
+type PaintableElement = HTMLElement | SVGElement;
 type MeasuredChapter = ErosionChapter & { element: HTMLElement; top: number; fromTheme: ErosionTheme; startY: number; endY: number };
 type Ink = {
   element: HTMLElement; role: 'ink' | 'muted' | 'accent'; layoutWidth: number; layoutHeight: number; fragmented: boolean;
@@ -38,7 +39,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       red: { surface: red, ink, muted: '#27211e', accent: ink, line: '#0b0c0b70' },
     };
     let width = innerWidth, height = innerHeight, chapters: MeasuredChapter[] = [];
-    let inks: Ink[] = [], protectedNodes: HTMLElement[] = [], rules: HTMLElement[] = [];
+    let inks: Ink[] = [], protectedNodes: HTMLElement[] = [], rules: PaintableElement[] = [];
     let frame = 0, refreshFrame = 0, disposed = false, needsScan = true, lastKey = '';
     let alignmentUntil = 0, contourKey = '';
     const cadence = createFrameCadence();
@@ -47,7 +48,8 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     let preflightQueue: { key: string; chapter: MeasuredChapter; width: number; height: number }[] = [];
     const preparedFields = new Set<string>();
     let playingFilm = document.body.classList.contains('monumental-player-active');
-    const markedInk = new Set<HTMLElement>(), markedProtect = new Set<HTMLElement>(), markedRule = new Set<HTMLElement>();
+    const markedInk = new Set<HTMLElement>(), markedProtect = new Set<HTMLElement>();
+    const markedRule = new Set<PaintableElement>();
     const markedCarriers = new Set<HTMLElement>();
     const visibleInks = new Set<Ink>();
     const inkByElement = new Map<Element, Ink>();
@@ -159,7 +161,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         markedInk.delete(el);
       });
       nextInk.forEach(el => markedInk.add(el));
-      rules = Array.from(root!.querySelectorAll<HTMLElement>('section,.results-line,.tab-row,.category-index>a,.film-meta,.notebook-entry,.world-stats,.empty-inline,.passport-counter'))
+      rules = Array.from(root!.querySelectorAll<PaintableElement>('section,.results-line,.tab-row,.category-index>a,.film-meta,.notebook-entry,.world-stats,.empty-inline,.passport-counter,.journey-duration-track>i,.journey-place-thread svg'))
         .filter(el => !el.closest(erosionProtected));
       rules.forEach(el => { el.dataset.erosionRule = ''; markedRule.add(el); });
       needsScan = false;
@@ -235,7 +237,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       item.paintCache = { key: paintKey, image: value };
       return value;
     }
-    function style(element: HTMLElement, property: string, value: string) {
+    function style(element: PaintableElement, property: string, value: string) {
       if (element.style.getPropertyValue(property) !== value) element.style.setProperty(property, value);
     }
     function fragmentedPaint(item: Ink, fragments: DOMRect[], parentRect: DOMRect | undefined, d: string, from: string, to: string, contourKey: string) {
@@ -348,8 +350,9 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       field!.dataset.mixedInks = String(mixedCount);
       visibleRules.forEach(({ element, rect }) => {
         style(element, '--erosion-rule', at(rect.left + rect.width / 2, rect.top).line);
-        // These two small editorial icons have no text node to inherit paint from.
+        // Editorial graphics without text nodes sample their own field position.
         if (element.matches('.empty-inline,.passport-counter')) style(element, '--erosion-icon', at(rect.left + 22, rect.top + 22).ink);
+        else if (element.matches('.journey-duration-track>i,.journey-place-thread svg')) style(element, '--erosion-icon', at(rect.left + rect.width / 2, rect.top + rect.height / 2).accent);
       });
       if (current && !reducedMotion && performance.now() < alignmentUntil) schedule();
     }

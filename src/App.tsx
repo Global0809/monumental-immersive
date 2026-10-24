@@ -121,6 +121,7 @@ export default function App() {
   useEffect(() => { document.title = `${category || (route.path.startsWith('/film/') ? videos.find(v=>v.id===route.path.split('/')[2])?.title || 'Story' : ({ '/search':'Discover', '/journey':'Your journey', '/settings':'Experience settings', '/premium':'Monumental+', '/credits':'Credits & content notes' } as Record<string,string>)[route.path] || 'Explore')} — Monumental`; menu.current?.close(); setPlaying(null); }, [route.path, category]);
   useEffect(() => { const query=matchMedia('(prefers-reduced-motion: reduce)'); const update=()=>setSystemReduced(query.matches); query.addEventListener('change',update); return()=>query.removeEventListener('change',update); },[]);
   useEffect(() => { document.documentElement.dataset.motion = reducedMotion ? 'reduced' : 'full'; }, [reducedMotion]);
+  useEffect(() => { document.getElementById('sound-console')?.hidePopover?.(); }, [route.path]);
   const previousPath = useRef(route.path);
   useEffect(() => {
     if (previousPath.current === route.path) return;

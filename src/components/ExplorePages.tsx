@@ -71,9 +71,9 @@ function ChannelFilter({ value, onChange }: { value: string; onChange: (value: s
   return <div className="ex-channel-filter" role="group" aria-label="Filter by category" data-sound-owned>{channels.map((channel) => <button key={channel} aria-pressed={value === channel} onClick={() => onChange(channel)}>{channel}{value === channel && <span aria-hidden="true">↗</span>}</button>)}</div>;
 }
 
-function StoryCards({ items, onWatch, empty, onReset }: { items: Video[]; onWatch: ExploreProps["onWatch"]; empty: string; onReset: () => void }) {
+function StoryCards({ items, onWatch, empty, onReset, resetLabel = "Explore all categories" }: { items: Video[]; onWatch: ExploreProps["onWatch"]; empty: string; onReset: () => void; resetLabel?: string }) {
   const viewer = useViewer();
-  if (!items.length) return <div className="ex-empty"><span className="ex-empty-number" aria-hidden="true">00</span><div><h3>A connection waiting to happen.</h3><p>{empty}</p><button className="ex-text-link" onClick={onReset}>Explore all categories <ArrowRight size={20} /></button></div></div>;
+  if (!items.length) return <div className="ex-empty"><span className="ex-empty-number" aria-hidden="true">00</span><div><h3>A connection waiting to happen.</h3><p>{empty}</p><button className="ex-text-link" onClick={onReset}>{resetLabel} <ArrowRight size={20} /></button></div></div>;
   return <div className="ex-stories">{items.map((video, index) => <article key={video.id} className="ex-story">
     <div className="ex-story-image">
       <a href={href(`/film/${video.id}`)} aria-label={`About ${video.title}`}><img src={asset(video.poster)} alt="" loading="lazy" /></a>
@@ -218,7 +218,7 @@ export function TimeMachinePage({ params, reducedMotion, onWatch }: ExploreProps
       {comparePeriod && <EraComparison current={period.id} comparison={comparePeriod.id} category={category} place={place?.id} onChange={value => updateRoute("/time-machine", params, { compare: value }, "era")} onClose={() => updateRoute("/time-machine", params, { compare: "" })} onWatch={onWatch} />}
       <div className="ex-time-filters"><ChannelFilter value={category} onChange={value => updateRoute("/time-machine", params, { category: value === "All" ? "" : value })} /><label className="ex-place-filter">DESTINATION<select aria-label="Filter eras by destination" value={place?.id || ""} onChange={event => updateRoute("/time-machine", params, { place: event.target.value })}><option value="">Everywhere</option>{places.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
       <div className="ex-results-count" aria-live="polite">{items.length} {items.length === 1 ? "story" : "stories"} in this chapter{place ? ` · ${place.name}` : ""}</div>
-      <StoryCards items={items} onWatch={onWatch} empty={`This combination has no stories yet. Explore another era, or open the whole ${period.label} collection.`} onReset={() => updateRoute("/time-machine", params, { category: "", place: "" })} />
+      <StoryCards items={items} onWatch={onWatch} empty={`This combination has no stories yet. Explore another era, or open the whole ${period.label} collection.`} resetLabel="Clear filters" onReset={() => updateRoute("/time-machine", params, { category: "", place: "" })} />
       <div className="ex-footnote"><span className="ex-footnote-star" aria-hidden="true">✳</span><p>Time Machine explores cultural context and release eras. Newly created studies are clearly identified; selecting a decade never turns contemporary video into historical footage.</p></div>
     </section>
   </div>;
