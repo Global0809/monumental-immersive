@@ -1,4 +1,5 @@
 import { attachXray } from '../services/xrayMaterial';
+import { createFrameCadence } from '../services/frameCadence';
 /**
  * Land geometry: Natural Earth, 1:110m land, public domain.
  * https://www.naturalearthdata.com/about/terms-of-use/
@@ -289,6 +290,7 @@ export default function Atlas({
     const abort = new AbortController();
     let frame = 0;
     let visible = true;
+    let playingFilm = document.body.classList.contains('monumental-player-active');
     let lastTime = 0;
     let width = 1;
     let height = 1;
@@ -307,6 +309,8 @@ export default function Atlas({
     const world = new THREE.Vector3();
     const projected = new THREE.Vector3();
     const towardCamera = new THREE.Vector3();
+    const cadence = createFrameCadence();
+    const labelPresentation = new Map<HTMLElement, { visible: boolean; side?: string; transform?: string; depth?: string }>();
 
     const updateLabels = () => {
       globe.updateMatrixWorld(true);
@@ -319,8 +323,13 @@ export default function Atlas({
         const x = ((projected.x + 1) * width) / 2;
         const y = ((1 - projected.y) * height) / 2;
         const isVisible = world.dot(towardCamera) > 0.12 && x >= clipLeft + 4 && x <= clipRight - 4 && y >= 4 && y <= height - 4;
-        label.style.visibility = isVisible ? "visible" : "hidden";
-        label.tabIndex = isVisible ? 0 : -1;
+        let presentation = labelPresentation.get(label);
+        if (!presentation || presentation.visible !== isVisible) {
+          label.style.visibility = isVisible ? "visible" : "hidden";
+          label.tabIndex = isVisible ? 0 : -1;
+          if (!presentation) { presentation = { visible: isVisible }; labelPresentation.set(label, presentation); }
+          else presentation.visible = isVisible;
+        }
         if (!isVisible) continue;
         // Widths and visible viewport bounds are measured only on resize, never
         // while projecting the moving pins. World can extend beyond the screen.
@@ -329,14 +338,17 @@ export default function Atlas({
         const rightRoom = rightEdge - 8 - x - 17;
         const leftRoom = x - clipLeft - 8 - 17;
         const side = rightRoom < (labelWidths.get(destination.id) ?? 110) && leftRoom > rightRoom ? "left" : "right";
-        if (label.dataset.labelSide !== side) label.dataset.labelSide = side;
-        label.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`;
-        label.style.zIndex = String(Math.round((projected.z + 1) * 100));
+        if (presentation.side !== side) { label.dataset.labelSide = side; presentation.side = side; }
+        const transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`;
+        const depth = String(Math.round((projected.z + 1) * 100));
+        if (presentation.transform !== transform) { label.style.transform = transform; presentation.transform = transform; }
+        if (presentation.depth !== depth) { label.style.zIndex = depth; presentation.depth = depth; }
       }
     };
     const draw = (time: number) => {
       frame = 0;
-      if (disposed || !contextAvailable || !visible || document.hidden) return;
+      if (disposed || !contextAvailable || !visible || document.hidden || playingFilm) return;
+      if (!cadence.ready(time)) { frame = window.requestAnimationFrame(draw); return; }
       // Visibility callbacks can sample performance.now() after this frame's
       // RAF timestamp. Never let that move a newly revealed connection backward.
       const delta = Math.max(0, Math.min((time - lastTime) / 1000, 0.05));
@@ -388,9 +400,12 @@ export default function Atlas({
         !disposed &&
         contextAvailable &&
         visible &&
-        !document.hidden
-      )
+        !document.hidden &&
+        !playingFilm
+      ) {
+        cadence.reset();
         frame = window.requestAnimationFrame(draw);
+      }
     };
     const resize = () => {
       const bounds = element.getBoundingClientRect();
@@ -443,7 +458,7 @@ export default function Atlas({
     );
     observer.observe(element);
     const visibility = () => {
-      if (document.hidden) {
+      if (document.hidden || playingFilm) {
         cancelAnimationFrame(frame);
         frame = 0;
       } else {
@@ -451,7 +466,12 @@ export default function Atlas({
         requestDraw();
       }
     };
+    const playback = (event: Event) => {
+      playingFilm = Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active);
+      visibility();
+    };
     document.addEventListener("visibilitychange", visibility);
+    window.addEventListener('monumental:playback', playback);
     const pointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
       targetRotation = null;
@@ -599,6 +619,7 @@ export default function Atlas({
       window.visualViewport?.removeEventListener('resize', resize);
       window.visualViewport?.removeEventListener('scroll', resize);
       document.removeEventListener("visibilitychange", visibility);
+      window.removeEventListener('monumental:playback', playback);
       canvas.removeEventListener("pointerdown", pointerDown);
       canvas.removeEventListener("pointermove", pointerMove);
       canvas.removeEventListener("pointerup", pointerUp);

@@ -10,16 +10,17 @@ Monumental uses one shared, scroll-controlled SVG surface to reveal black, warm 
 - `src/services/erosionChapters.ts` maps existing route sections to palette changes and declares protected surfaces.
 - `src/App.tsx` mounts the controller once alongside the existing shared visual layers.
 - `tests/erosion-contour.test.ts` checks geometry, reversibility, exact endpoints and bounded complexity.
+- `src/services/frameCadence.ts` shares the phase-preserving 60 Hz budget with the background, sculpture, atlas, personal monument, city scene and sound visualizer.
 
 ## One field for surfaces and text
 
 The fixed SVG sits behind the page content and cannot receive pointer events. Existing participating section backgrounds become transparent while the enhancement is available. Videos, photographs, chrome scenes and controls remain ordinary DOM or WebGL content above it.
 
-The contour is reused as SVG background paint clipped to actual editorial glyphs. This allows one line of text to have two coordinated foreground colors while the frontier crosses it. There is no second React application, text-content clone, screenshot texture or color filter over footage. Solid chapters use ordinary solid text and rule colors, avoiding unnecessary geometry work while scrolling through a settled treatment.
+The contour is reused as SVG background paint clipped to actual editorial glyphs. This allows one line of text to have two coordinated foreground colors while the frontier crosses it. There is no second React application, text-content clone, screenshot texture or color filter over footage. An IntersectionObserver limits geometry reads to visible text. Conservative material-tile bounds identify the few lines actually touching the frontier; only those receive a locally sized raster image. Other text uses solid colors, including during a transition. Full-viewport SVG data URLs are no longer regenerated and inherited throughout the document every scroll frame.
 
 The geometry combines a broad asymmetric progression field with domain-warped two-dimensional lobes, tears and elongated fine fibers. Scrolling changes a threshold through that fixed material. Marching squares traces connected regions, including actual overhangs, cavities and narrow necks; they are not manually placed circular holes beside a wave. Quadratic paths remove sampling corners while preserving fine torn details. A pixel that is revealed remains revealed as progress increases. Reversing to the same progress recovers the same material state, and elapsed time never reshapes it.
 
-Rows outside the active frontier skip full contour processing. Nearby materials may be prepared during a bounded browser idle window, one field per callback. At progress zero the incoming mask is empty; at progress one it is a solid viewport rectangle. SVG supplies the crisp antialiased edge. `edgeSoftness` is retained as bounded renderer metadata; this SVG implementation does not blur the boundary.
+Both macro geometry and fine detail are two-dimensional, so the larger silhouette also changes as pockets join and necks erode. Cached noise lattices, incremental material rows, conservative tile bounds and a pooled tracing graph bound allocation and processing. Rows outside the active frontier skip full contour processing. Nearby materials may be prepared during a bounded browser idle window, one field per callback. At progress zero the incoming mask is empty; at progress one it is a solid viewport rectangle. SVG supplies the crisp antialiased edge. `edgeSoftness` is retained as bounded renderer metadata; this SVG implementation does not blur the boundary.
 
 Text alignment continues briefly while the existing entrance, hover and scroll animations settle. During this bounded alignment pass, contour geometry and encoded paint remain cached at the actual scroll position. Mask coordinates compensate for axis-aligned text scaling, and background-position transitions are disabled so color cannot lag behind the letters. Icons and rules sample the same two-dimensional material, including its cavities.
 
@@ -80,3 +81,12 @@ These checks used the Chromium in-app browser and emulated mobile dimensions; ph
 - Inspected wrapped destination titles, animated title alignment, the selected collection filter, and mobile multiline emphasis. Verified the 390px World midpoint and reduced-motion fallback.
 - Evidence for this refinement is saved under `.impeccable/review/erosion-fluid/`. The seven contour tests include reentrant geometry and monotonic reveal checks.
 - All 40 automated tests passed. The production typecheck/build passed, and the final browser check captured no console errors.
+
+### Fluidity and frame budget refinement — 24 October 2026
+
+- The broad outline now comes from a two-dimensional macro field, with softer pockets, small tears and narrow channels. It does not translate one fixed height profile upward.
+- Detailed text masking is limited to the frontier. The checked Home midpoint needed three local paint targets out of 56 marked text nodes; offscreen paint is released.
+- Particle counts are exactly halved: desktop 280 to 140, touch 96 to 48. Connection budgets are halved; code ribbons are approximately halved with whole-column rounding. A reusable glyph atlas avoids repeated font rasterization.
+- Removed the old 20/40 Hz background cadence and 30 Hz sound waveform cadence. Shared 60 Hz scheduling retains fractional phase on 120/144 Hz screens, without the old 144-to-48 fps skip pattern. Scenes still use elapsed time and retain visibility/playback/reduced-motion pauses.
+- Contour-only Node measurements at 1440 by 900 improved from 2.65 ms median / 4.65 ms p95 to 1.29 / 1.92 ms. These are CPU geometry timings, not end-to-end browser frame rates. First cold midpoint setup/JIT remains around 36 ms; ordinary subsequent chapter entry preparation measured 1.6–3.9 ms.
+- All 45 automated tests passed, including nine contour checks and three display-cadence tests. Browser checks use desktop and mobile emulation; a 60 Hz budget does not guarantee 60 rendered frames per second on every GPU, browser or device.

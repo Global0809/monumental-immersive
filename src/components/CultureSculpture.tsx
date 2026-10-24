@@ -1,4 +1,5 @@
 import { attachXray } from '../services/xrayMaterial';
+import { createFrameCadence } from '../services/frameCadence';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArrowsInSimple } from '@phosphor-icons/react/dist/csr/ArrowsInSimple';
 import { ArrowsOutSimple } from '@phosphor-icons/react/dist/csr/ArrowsOutSimple';
@@ -496,11 +497,13 @@ export default function CultureSculpture({ active, onSelect, reducedMotion, onWa
       requestDraw();
     };
 
+    const cadence = createFrameCadence();
     const draw = (now: number) => {
       frame = 0;
       if (disposed || failed || !visible || document.hidden || playbackActive) return;
-      // Bound GPU work on 120/144 Hz displays, without slowing gesture input.
-      if (previousTime && now - previousTime < 15) { frame = requestAnimationFrame(draw); return; }
+      // Retain the fractional 60 Hz deadline: a fixed 15 ms gate falls to 48 Hz
+      // on 144 Hz displays and can skip slightly early native 60 Hz frames.
+      if (!cadence.ready(now)) { frame = requestAnimationFrame(draw); return; }
       const dt = previousTime ? Math.min((now - previousTime) / 1000, 0.04) : 0.016;
       if (previousTime && now - previousTime > 32 && !balancedQuality) slowFrames += 1;
       if (slowFrames > 150 && !balancedQuality) {
@@ -627,7 +630,7 @@ export default function CultureSculpture({ active, onSelect, reducedMotion, onWa
       if (idle || dragging || pressureRef.current || pressure > 0.005 || pulseAge < 2.1 || sonicEnergy > 0.005 || settling || resetPending || instrument.playing || filmSettling || aperture > 0.003 || portalUntilRef.current > now) frame = requestAnimationFrame(draw);
     };
     const requestDraw = () => {
-      if (!disposed && !frame && visible && !document.hidden && !failed && !playbackActive) frame = requestAnimationFrame(draw);
+      if (!disposed && !frame && visible && !document.hidden && !failed && !playbackActive) { cadence.reset(); frame = requestAnimationFrame(draw); }
     };
     redrawRef.current = requestDraw;
     const syncInstrument = () => {

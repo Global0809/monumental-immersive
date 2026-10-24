@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import gsap from 'gsap';
 import { attachXray } from '../services/xrayMaterial';
+import { createFrameCadence } from '../services/frameCadence';
 
 export interface CitySceneController { select: (index: number | null, immediate?: boolean) => void; dispose: () => void }
 interface CityOptions { reducedMotion: boolean; onSelect: (index: number) => void; onProject: (index: number, x: number, y: number, visible: boolean) => void; onUnavailable: () => void }
@@ -115,6 +116,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   const cameraState = { azimuth: .47, elevation: .58, radius: 25, x: 0, y: .5, z: 0 };
   const projected = new THREE.Vector3(), raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
   const canRender = () => !disposed && inView && !document.hidden && !playingFilm;
+  const cadence = createFrameCadence();
   function updateCamera() {
     target.set(cameraState.x, cameraState.y, cameraState.z);
     camera.position.set(target.x + Math.sin(cameraState.azimuth) * Math.cos(cameraState.elevation) * cameraState.radius, target.y + Math.sin(cameraState.elevation) * cameraState.radius, target.z + Math.cos(cameraState.azimuth) * Math.cos(cameraState.elevation) * cameraState.radius);
@@ -123,6 +125,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   function frame(time: number) {
     raf = 0;
     if (!canRender()) return;
+    if (!cadence.ready(time)) { raf = requestAnimationFrame(frame); return; }
     updateCamera();
     if (!options.reducedMotion) { pulse.position.copy(route.getPointAt((time * .000065) % 1)); pulses.forEach((ring, index) => { const scale = 1 + Math.sin(time * .002 + index) * .08; ring.scale.setScalar(active === index ? scale * 1.6 : scale); }); }
     xray.update(!options.reducedMotion && !playingFilm);
@@ -131,7 +134,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
     dirty = false;
     if (!options.reducedMotion || tween?.isActive()) raf = requestAnimationFrame(frame);
   }
-  function invalidate() { dirty = true; if (!raf && canRender()) raf = requestAnimationFrame(frame); }
+  function invalidate() { dirty = true; if (!raf && canRender()) { cadence.reset(); raf = requestAnimationFrame(frame); } }
   function fit() {
     width = host.clientWidth; height = host.clientHeight;
     if (!width || !height) return;

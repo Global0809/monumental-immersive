@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildErosionContour } from '../src/services/erosionContour.ts';
+import { buildErosionContour, prepareErosionContour } from '../src/services/erosionContour.ts';
 
 const options = { width: 1440, height: 900, progress: 0.5, seed: 'home-journey' };
 
@@ -88,4 +88,30 @@ test('zero detail and zero amplitude produce a plain frontier without hidden isl
   assert.equal(contour.frontierAt(0), options.height / 2);
   assert.equal(contour.frontierAt(options.width), options.height / 2);
   assert.equal(contour.path.match(/M/g)?.length, 1);
+});
+
+test('rectangle classification never treats a torn pocket as a solid text surface', () => {
+  for (const direction of ['up', 'down'] as const) for (const progress of [.04, .31, .5, .73, .97]) {
+    const contour = buildErosionContour({ ...options, progress, direction });
+    for (let y = 0; y < 900; y += 37) for (let x = 0; x < 1440; x += 71) {
+      const right = Math.min(1440, x + 63), bottom = Math.min(900, y + 49);
+      const state = contour.classifyRect(x, y, right, bottom);
+      if (state === 'mixed') continue;
+      for (let py = y; py <= bottom; py += 3) for (let px = x; px <= right; px += 3) {
+        assert.equal(contour.incomingAt(px, py), state === 'to', 'A solid paint decision must include the entire rectangle, not just its corners');
+      }
+    }
+  }
+  assert.equal(buildErosionContour({ ...options, progress: 0 }).classifyRect(0, 0, 1440, 900), 'from');
+  assert.equal(buildErosionContour({ ...options, progress: 1 }).classifyRect(0, 0, 1440, 900), 'to');
+});
+
+test('lazy material preparation and previous visits cannot change the contour', () => {
+  const initial = buildErosionContour({ ...options, seed: 'lazy-revisit', progress: .45 });
+  for (const progress of [.01, .99, .2, .8]) prepareErosionContour({ ...options, seed: 'lazy-revisit', progress });
+  const restored = buildErosionContour({ ...options, seed: 'lazy-revisit', progress: .45 });
+  assert.equal(restored.path, initial.path);
+  const advanced = buildErosionContour({ ...options, seed: 'lazy-revisit', progress: .58 });
+  const displacement = [90, 250, 480, 720, 960, 1200, 1390].map(x => initial.frontierAt(x) - advanced.frontierAt(x));
+  assert.ok(Math.max(...displacement) - Math.min(...displacement) > 15, 'Different pieces of the material should erode at different rates, rather than translating an unchanged wave');
 });

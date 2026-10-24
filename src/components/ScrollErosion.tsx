@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { buildErosionContour, prepareErosionContour } from '../services/erosionContour';
+import { createFrameCadence } from '../services/frameCadence';
 import { erosionChapters, erosionProtected, type ErosionChapter, type ErosionTheme } from '../services/erosionChapters';
 import './scroll-erosion.css';
 
@@ -12,6 +13,7 @@ type Ink = {
   element: HTMLElement; role: 'ink' | 'muted' | 'accent'; layoutWidth: number; layoutHeight: number; fragmented: boolean;
   inlineParent?: { element: HTMLElement; width: number; height: number }; inlineRtl?: boolean;
   fragmentCache?: { key: string; image: string; width: number; height: number };
+  paintCache?: { key: string; image: string };
 };
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
 const paintSelector = 'h1,h2,h3,h4,p,span,small,strong,em,a,label,summary,dt,dd,li,div';
@@ -41,6 +43,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     let inks: Ink[] = [], protectedNodes: HTMLElement[] = [], rules: HTMLElement[] = [];
     let frame = 0, refreshFrame = 0, disposed = false, needsScan = true, lastKey = '';
     let alignmentUntil = 0, contourKey = '';
+    const cadence = createFrameCadence();
     let contourCache: ReturnType<typeof buildErosionContour> | null = null;
     let idlePreflight = 0, preflightSignature = '';
     let preflightQueue: { key: string; chapter: MeasuredChapter; width: number; height: number }[] = [];
@@ -48,6 +51,22 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     let playingFilm = document.body.classList.contains('monumental-player-active');
     const markedInk = new Set<HTMLElement>(), markedProtect = new Set<HTMLElement>(), markedRule = new Set<HTMLElement>();
     const markedCarriers = new Set<HTMLElement>();
+    const visibleInks = new Set<Ink>();
+    const inkByElement = new Map<Element, Ink>();
+    const inkObserver = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        const item = inkByElement.get(entry.target);
+        if (!item) continue;
+        if (entry.isIntersecting) visibleInks.add(item);
+        else {
+          visibleInks.delete(item);
+          delete item.element.dataset.erosionSplit;
+          item.element.style.removeProperty('--erosion-local-paint');
+          item.paintCache = undefined; item.fragmentCache = undefined;
+        }
+      }
+      schedule();
+    }, { rootMargin: '90px 0px' });
     const context = gsap.context(() => {}, root);
     const config = erosionChapters(path);
 
@@ -107,6 +126,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       refreshFrame = requestAnimationFrame(() => { refreshFrame = 0; measure(); trackAlignment(); });
     }
     function scan() {
+      inkObserver.disconnect(); visibleInks.clear(); inkByElement.clear();
       // Declarative opt-outs plus existing protected islands. Never mutate their children.
       protectedNodes = Array.from(root!.querySelectorAll<HTMLElement>(erosionProtected)).filter(el => !el.parentElement?.closest(erosionProtected));
       protectedNodes.forEach(el => { if (!el.hasAttribute('data-erosion-protect')) { el.dataset.erosionProtect = ''; markedProtect.add(el); } });
@@ -130,12 +150,14 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         const color = getComputedStyle(source ?? el).color;
         const rgb = color.match(/[\d.]+/g)?.map(Number) || [239,238,233];
         const role: Ink['role'] = (el.dataset.erosionInk || source?.dataset.erosionInk) as Ink['role'] || (rgb[0] > rgb[1] * 1.45 ? 'accent' : rgb[0] < 200 && rgb[0] > 60 ? 'muted' : 'ink');
-        el.dataset.erosionInk = role; nextInk.add(el); inks.push({ element: el, role, layoutWidth: 0, layoutHeight: 0, fragmented: false });
+        el.dataset.erosionInk = role; nextInk.add(el);
+        const item: Ink = { element: el, role, layoutWidth: 0, layoutHeight: 0, fragmented: false };
+        inks.push(item); inkByElement.set(el, item); visibleInks.add(item); inkObserver.observe(el);
       });
       markedInk.forEach(el => {
         if (nextInk.has(el)) return;
-        delete el.dataset.erosionInk; delete el.dataset.erosionFragment;
-        ['--erosion-ink-position','--erosion-local-paint-size','--erosion-current-ink','--erosion-fragment-paint'].forEach(property => el.style.removeProperty(property));
+        delete el.dataset.erosionInk; delete el.dataset.erosionFragment; delete el.dataset.erosionSplit;
+        ['--erosion-ink-position','--erosion-local-paint-size','--erosion-current-ink','--erosion-fragment-paint','--erosion-local-paint'].forEach(property => el.style.removeProperty(property));
         markedInk.delete(el);
       });
       nextInk.forEach(el => markedInk.add(el));
@@ -205,9 +227,18 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       lastKey = '';
       queuePreflight();
     }
-    function svgPaint(d: string, from: string, to: string) {
-      const image = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><path fill="${from}" d="M0 0H${width}V${height}H0Z"/><path fill="${to}" fill-rule="evenodd" d="${d}"/></svg>`;
-      return `url("data:image/svg+xml,${encodeURIComponent(image)}")`;
+    function localPaint(item: Ink, rect: DOMRect, d: string, from: string, to: string, key: string) {
+      const paintKey = `${key}:${from}:${to}:${rect.left}:${rect.top}:${rect.width}:${rect.height}`;
+      if (item.paintCache?.key === paintKey) return item.paintCache.image;
+      // Rasterize only the letters crossing the frontier, at their local size.
+      // No inherited full-viewport bitmap changes across the entire document.
+      const image = `<svg xmlns="http://www.w3.org/2000/svg" width="${rect.width}" height="${rect.height}" viewBox="${rect.left} ${rect.top} ${rect.width} ${rect.height}" preserveAspectRatio="none"><path fill="${from}" d="M${rect.left} ${rect.top}h${rect.width}v${rect.height}h${-rect.width}Z"/><path fill="${to}" fill-rule="evenodd" d="${d}"/></svg>`;
+      const value = `url("data:image/svg+xml,${encodeURIComponent(image)}")`;
+      item.paintCache = { key: paintKey, image: value };
+      return value;
+    }
+    function style(element: HTMLElement, property: string, value: string) {
+      if (element.style.getPropertyValue(property) !== value) element.style.setProperty(property, value);
     }
     function fragmentedPaint(item: Ink, fragments: DOMRect[], parentRect: DOMRect | undefined, d: string, from: string, to: string, contourKey: string) {
       const safeScale = (scale: number) => Number.isFinite(scale) && scale > .05 ? scale : 1;
@@ -231,9 +262,10 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       item.fragmentCache = { key, image: `url("data:image/svg+xml,${encodeURIComponent(image)}")`, width: stripWidth, height: stripHeight };
       return item.fragmentCache;
     }
-    function draw() {
+    function draw(now = performance.now()) {
       frame = 0;
       if (disposed || document.hidden || playingFilm) return;
+      if (!cadence.ready(now)) { schedule(); return; }
       const y = scrollY;
       let current: MeasuredChapter | undefined;
       let settled: ErosionTheme = 'black';
@@ -257,35 +289,47 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       const d = contour?.path ?? (current && reducedMotion ? `M0 ${straightY}H${width}V${height}H0Z` : `M0 0H${width}V${height}H0Z`);
       const at = (x: number, pointY: number) => (contour ? contour.incomingAt(x, pointY) : pointY >= straightY) ? to : from;
       // Batch geometry reads before style writes. Offscreen copy receives paint on entry.
-      const visibleInk = inks.flatMap(item => {
+      const visibleInk = Array.from(visibleInks).flatMap(item => {
         if (!item.element.isConnected) return [];
         const rect = item.element.getBoundingClientRect();
         if (rect.bottom < -60 || rect.top > height + 60 || !rect.width) return [];
         // Read every wrapped-line rectangle before changing any paint style.
-        const fragments = item.fragmented ? Array.from(item.element.getClientRects()).filter(fragment => fragment.width > 0 && fragment.height > 0) : [];
-        const parentRect = item.inlineParent?.element.getBoundingClientRect();
-        return [{ ...item, item, rect, fragments, parentRect }];
+        const region = !current ? 'to' : contour ? contour.classifyRect(rect.left - 1, rect.top - 1, rect.right + 1, rect.bottom + 1) : rect.bottom < straightY ? 'from' : rect.top > straightY ? 'to' : 'mixed';
+        const fragments = region === 'mixed' && item.fragmented ? Array.from(item.element.getClientRects()).filter(fragment => fragment.width > 0 && fragment.height > 0) : [];
+        const parentRect = region === 'mixed' ? item.inlineParent?.element.getBoundingClientRect() : undefined;
+        return [{ ...item, item, rect, fragments, parentRect, region }];
       });
       const visibleRules = rules.map(element => ({ element, rect: element.getBoundingClientRect() })).filter(({rect}) => rect.bottom >= 0 && rect.top <= height);
       if (key !== lastKey) {
         base.current!.setAttribute('fill', from.surface);
         reveal.current!.setAttribute('fill', to.surface);
         reveal.current!.setAttribute('d', d);
-        (['ink','muted','accent'] as const).forEach(role => {
-          root!.style.setProperty(`--erosion-${role}-solid`, to[role]);
-          if (current) root!.style.setProperty(`--erosion-${role}-paint`, svgPaint(d, from[role], to[role]));
-        });
-        root!.dataset.erosionPaint = current ? 'split' : 'solid';
-        root!.style.setProperty('--erosion-line-solid', to.line);
-        doc.dataset.erosionTheme = current?.toTheme ?? settled;
-        doc.dataset.erosionActive = current ? 'true' : 'false';
+        (['ink','muted','accent'] as const).forEach(role => style(root!, `--erosion-${role}-solid`, to[role]));
+        const paintState = current ? 'split' : 'solid';
+        if (root!.dataset.erosionPaint !== paintState) root!.dataset.erosionPaint = paintState;
+        style(root!, '--erosion-line-solid', to.line);
+        const theme = current?.toTheme ?? settled, active = current ? 'true' : 'false';
+        if (doc.dataset.erosionTheme !== theme) doc.dataset.erosionTheme = theme;
+        if (doc.dataset.erosionActive !== active) doc.dataset.erosionActive = active;
         field!.dataset.progress = progress.toFixed(4);
         field!.dataset.seed = current?.seed ?? 'settled';
         field!.dataset.from = current?.fromTheme ?? settled;
         field!.dataset.to = current?.toTheme ?? settled;
         lastKey = key;
       }
-      visibleInk.forEach(({ item, element, rect, role, layoutWidth, layoutHeight, fragmented, fragments, parentRect }) => {
+      let mixedCount = 0;
+      visibleInk.forEach(({ item, element, rect, role, layoutWidth, layoutHeight, fragmented, fragments, parentRect, region }) => {
+        if (region !== 'mixed') {
+          if (element.hasAttribute('data-erosion-split')) {
+            delete element.dataset.erosionSplit;
+            element.style.removeProperty('--erosion-local-paint'); element.style.removeProperty('--erosion-fragment-paint');
+            item.paintCache = undefined; item.fragmentCache = undefined;
+          }
+          style(element, '--erosion-current-ink', (region === 'from' ? from : to)[role]);
+          return;
+        }
+        mixedCount++;
+        if (!element.hasAttribute('data-erosion-split')) element.dataset.erosionSplit = '';
         // Compensate axis-aligned scale as well as translation, including inherited
         // route scale and the projected height of kinetic letters. No layout changes.
         const scaleX = !fragmented && layoutWidth > 0 ? rect.width / layoutWidth : 1;
@@ -294,17 +338,17 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         const sy = Number.isFinite(scaleY) && scaleY > .05 ? scaleY : 1;
         if (current && fragmented && fragments.length > 1) {
           const strip = fragmentedPaint(item, fragments, parentRect, d, from[role], to[role], key);
-          element.style.setProperty('--erosion-fragment-paint', strip.image);
-          element.style.setProperty('--erosion-ink-position', '0px 0px');
-          element.style.setProperty('--erosion-local-paint-size', `${strip.width}px ${strip.height}px`);
+          style(element, '--erosion-local-paint', strip.image);
+          style(element, '--erosion-local-paint-size', `${strip.width}px ${strip.height}px`);
         } else {
-          element.style.setProperty('--erosion-ink-position', `${-rect.left / sx}px ${-rect.top / sy}px`);
-          element.style.setProperty('--erosion-local-paint-size', `${width / sx}px ${height / sy}px`);
+          style(element, '--erosion-local-paint', localPaint(item, rect, d, from[role], to[role], key));
+          style(element, '--erosion-local-paint-size', `${rect.width / sx}px ${rect.height / sy}px`);
         }
         // currentColor also gives icons, underlines, and focus decorations suitable contrast.
-        element.style.setProperty('--erosion-current-ink', at(rect.left + rect.width / 2, rect.top + rect.height / 2)[role]);
+        style(element, '--erosion-current-ink', at(rect.left + rect.width / 2, rect.top + rect.height / 2)[role]);
       });
-      visibleRules.forEach(({ element, rect }) => element.style.setProperty('--erosion-rule', at(rect.left + rect.width / 2, rect.top).line));
+      field!.dataset.mixedInks = String(mixedCount);
+      visibleRules.forEach(({ element, rect }) => style(element, '--erosion-rule', at(rect.left + rect.width / 2, rect.top).line));
       if (current && !reducedMotion && performance.now() < alignmentUntil) schedule();
     }
 
@@ -345,7 +389,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     return () => {
       disposed = true; cancelAnimationFrame(frame); cancelAnimationFrame(refreshFrame);
       cancelPreflight();
-      mutation.disconnect(); passageObserver.disconnect(); resize.disconnect(); context.revert();
+      mutation.disconnect(); passageObserver.disconnect(); resize.disconnect(); inkObserver.disconnect(); context.revert();
       root.removeEventListener('load', refresh, true);
       window.removeEventListener('scroll', trackAlignment); window.removeEventListener('resize', refresh);
       alignmentEvents.forEach(event => root.removeEventListener(event, trackPresentation));
@@ -353,7 +397,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       window.removeEventListener('monumental:typography-settled', schedule);
       document.removeEventListener('visibilitychange', visibility);
       window.removeEventListener('monumental:playback', playback);
-      markedInk.forEach(el => { delete el.dataset.erosionInk; delete el.dataset.erosionFragment; el.style.removeProperty('--erosion-ink-position'); el.style.removeProperty('--erosion-local-paint-size'); el.style.removeProperty('--erosion-current-ink'); el.style.removeProperty('--erosion-fragment-paint'); });
+      markedInk.forEach(el => { delete el.dataset.erosionInk; delete el.dataset.erosionFragment; delete el.dataset.erosionSplit; el.style.removeProperty('--erosion-ink-position'); el.style.removeProperty('--erosion-local-paint-size'); el.style.removeProperty('--erosion-current-ink'); el.style.removeProperty('--erosion-fragment-paint'); el.style.removeProperty('--erosion-local-paint'); });
       markedProtect.forEach(el => delete el.dataset.erosionProtect);
       markedCarriers.forEach(el => delete el.dataset.erosionCarrier);
       markedRule.forEach(el => { delete el.dataset.erosionRule; el.style.removeProperty('--erosion-rule'); });

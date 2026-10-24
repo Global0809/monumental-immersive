@@ -1,5 +1,6 @@
 import { reactiveField as input } from './reactiveField';
 import { createMatrixField } from './matrixField';
+import { createFrameCadence } from './frameCadence';
 
 // One viewport canvas reveals the real layout. No duplicated video or backdrop filter.
 const mediaSelector = 'video,iframe,.motion-stage,.film-image,.film-instrument__preview,[data-xray="off"]';
@@ -23,6 +24,7 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
   const field: CanvasRenderingContext2D = fieldContext;
   const fine = matchMedia('(hover:hover) and (pointer:fine)').matches;
   const drawMatrix = createMatrixField(fine);
+  const cadence = createFrameCadence();
   let width = innerWidth, height = innerHeight, frame = 0, last = 0, time = 0, disposed = false;
   let x = -1000, y = -1000, scan = 0, speed = 0, lastScroll = scrollY;
   let hidden = document.hidden, dirty = true, refresh = true, lastMeasure = -1000;
@@ -30,6 +32,11 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
   let copy: HTMLElement[] = [], copyZones: CopyZone[] = [];
   let heading: HTMLElement | null = null, pointerTarget: Element | null = null;
   let lastKind = '', lastMediaCount = -1, keyboard = false;
+  let geometryUntil = 0, hitDirty = true, holes: DOMRect[] = [];
+
+  function geometryChanged(duration = 1000) {
+    geometryUntil = Math.max(geometryUntil, performance.now() + duration); hitDirty = true; dirty = true;
+  }
 
   function schedule() { if (!frame && !hidden && !input.blocked && !disposed) frame = requestAnimationFrame(draw); }
   function resize() {
@@ -38,15 +45,17 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
     canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     fieldCanvas.width = canvas.width; fieldCanvas.height = canvas.height;
     field.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0); dirty = true; schedule();
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0); geometryChanged(); schedule();
   }
-  function allowed(element: Element | null) {
-    return fine && !!element?.closest('main') && !element.closest(quietSelector) && !document.querySelector('dialog[open],[popover]:popover-open');
+  function allowed(element: Element | null, covered = Boolean(document.querySelector('dialog[open],[popover]:popover-open'))) {
+    return fine && !!element?.closest('main') && !element.closest(quietSelector) && !covered;
   }
   function move(event: PointerEvent) {
     if (event.pointerType !== 'mouse') return;
     keyboard = false; input.x = event.clientX; input.y = event.clientY;
-    pointerTarget = event.target as Element; input.active = allowed(pointerTarget); schedule();
+    pointerTarget = event.target as Element; input.active = allowed(pointerTarget);
+    // Bound the extra DOM reads to physical hover/scroll/entrance settling.
+    geometryUntil = Math.max(geometryUntil, performance.now() + 650); hitDirty = true; schedule();
   }
   function leave() { input.active = false; pointerTarget = null; schedule(); }
   function focus(event: FocusEvent) {
@@ -61,18 +70,19 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
   function blur() { if (keyboard) { keyboard = false; leave(); } }
   function scroll() {
     input.velocity = Math.max(-40, Math.min(40, scrollY - lastScroll));
-    lastScroll = scrollY; input.scroll = scrollY; dirty = true; schedule();
+    lastScroll = scrollY; input.scroll = scrollY; geometryChanged(); schedule();
   }
   function visibility() {
     hidden = document.hidden;
     if (hidden) { cancelAnimationFrame(frame); frame = 0; input.active = false; }
-    else schedule();
+    else { last = 0; cadence.reset(); geometryChanged(); schedule(); }
   }
   function playback(event: Event) {
     input.blocked = Boolean((event as CustomEvent<{ active: boolean }>).detail.active);
     if (input.blocked) { cancelAnimationFrame(frame); frame = 0; input.active = false; ctx.clearRect(0, 0, width, height); }
-    else { dirty = true; schedule(); }
+    else { last = 0; cadence.reset(); geometryChanged(); schedule(); }
   }
+  function interfaceChanged() { last = 0; cadence.reset(); geometryChanged(); schedule(); }
   function readLetters(element: HTMLElement) {
     const result: Letter[] = [];
     const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
@@ -148,31 +158,48 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
   function draw(now: number) {
     frame = 0;
     if (hidden || input.blocked || disposed) return;
-    const interval = fine && (input.active || scan > .02) ? 1000 / 40 : 1000 / 20;
-    if (now - last < interval) { schedule(); return; }
-    const dt = Math.min(.06, (now - last) / 1000 || .025); last = now; time += dt;
+    if (!cadence.ready(now)) { schedule(); return; }
+    // Keep a 60 Hz budget even on high-refresh displays. The former 40/20 Hz
+    // caps caused visible gaps; actual elapsed time still drives the motion.
+    const dt = last ? Math.min(.05, (now - last) / 1000) : 1 / 60;
+    last = now; time += dt;
+    const forbidden = !!document.querySelector('dialog[open],[popover]:popover-open');
     if (keyboard) {
-      if (pointerTarget !== document.activeElement || !pointerTarget?.isConnected || !pointerTarget.matches(':focus-visible') || !allowed(pointerTarget)) {
+      if (pointerTarget !== document.activeElement || !pointerTarget?.isConnected || !pointerTarget.matches(':focus-visible') || !allowed(pointerTarget, forbidden)) {
         keyboard = false; pointerTarget = null; input.active = false;
       } else {
         // A focused control can move with scrolling or a scene projection.
         const rect = pointerTarget.getBoundingClientRect();
         input.x = rect.left + rect.width / 2; input.y = rect.top + rect.height / 2; input.active = true;
       }
-    } else if (pointerTarget) { pointerTarget = document.elementFromPoint(input.x, input.y); input.active = allowed(pointerTarget); }
-    const forbidden = !!document.querySelector('dialog[open],[popover]:popover-open');
+    } else if (pointerTarget && (hitDirty || now < geometryUntil)) {
+      pointerTarget = document.elementFromPoint(input.x, input.y); input.active = allowed(pointerTarget, forbidden); hitDirty = false;
+    }
     if (forbidden) input.active = false;
-    x += (input.x - x) * .34; y += (input.y - y) * .34;
-    scan += ((input.active ? 1 : 0) - scan) * .22;
-    speed += (input.velocity - speed) * .12; input.velocity *= .86;
+    const step = dt * 40;
+    const pointerEase = 1 - Math.pow(.66, step);
+    x += (input.x - x) * pointerEase; y += (input.y - y) * pointerEase;
+    scan += ((input.active ? 1 : 0) - scan) * (1 - Math.pow(.78, step));
+    speed += (input.velocity - speed) * (1 - Math.pow(.88, step)); input.velocity *= Math.pow(.86, step);
+    const readMedia = dirty || refresh || now < geometryUntil;
     measure(now);
-    // Read media bounds before canvas writes, including transforms during transitions.
-    const holes = media.filter(element => element.isConnected && !element.closest('[inert]') && element.checkVisibility()).map(element => element.getBoundingClientRect()).filter(r => r.width && r.height && r.bottom > 0 && r.top < height);
+    // Read before canvas writes. Once geometry settles, ambient motion reuses the
+    // exclusion rectangles instead of measuring every video on every frame.
+    if (readMedia) {
+      holes = [];
+      for (const element of media) {
+        if (!element.isConnected) continue;
+        const rect = element.getBoundingClientRect();
+        // Offscreen media need no computed visibility or ancestor walk.
+        if (!rect.width || !rect.height || rect.bottom <= 0 || rect.top >= height || rect.right <= 0 || rect.left >= width) continue;
+        if (!element.closest('[inert]') && element.checkVisibility()) holes.push(rect);
+      }
+    }
     const kind = forbidden ? 'paused' : !input.active ? 'ambient' : heading ? 'typography' : pointerTarget?.closest('.city-scene,.personal-monument__scene,.culture-sculpture,.cultural-atlas__viewport') ? 'material' : 'structure';
     if (kind !== lastKind) { canvas.dataset.reveal = kind; lastKind = kind; }
     if (holes.length !== lastMediaCount) { canvas.dataset.mediaExclusions = String(holes.length); lastMediaCount = holes.length; }
     ctx.clearRect(0, 0, width, height);
-    if (forbidden) { schedule(); return; }
+    if (forbidden) return;
     field.clearRect(0, 0, width, height);
     drawMatrix(field, { width, height, time, scroll: input.scroll, speed, x, y, active: input.active });
     field.save(); field.globalCompositeOperation = 'destination-out'; field.fillStyle = 'rgba(0,0,0,.84)';
@@ -218,21 +245,27 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
     holes.forEach(r => ctx.clearRect(r.left - 5, r.top - 5, r.width + 10, r.height + 10));
     schedule();
   }
-  const mutation = new MutationObserver(() => { refresh = true; dirty = true; schedule(); });
+  const mutation = new MutationObserver(() => { refresh = true; geometryChanged(); schedule(); });
   mutation.observe(document.querySelector('main') || document.body, { childList: true, subtree: true });
-  const observer = new ResizeObserver(() => { dirty = true; schedule(); });
+  const observer = new ResizeObserver(() => { geometryChanged(); schedule(); });
   const main = document.querySelector('main'); if (main) observer.observe(main);
-  document.fonts.ready.then(() => { if (!disposed) { dirty = true; heading = null; schedule(); } });
+  document.fonts.ready.then(() => { if (!disposed) { geometryChanged(); heading = null; schedule(); } });
+  const typographySettled = () => { geometryChanged(50); schedule(); };
   resize();
   window.addEventListener('resize', resize); window.addEventListener('scroll', scroll, { passive: true });
   document.addEventListener('pointermove', move, { passive: true }); document.addEventListener('pointerleave', leave);
   document.addEventListener('focusin', focus); document.addEventListener('focusout', blur); document.addEventListener('visibilitychange', visibility); window.addEventListener('monumental:playback', playback);
+  window.addEventListener('monumental:typography-settled', typographySettled);
+  // A covered canvas stays asleep until the dialog/popover closes.
+  document.addEventListener('close', interfaceChanged, true); document.addEventListener('toggle', interfaceChanged, true);
   return () => {
     disposed = true; cancelAnimationFrame(frame); mutation.disconnect(); observer.disconnect();
     fieldCanvas.width = 0; fieldCanvas.height = 0;
     window.removeEventListener('resize', resize); window.removeEventListener('scroll', scroll);
     document.removeEventListener('pointermove', move); document.removeEventListener('pointerleave', leave);
     document.removeEventListener('focusin', focus); document.removeEventListener('focusout', blur); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('monumental:playback', playback);
+    window.removeEventListener('monumental:typography-settled', typographySettled);
+    document.removeEventListener('close', interfaceChanged, true); document.removeEventListener('toggle', interfaceChanged, true);
     input.active = false; ctx.clearRect(0, 0, width, height);
   };
 }

@@ -10,6 +10,7 @@ import { Magnet } from '@phosphor-icons/react/dist/csr/Magnet';
 import { ArrowUpRight } from '@phosphor-icons/react/dist/csr/ArrowUpRight';
 import { ArrowsOut } from '@phosphor-icons/react/dist/csr/ArrowsOut';
 import { useViewer } from '../services/viewer';
+import { createFrameCadence } from '../services/frameCadence';
 import { getSonicState, playSound, readSoundWaveform, setAmbientEnabled, setAmbientMix, setMasterVolume, setSoundEnabled, subscribeSonicState, type SonicPulse, type SoundType } from '../services/audio';
 import './sound-studio.css';
 
@@ -28,12 +29,12 @@ function SonicScope({ calm, enabled }: { calm: boolean; enabled: boolean }) {
   useEffect(() => {
     const element = host.current;
     if (!element || !enabled || calm) { path.current?.setAttribute('d', 'M 0 40 H 600'); return; }
-    let frame = 0; let visible = true; let last = 0;
+    let frame = 0; let visible = true; let flat = false;
+    const cadence = createFrameCadence();
     const draw = (time: number) => {
       frame = 0;
       if (!visible || document.hidden) return;
-      if (time - last > 33) {
-        last = time;
+      if (cadence.ready(time)) {
         const samples = readSoundWaveform();
         if (samples) {
           const points = Array.from({ length: 128 }, (_, i) => {
@@ -41,11 +42,12 @@ function SonicScope({ calm, enabled }: { calm: boolean; enabled: boolean }) {
             return (i ? 'L' : 'M') + ((i / 127) * 600).toFixed(1) + ' ' + (40 - value * 34).toFixed(1);
           });
           path.current?.setAttribute('d', points.join(' '));
-        } else path.current?.setAttribute('d', 'M 0 40 H 600');
+          flat = false;
+        } else if (!flat) { path.current?.setAttribute('d', 'M 0 40 H 600'); flat = true; }
       }
       frame = requestAnimationFrame(draw);
     };
-    const restart = () => { cancelAnimationFrame(frame); if (visible && !document.hidden) frame = requestAnimationFrame(draw); };
+    const restart = () => { cancelAnimationFrame(frame); cadence.reset(); if (visible && !document.hidden) frame = requestAnimationFrame(draw); };
     const observer = new IntersectionObserver(([entry]) => { visible = entry.isIntersecting; restart(); });
     observer.observe(element); document.addEventListener('visibilitychange', restart); restart();
     return () => { cancelAnimationFrame(frame); observer.disconnect(); document.removeEventListener('visibilitychange', restart); };

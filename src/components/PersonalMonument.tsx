@@ -9,6 +9,7 @@ import { places, videos, type Place, type Video } from '../data/catalogue';
 import { useViewer, usePersistentStorage, type Journey } from '../services/viewer';
 import { href } from '../services/router';
 import { playSound } from '../services/audio';
+import { createFrameCadence } from '../services/frameCadence';
 import './personal-monument.css';
 
 type Arrangement = 'orbit' | 'column' | 'unfolded';
@@ -174,9 +175,11 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
       const objectMeshes = meshes.map(item => item.mesh);
       const xray = attachXray(renderer, [chrome, red, thread, activeMaterial], objectMeshes);
       const canRender = () => !disposed && !contextLost && !document.hidden && !playingFilm && state.current.visible;
+      const cadence = createFrameCadence();
       function render(time: number) {
         frame = 0;
         if (!canRender()) return;
+        if (!cadence.ready(time)) { frame = requestAnimationFrame(render); return; }
         const dt = Math.min((time - lastTime) / 1000 || 0, .04); lastTime = time;
         const { preferences: prefs, paused: stopped, reducedMotion: reduced } = state.current;
         const moving = !stopped && !reduced && !dragging;
@@ -206,7 +209,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
         if (dirty || moving || settling) { xray.update(!reduced); renderer.render(scene, camera); dirty = false; }
         if (moving || settling) frame = requestAnimationFrame(render);
       }
-      function redraw() { dirty = true; if (!frame && canRender()) { lastTime = performance.now() - 16; frame = requestAnimationFrame(render); } }
+      function redraw() { dirty = true; if (!frame && canRender()) { cadence.reset(); lastTime = performance.now() - 16; frame = requestAnimationFrame(render); } }
       function resize() {
         width = host.clientWidth; height = host.clientHeight;
         renderer.setSize(width, height, false); camera.aspect = width / Math.max(1, height);

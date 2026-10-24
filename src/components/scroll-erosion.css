@@ -7,11 +7,16 @@ html[data-erosion=ready] .site-footer{position:relative;z-index:1}
 html[data-erosion=ready] :is(.discovery-section,.portal-section,.ex-page,.motion-showcase){background:transparent}
 /* Paint the actual glyphs from the same field; no duplicated semantic text or UI. */
 html[data-erosion=ready] [data-erosion-ink]{
-  --erosion-fragment-paint:initial;
   color:var(--erosion-current-ink)!important;
-  background-image:var(--erosion-fragment-paint,var(--erosion-ink-paint))!important;
-  background-size:var(--erosion-local-paint-size,var(--erosion-paint-size))!important;
-  background-position:var(--erosion-ink-position,0 0)!important;
+  background-image:none!important;
+  -webkit-text-fill-color:currentColor!important;
+  transition-property:opacity,transform,translate,scale,rotate,text-decoration-color,border-color!important;
+}
+/* Only the small set of glyphs touching the frontier needs raster paint. */
+html[data-erosion=ready] [data-erosion-split]{
+  background-image:var(--erosion-local-paint)!important;
+  background-size:var(--erosion-local-paint-size)!important;
+  background-position:0 0!important;
   background-origin:border-box!important;
   background-repeat:no-repeat!important;
   background-clip:text!important;-webkit-background-clip:text!important;
@@ -20,8 +25,6 @@ html[data-erosion=ready] [data-erosion-ink]{
      stay exact; only the authored physical movement/decoration may interpolate. */
   transition-property:opacity,transform,translate,scale,rotate,text-decoration-color,border-color!important;
 }
-html[data-erosion=ready] [data-erosion-ink=muted]{background-image:var(--erosion-fragment-paint,var(--erosion-muted-paint))!important}
-html[data-erosion=ready] [data-erosion-ink=accent]{background-image:var(--erosion-fragment-paint,var(--erosion-accent-paint))!important}
 html[data-erosion=ready] [data-erosion-fragment]{box-decoration-break:slice!important;-webkit-box-decoration-break:slice!important}
 /* A heading paints a sole inline title link across all of its wrapped lines. */
 html[data-erosion=ready] [data-erosion-carrier]>a{background-image:none!important;color:inherit!important;-webkit-text-fill-color:inherit!important}
