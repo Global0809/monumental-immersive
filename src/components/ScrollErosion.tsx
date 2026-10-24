@@ -17,6 +17,7 @@ type Ink = {
   paintCache?: { key: string; image: string };
 };
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
+const scrollDistanceScale = 2;
 const paintSelector = 'h1,h2,h3,h4,p,span,small,strong,em,a,label,summary,dt,dd,li,div';
 
 /** One noninteractive compositor, shared by every route. No application/media clones. */
@@ -214,9 +215,11 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         if (c.toTheme === previousTheme) continue;
         const desiredStart = c.top - height * (c.start ?? 1.02);
         const startY = Math.max(0, desiredStart, previousEnd + height * .12);
-        const endY = Math.min(max, Math.max(c.top - height * (c.end ?? .08), startY + height * .7));
-        // Short content stays short. Do not compress a wipe into a tiny scroll movement.
-        if (endY - startY < height * .55) continue;
+        const originalEnd = Math.max(c.top - height * (c.end ?? .08), startY + height * .7);
+        // Keep the entry point, but travel through the same contour over twice the scroll.
+        const endY = Math.min(max, startY + (originalEnd - startY) * scrollDistanceScale);
+        // Preserve real page height; omit cramped trailing wipes instead of speeding them up.
+        if (endY - startY < height * .55 * scrollDistanceScale) continue;
         chapters.push({ ...c, fromTheme: c.fromTheme ?? previousTheme, startY, endY });
         previousEnd = endY; previousTheme = c.toTheme;
       }
