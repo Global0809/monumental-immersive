@@ -44,7 +44,7 @@ export default function MomentNotebook({ onWatch }: {onWatch:(video:Video,startA
     const item=collection[index]?.moment;
     if(!item) return;
     deletionFocus.current=collection[index+1]?.moment.id || collection[index-1]?.moment.id || '';
-    removeMoment(id); playSound('close'); notify('Moment removed','Undo',()=>restoreMoment(item));
+    removeMoment(id); playSound('remove'); notify('Moment removed','Undo',()=>{if(restoreMoment(item))playSound('save');});
   }
   return <section ref={root} className="moment-notebook" aria-labelledby="notebook-title">
     <div className="notebook-heading"><span className="notebook-symbol"><Quotes weight="thin" size={38}/></span><div><small>YOUR PERSONAL FIELD NOTES</small><h2 ref={heading} tabIndex={-1} id="notebook-title">SOME MOMENTS<br/><span>STAY WITH YOU.</span></h2></div><span className="notebook-count"><strong>{String(collection.length).padStart(2,'0')}</strong>moments kept</span></div>

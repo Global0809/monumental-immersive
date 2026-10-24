@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { places } from '../data/catalogue';
 import { go } from './router';
+import { playSound } from './audio';
 
 const listeners = new Set<() => void>();
 let destination = 'miami';
@@ -15,6 +16,6 @@ const subscribe = (listener: () => void) => { listeners.add(listener); return ()
 export const useDestination = () => useSyncExternalStore(subscribe, () => destination, () => 'miami');
 export function enterWorld(id: string, reducedMotion: boolean) {
   selectDestination(id);
-  if (reducedMotion) { go('/world', { place: id }); return; }
+  if (reducedMotion) { playSound('destination'); go('/world', { place: id }); return; }
   window.dispatchEvent(new CustomEvent('monumental:portal-open', { detail: { place: id } }));
 }

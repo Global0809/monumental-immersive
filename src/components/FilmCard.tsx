@@ -19,8 +19,8 @@ export function SaveButton({ video, small = false }: { video: Video; small?: boo
   const saved = viewer.saved.includes(video.id);
   return <button data-sound-owned className={small ? 'icon-button save-small' : 'button button-outline'} aria-label={`${saved ? 'Remove' : 'Save'} ${video.title}`} aria-pressed={saved} onClick={() => {
     const added = toggleSaved(video.id);
-    playSound(added ? 'save' : 'close');
-    notify(added ? `${video.title} saved to My World` : `${video.title} removed`, 'Undo', () => { updateViewer(state=>({saved:added?state.saved.filter(id=>id!==video.id):[...new Set([...state.saved,video.id])]})); playSound('select'); });
+    playSound(added ? 'save' : 'remove');
+    notify(added ? `${video.title} saved to My World` : `${video.title} removed`, 'Undo', () => { updateViewer(state=>({saved:added?state.saved.filter(id=>id!==video.id):[...new Set([...state.saved,video.id])]})); playSound(added ? 'remove' : 'save'); });
   }}>{saved ? <Check size={18}/> : <Plus size={18}/>} {!small && (saved ? 'Saved' : 'Save for later')}</button>;
 }
 

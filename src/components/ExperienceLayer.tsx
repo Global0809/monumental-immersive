@@ -50,29 +50,48 @@ export default function ExperienceLayer({ path, reducedMotion }: { path: string;
   }, []);
 
   useEffect(() => {
-    let lastHover = 0;
-    let previousTarget: Element | null = null;
+    let lastHover = -Infinity;
+    let hoverTimer = 0;
+    let previousTarget: HTMLElement | null = null;
     const excluded = (el: Element) => el.closest('[data-sound-owned],.ms-player-dialog,.sound-studio');
+    const hoverTargets = '.film-image > a,.film-title,.hero-feature,.portal,.category-index a,.journey-stop-picture,.bottom-nav a,.index-links a,.ex-story-image > a,[data-sound-hover]';
+    const cancelHover = () => { window.clearTimeout(hoverTimer); hoverTimer = 0; };
     const click = (e: MouseEvent) => {
-      const control = (e.target as Element).closest<HTMLElement>('button,a,summary');
+      cancelHover();
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !(e.target instanceof Element)) return;
+      const control = e.target.closest<HTMLElement>('button,a,summary');
       if (!control || excluded(control) || control.matches(':disabled,[aria-disabled="true"]')) return;
       const label = (control.getAttribute('aria-label') || control.textContent || '').toLowerCase();
       const explicit = control.dataset.sound as SoundType | undefined;
-      const type: SoundType = explicit || (control.tagName === 'A' && control.getAttribute('href')?.startsWith('#/') ? 'navigate' : /close|cancel/.test(label) ? 'close' : /open|index|search/.test(label) ? 'open' : /save|follow/.test(label) ? 'save' : 'select');
+      const disclosure = control.tagName === 'SUMMARY' ? control.closest('details') : null;
+      const type: SoundType = explicit || (disclosure ? disclosure.open ? 'close' : 'open' : control.tagName === 'A' && control.getAttribute('href')?.startsWith('#/') ? 'navigate' : /close|cancel|dismiss/.test(label) ? 'close' : /open|index|search/.test(label) ? 'open' : 'select');
       playSound(type);
     };
     const hover = (e: PointerEvent) => {
-      if (e.pointerType !== 'mouse') return;
-      const control = (e.target as Element).closest<HTMLElement>('a,button');
+      if (e.pointerType !== 'mouse' || !(e.target instanceof Element)) return;
+      const control = e.target.closest<HTMLElement>(hoverTargets);
       if (control === previousTarget) return;
+      cancelHover();
       previousTarget = control;
-      if (!control || excluded(control) || control.matches(':disabled') || performance.now() - lastHover < 160) return;
-      lastHover = performance.now();
-      playSound('hover', { intensity: .35, pan: Math.max(-.7, Math.min(.7, e.clientX / innerWidth * 1.4 - .7)) });
+      if (!control || excluded(control) || control.matches(':disabled,[aria-disabled="true"],[aria-current="page"]')) return;
+      const pan = Math.max(-.7, Math.min(.7, e.clientX / innerWidth * 1.4 - .7));
+      hoverTimer = window.setTimeout(() => {
+        hoverTimer = 0;
+        if (previousTarget !== control || !control.isConnected || !control.matches(':hover') || document.hidden || performance.now() - lastHover < 450) return;
+        lastHover = performance.now();
+        playSound('hover', { intensity: .23, pan });
+      }, 90);
+    };
+    const leave = (e: PointerEvent) => {
+      if (e.relatedTarget instanceof Node && previousTarget?.contains(e.relatedTarget)) return;
+      cancelHover(); previousTarget = null;
     };
     document.addEventListener('click', click);
     document.addEventListener('pointerover', hover, { passive: true });
-    return () => { document.removeEventListener('click', click); document.removeEventListener('pointerover', hover); };
+    document.addEventListener('pointerout', leave, { passive: true });
+    document.addEventListener('pointerdown', cancelHover, { passive: true });
+    document.addEventListener('visibilitychange', cancelHover);
+    return () => { cancelHover(); document.removeEventListener('click', click); document.removeEventListener('pointerover', hover); document.removeEventListener('pointerout', leave); document.removeEventListener('pointerdown', cancelHover); document.removeEventListener('visibilitychange', cancelHover); };
   }, []);
 
   useEffect(() => {
@@ -107,7 +126,7 @@ export default function ExperienceLayer({ path, reducedMotion }: { path: string;
     {!persistentStorage && !storageNoticeDismissed && <div className="storage-status" role="status"><strong>Saved for this visit.</strong><span>Browser storage is unavailable. Your collection and notes will reset when you reload.</span><button aria-label="Dismiss storage message" onClick={()=>setStorageNoticeDismissed(true)}><X size={17}/></button></div>}
     <button className={`back-to-top ${scrolled ? 'is-visible' : ''}`} tabIndex={scrolled ? 0 : -1} aria-label="Back to top" onClick={() => scrollTo({ top: 0, behavior: reducedMotion ? 'instant' : 'smooth' })}><ArrowUp size={18}/></button>
     <div className="notice-region" aria-live="polite" aria-atomic="true">
-      {notice && <div className="experience-notice" key={notice.id} onPointerEnter={()=>setNoticePaused(true)} onPointerLeave={event=>{if(!event.currentTarget.contains(document.activeElement))setNoticePaused(false);}} onFocusCapture={()=>setNoticePaused(true)} onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget))setNoticePaused(false);}}><Check size={18}/><span>{notice.message}</span>{notice.undo && <button onClick={() => { notice.undo?.(); setNotice(null); }}>{notice.action || 'Undo'}</button>}<button className="notice-close" aria-label="Dismiss message" onClick={() => setNotice(null)}><X size={16}/></button></div>}
+      {notice && <div className="experience-notice" key={notice.id} onPointerEnter={()=>setNoticePaused(true)} onPointerLeave={event=>{if(!event.currentTarget.contains(document.activeElement))setNoticePaused(false);}} onFocusCapture={()=>setNoticePaused(true)} onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget))setNoticePaused(false);}}><Check size={18}/><span>{notice.message}</span>{notice.undo && <button data-sound-owned onClick={() => { notice.undo?.(); setNotice(null); }}>{notice.action || 'Undo'}</button>}<button className="notice-close" aria-label="Dismiss message" onClick={() => setNotice(null)}><X size={16}/></button></div>}
     </div>
   </>;
 }

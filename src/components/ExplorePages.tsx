@@ -82,7 +82,7 @@ function StoryCards({ items, onWatch, empty, onReset }: { items: Video[]; onWatc
       {video.status === "available" && <button className="ex-story-play" onClick={() => onWatch(video)} aria-label={`Watch ${video.title}`}><Play weight="fill" size={23} /></button>}
     </div>
     <div className="ex-story-meta"><span>{channelOf(video)}</span><span>{video.status === "available" ? durationLabel(video.duration) : "Original series"}</span></div>
-    <div className="ex-story-title"><h3><a href={href(`/film/${video.id}`)}>{video.title}</a></h3><button className="ex-save-story" data-sound-owned aria-label={`${viewer.saved.includes(video.id) ? "Remove" : "Save"} ${video.title}`} aria-pressed={viewer.saved.includes(video.id)} onClick={() => { toggleSaved(video.id); playSound("save"); }}>{viewer.saved.includes(video.id) ? <Check size={20} /> : <Plus size={20} />}</button></div>
+    <div className="ex-story-title"><h3><a href={href(`/film/${video.id}`)}>{video.title}</a></h3><button className="ex-save-story" data-sound-owned aria-label={`${viewer.saved.includes(video.id) ? "Remove" : "Save"} ${video.title}`} aria-pressed={viewer.saved.includes(video.id)} onClick={() => { const added = toggleSaved(video.id); playSound(added ? "save" : "remove"); }}>{viewer.saved.includes(video.id) ? <Check size={20} /> : <Plus size={20} />}</button></div>
     <p>{video.description}</p>
   </article>)}</div>;
 }
@@ -111,14 +111,14 @@ export function WorldPage({ params, reducedMotion, onWatch }: ExploreProps) {
         <span className="ex-orbit-cross ex-orbit-cross--one" aria-hidden="true">+</span><span className="ex-orbit-cross ex-orbit-cross--two" aria-hidden="true">+</span>
       </section>
       <aside className="ex-location" aria-label={`${selected.name} destination`}>
-        <div className="ex-location-top"><span>YOUR COORDINATES</span><button data-sound-owned aria-label={`${viewer.savedPlaces.includes(selected.id) ? "Unsave" : "Save"} ${selected.name}`} aria-pressed={viewer.savedPlaces.includes(selected.id)} onClick={() => { togglePlace(selected.id); playSound("save"); }}><BookmarkSimple size={22} weight={viewer.savedPlaces.includes(selected.id) ? "fill" : "regular"} /></button></div>
+        <div className="ex-location-top"><span>YOUR COORDINATES</span><button data-sound-owned aria-label={`${viewer.savedPlaces.includes(selected.id) ? "Unsave" : "Save"} ${selected.name}`} aria-pressed={viewer.savedPlaces.includes(selected.id)} onClick={() => { const added = togglePlace(selected.id); playSound(added ? "save" : "remove"); }}><BookmarkSimple size={22} weight={viewer.savedPlaces.includes(selected.id) ? "fill" : "regular"} /></button></div>
         <div className="ex-location-name ex-reactive" key={selected.id}><span>{selected.country}</span><h2>{selected.name}</h2></div>
         <div className="ex-coordinates ex-reactive">{coordinates(selected.lat, selected.lon)}<ArrowUpRight size={17} /></div>
         <div className="ex-location-photo ex-reactive"><img key={selected.image} src={asset(selected.image)} alt={`Destination photograph of ${selected.name}`} /><span>{selected.id === "miami" ? "THE OPENING GATEWAY" : "A DIFFERENT POINT OF VIEW"}</span></div>
         <p className="ex-location-tagline">{selected.tagline}</p>
         <button className="ex-location-explore" onClick={() => section.current?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" })}>Explore {selected.name}<ArrowDown size={21} /></button>
         <div className="ex-location-inventory ex-reactive"><span><strong>{String(available.length).padStart(2, "0")}</strong> playable stories</span><span><strong>{durationLabel(available.reduce((sum, video) => sum + video.duration, 0))}</strong> to discover</span></div>
-        {selected.id === "miami" && <button className="button button-outline city-entry-link" onClick={() => { setCityRequest(value => value + 1); document.getElementById("city-experience")?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" }); }}>Step inside Miami <ArrowUpRight size={18}/></button>}
+        {selected.id === "miami" && <button className="button button-outline city-entry-link" data-sound="destination" onClick={() => { setCityRequest(value => value + 1); document.getElementById("city-experience")?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" }); }}>Step inside Miami <ArrowUpRight size={18}/></button>}
       </aside>
     </div>
     <div className="ex-world-tools"><span><Path size={18} /> CULTURE IS A CONNECTION.</span><div><button data-sound-owned aria-pressed={linksVisible} onClick={() => updateRoute("/world", params, { links: linksVisible ? "off" : "" })}><span className={linksVisible ? "ex-toggle-light is-on" : "ex-toggle-light"} />Cultural connections {linksVisible ? "on" : "off"}</button><button data-sound-owned onClick={() => { const options = places.filter(place => place.id !== selected.id); selectPlace(options[Math.floor(Math.random() * options.length)].id); }}><Shuffle size={17} />Take a different turn</button></div></div>

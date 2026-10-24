@@ -724,6 +724,7 @@ export default function Atlas({
           <div className="cultural-atlas__controls" aria-label="Globe controls">
             <span className="cultural-atlas__hint">DRAG TO EXPLORE</span>
             <button
+              data-sound="drag"
               onClick={() => controls.current?.rotate(-0.3)}
               aria-label="Rotate globe left"
               title="Rotate left"
@@ -731,6 +732,7 @@ export default function Atlas({
               <ArrowLeft size={16} />
             </button>
             <button
+              data-sound="drag"
               onClick={() => controls.current?.rotate(0.3)}
               aria-label="Rotate globe right"
               title="Rotate right"
@@ -738,6 +740,7 @@ export default function Atlas({
               <ArrowRight size={16} />
             </button>
             <button
+              data-sound="focus"
               onClick={() => { controls.current?.reset(); setZoomLevel(0); }}
               aria-label="Reset globe to Miami"
               title="Return to Miami"
