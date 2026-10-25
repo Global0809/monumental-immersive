@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildErosionContour, prepareErosionContour } from '../src/services/erosionContour.ts';
+import { buildErosionContour, prepareErosionContour, prepareErosionContourSlice, type ErosionContourOptions } from '../src/services/erosionContour.ts';
 
 const options = { width: 1440, height: 900, progress: 0.5, seed: 'home-journey' };
 
@@ -114,4 +114,87 @@ test('lazy material preparation and previous visits cannot change the contour', 
   const advanced = buildErosionContour({ ...options, seed: 'lazy-revisit', progress: .58 });
   const displacement = [90, 250, 480, 720, 960, 1200, 1390].map(x => initial.frontierAt(x) - advanced.frontierAt(x));
   assert.ok(Math.max(...displacement) - Math.min(...displacement) > 15, 'Different pieces of the material should erode at different rates, rather than translating an unchanged wave');
+});
+
+function tileBandCount(width: number, height: number) {
+  const step = Math.max(1.8, width / 580, height / 580);
+  return Math.ceil((Math.ceil(height / step) + 2) / 16);
+}
+function warmAll(input: ErosionContourOptions) {
+  const limit = tileBandCount(input.width, input.height);
+  for (let calls = 1; calls <= limit; calls++) if (prepareErosionContourSlice(input)) return calls;
+  assert.fail('Idle preparation did not finish within one call per tile band');
+}
+function captureContour(input: ErosionContourOptions) {
+  const contour = buildErosionContour(input);
+  // Capture values immediately: contours retain a shared field that subsequent
+  // idle preparation may fill, so comparing only its live closures is insufficient.
+  const samples: boolean[] = [], rectangles: string[] = [], frontiers: number[] = [];
+  for (let y = 0; y <= input.height; y += 29) for (let x = 0; x <= input.width; x += 47) {
+    samples.push(contour.incomingAt(x, y));
+    rectangles.push(contour.classifyRect(x, y, Math.min(x + 63, input.width), Math.min(y + 41, input.height)));
+  }
+  for (let x = 0; x <= input.width; x += 31) frontiers.push(contour.frontierAt(x));
+  return { path: contour.path, pointCount: contour.pointCount, samples, rectangles, frontiers };
+}
+function evictFields(prefix: string) {
+  for (let i = 0; i < 4; i++) prepareErosionContourSlice({ ...options, seed: `${prefix}-${i}` });
+}
+
+test('each idle slice warms exactly one cold band and completion means the whole field is ready', () => {
+  for (const [width, height] of [[390, 844], [1440, 900], [4096, 900]]) {
+    const input = { ...options, width, height, seed: `one-band-${width}`, progress: .5 };
+    const expected = tileBandCount(width, height);
+    // Changing the requested frontier reprioritizes work without warming multiple
+    // bands or forgetting the bands already prepared at the old position.
+    for (let call = 1; call <= expected; call++) {
+      const progress = [.5, .99, .01, .75, .25][call % 5];
+      assert.equal(prepareErosionContourSlice({ ...input, progress }), call === expected);
+    }
+    assert.equal(prepareErosionContourSlice({ ...input, progress: 0 }), true);
+    assert.equal(prepareErosionContourSlice({ ...input, progress: 1 }), true);
+  }
+});
+
+test('fully sliced preparation preserves cold contour paths and text classifications after distant jumps', () => {
+  for (const direction of ['up', 'down'] as const) {
+    const input = { ...options, seed: `slice-jumps-${direction}`, direction, macroAmplitude: .18, detailAmount: 1.2 };
+    const jumps = [.5, .91, .12, .76, .31, .5];
+    const cold = jumps.map(progress => captureContour({ ...input, progress }));
+    evictFields(`slice-jumps-eviction-${direction}`);
+    assert.equal(warmAll({ ...input, progress: .5 }), tileBandCount(input.width, input.height));
+    const ready = jumps.map(progress => captureContour({ ...input, progress }));
+    assert.deepEqual(ready, cold, 'Idle warm-up must not alter the contour, its cavities or text decisions');
+    assert.equal(prepareErosionContourSlice({ ...input, progress: .91 }), true);
+  }
+});
+
+test('the first idle slice prioritizes the requested frontier instead of an unrelated edge band', () => {
+  for (const progress of [0, .37, .63, 1]) {
+    const baseline = { ...options, progress, seed: `priority-baseline-${progress}` };
+    prepareErosionContour(baseline);
+    const baselineRemaining = warmAll(baseline);
+    const sliced = { ...options, progress, seed: `priority-sliced-${progress}` };
+    assert.equal(prepareErosionContourSlice(sliced), false);
+    prepareErosionContour(sliced);
+    // The first slice belongs to the range required by ordinary preparation.
+    // If it spent its work elsewhere, one fewer band would remain here.
+    assert.equal(warmAll(sliced), baselineRemaining);
+  }
+});
+
+test('partial idle work, ordinary preflight and cache eviction retain original deterministic geometry', () => {
+  const input = { ...options, width: 900, height: 700, seed: 'partial-slice-revisit', progress: .43 };
+  const original = captureContour(input);
+  evictFields('partial-slice-reset');
+  for (let i = 0; i < 3; i++) assert.equal(prepareErosionContourSlice({ ...input, progress: .43 }), false);
+  prepareErosionContour({ ...input, progress: .88 });
+  assert.deepEqual(captureContour(input), original);
+  warmAll(input);
+  assert.deepEqual(captureContour(input), original);
+  evictFields('partial-slice-final-reset');
+  assert.equal(prepareErosionContourSlice(input), false, 'Evicted fields must restart their bounded preparation');
+  assert.deepEqual(captureContour(input), original);
+  assert.ok(warmAll(input) <= tileBandCount(input.width, input.height));
+  assert.equal(prepareErosionContourSlice(input), true);
 });

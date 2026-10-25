@@ -13,7 +13,7 @@ export interface ErosionContour {
   pointCount: number; edgeSoftness: number;
 }
 type Point = { x: number; y: number };
-type Field = { values: Float32Array; rowMin: Float32Array; rowMax: Float32Array; tileMin: Float32Array; tileMax: Float32Array; tileCols: number; tileRows: number; cols: number; rows: number; step: number; bleed: number; scale: number; ensure: (threshold: number) => void };
+type Field = { values: Float32Array; rowMin: Float32Array; rowMax: Float32Array; tileMin: Float32Array; tileMax: Float32Array; tileCols: number; tileRows: number; cols: number; rows: number; step: number; bleed: number; scale: number; ensure: (threshold: number) => void; prepareSlice: (threshold: number) => boolean };
 const TILE = 16;
 const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
 const finite = (n: number | undefined, fallback: number) => Number.isFinite(n) ? n as number : fallback;
@@ -92,11 +92,9 @@ function material(width: number, height: number, seed: number, amplitude: number
     tileMin[ty * tileCols + tx] = (ty * TILE - 1) * step - bleed;
     tileMax[ty * tileCols + tx] = ((ty + 1) * TILE - 1) * step + bleed;
   }
-  const ensure = (threshold: number) => {
-    const firstTile = clamp(Math.floor(((threshold - bleed) / step - 1) / TILE), 0, tileRows - 1);
-    const lastTile = clamp(Math.floor(((threshold + bleed) / step + 2) / TILE), 0, tileRows - 1);
-    for (let ty = firstTile; ty <= lastTile; ty++) {
-      if (readyTiles[ty]) continue;
+  let pendingTiles = tileRows;
+  const ensureBand = (ty: number) => {
+      if (readyTiles[ty]) return;
       for (let row = ty * TILE; row <= Math.min(rows - 1, (ty + 1) * TILE); row++) {
         if (readyRows[row]) continue;
         const y = (row - 1) * step;
@@ -135,9 +133,28 @@ function material(width: number, height: number, seed: number, amplitude: number
         tileMin[ty * tileCols + tx] = min; tileMax[ty * tileCols + tx] = max;
       }
       readyTiles[ty] = 1;
-    }
+      pendingTiles--;
   };
-  const field = { values, rowMin, rowMax, tileMin, tileMax, tileCols, tileRows, cols, rows, step, scale, bleed, ensure };
+  const ensure = (threshold: number) => {
+    const firstTile = clamp(Math.floor(((threshold - bleed) / step - 1) / TILE), 0, tileRows - 1);
+    const lastTile = clamp(Math.floor(((threshold + bleed) / step + 2) / TILE), 0, tileRows - 1);
+    for (let ty = firstTile; ty <= lastTile; ty++) ensureBand(ty);
+  };
+  const prepareSlice = (threshold: number) => {
+    if (pendingTiles === 0) return true;
+    // Warm only one band per idle callback. Start at the current frontier and
+    // work outward, so restored positions and sudden jumps get first priority.
+    const target = clamp((threshold / step + 1) / TILE - .5, 0, tileRows - 1);
+    let nearest = -1, distance = Infinity;
+    for (let ty = 0; ty < tileRows; ty++) {
+      if (!readyTiles[ty] && Math.abs(ty - target) < distance) {
+        nearest = ty; distance = Math.abs(ty - target);
+      }
+    }
+    if (nearest !== -1) ensureBand(nearest);
+    return pendingTiles === 0;
+  };
+  const field = { values, rowMin, rowMax, tileMin, tileMax, tileCols, tileRows, cols, rows, step, scale, bleed, ensure, prepareSlice };
   if (fields.size >= 4) fields.delete(fields.keys().next().value!);
   fields.set(key, field);
   return field;
@@ -169,6 +186,12 @@ export function prepareErosionContour(options: ErosionContourOptions) {
   const height = clamp(finite(options.height, 1), 1, 32768);
   const f = material(clamp(finite(options.width, 1), 1, 32768), height, seedHash(options.seed), clamp(finite(options.macroAmplitude, .15), 0, .3), clamp(finite(options.detailAmount, 1), 0, 2));
   f.ensure(height + f.bleed - clamp(finite(options.progress, 0), 0, 1) * (height + f.bleed * 2));
+}
+/** One idle work slice; true means every band of this cached material is ready. */
+export function prepareErosionContourSlice(options: ErosionContourOptions): boolean {
+  const height = clamp(finite(options.height, 1), 1, 32768);
+  const f = material(clamp(finite(options.width, 1), 1, 32768), height, seedHash(options.seed), clamp(finite(options.macroAmplitude, .15), 0, .3), clamp(finite(options.detailAmount, 1), 0, 2));
+  return f.prepareSlice(height + f.bleed - clamp(finite(options.progress, 0), 0, 1) * (height + f.bleed * 2));
 }
 export function buildErosionContour(options: ErosionContourOptions): ErosionContour {
   const width = clamp(finite(options.width, 1), 1, 32768), height = clamp(finite(options.height, 1), 1, 32768);

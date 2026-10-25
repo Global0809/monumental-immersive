@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
-import { buildErosionContour, prepareErosionContour } from '../services/erosionContour';
+import { buildErosionContour, prepareErosionContourSlice } from '../services/erosionContour';
 import { createFrameCadence } from '../services/frameCadence';
 import { erosionChapters, erosionProtected, type ErosionChapter, type ErosionTheme } from '../services/erosionChapters';
 import './scroll-erosion.css';
@@ -42,12 +42,11 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     let width = innerWidth, height = innerHeight, chapters: MeasuredChapter[] = [];
     let inks: Ink[] = [], protectedNodes: HTMLElement[] = [], rules: PaintableElement[] = [];
     let frame = 0, refreshFrame = 0, disposed = false, needsScan = true, lastKey = '';
-    let alignmentUntil = 0, contourKey = '';
+    let alignmentUntil = 0, contourKey = '', lastScrollY = NaN, visibilityDirty = true;
     const cadence = createFrameCadence();
     let contourCache: ReturnType<typeof buildErosionContour> | null = null;
     let idlePreflight = 0, preflightSignature = '';
     let preflightQueue: { key: string; chapter: MeasuredChapter; width: number; height: number }[] = [];
-    const preparedFields = new Set<string>();
     let playingFilm = document.body.classList.contains('monumental-player-active');
     const markedInk = new Set<HTMLElement>(), markedProtect = new Set<HTMLElement>();
     const markedRule = new Set<PaintableElement>();
@@ -59,24 +58,17 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         const item = inkByElement.get(entry.target);
         if (!item) continue;
         if (entry.isIntersecting) visibleInks.add(item);
-        else {
-          visibleInks.delete(item);
-          delete item.element.dataset.erosionSplit;
-          item.element.style.removeProperty('--erosion-local-paint');
-          item.paintCache = undefined; item.fragmentCache = undefined;
-        }
+        else visibleInks.delete(item);
       }
+      // Observer snapshots can predate a fast jump. Never change glyph paint
+      // here; the next draw checks live rectangles and commits all paint together.
+      visibilityDirty = true;
       schedule();
     }, { rootMargin: '90px 0px' });
     const context = gsap.context(() => {}, root);
     const config = erosionChapters(path);
 
     const materialKey = (chapter: MeasuredChapter) => JSON.stringify([width, height, chapter.seed, chapter.macroAmplitude ?? .15, chapter.detailAmount ?? 1]);
-    function rememberPrepared(key: string) {
-      if (preparedFields.has(key)) return;
-      preparedFields.add(key);
-      if (preparedFields.size > 4) preparedFields.delete(preparedFields.values().next().value!);
-    }
     function cancelPreflight() {
       if (idlePreflight) window.cancelIdleCallback(idlePreflight);
       idlePreflight = 0; preflightQueue = []; preflightSignature = '';
@@ -86,26 +78,24 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       idlePreflight = window.requestIdleCallback(deadline => {
         idlePreflight = 0;
         if (disposed || document.hidden || playingFilm || reducedMotion) { cancelPreflight(); return; }
-        // Optional work must never be forced into a busy animation/input frame.
-        // If no useful idle window exists, ordinary first-demand rendering wins.
-        if (deadline.timeRemaining() < 35) { preflightQueue = []; return; }
-        let next = preflightQueue.shift();
-        while (next && preparedFields.has(next.key)) next = preflightQueue.shift();
-        if (next) {
-          prepareErosionContour({ ...next.chapter, width: next.width, height: next.height, progress: 0 });
-          rememberPrepared(next.key);
+        // Warm at most one small row band per genuine idle window. Keep the
+        // queue on a busy frame instead of incorrectly marking it prepared.
+        if (deadline.timeRemaining() >= 6) {
+          const next = preflightQueue[0];
+          const progress = clamp((scrollY - next.chapter.startY) / (next.chapter.endY - next.chapter.startY));
+          if (prepareErosionContourSlice({ ...next.chapter, width: next.width, height: next.height, progress })) preflightQueue.shift();
         }
-        // At most one field per idle callback, at most two nearby fields queued.
         runPreflight();
       });
     }
     function queuePreflight() {
       if (reducedMotion || disposed || document.hidden || playingFilm || typeof window.requestIdleCallback !== 'function') return;
-      const nearby = chapters.filter(chapter => chapter.endY > scrollY && chapter.startY <= scrollY + height * 2.5).slice(0, 2);
+      const nearby = chapters.filter(chapter => chapter.endY >= scrollY - height && chapter.startY <= scrollY + height * 2.5)
+        .sort((a,b) => Math.max(a.startY-scrollY, scrollY-a.endY, 0) - Math.max(b.startY-scrollY, scrollY-b.endY, 0)).slice(0, 2);
       const signature = nearby.map(materialKey).join('|');
       if (signature === preflightSignature) return;
       cancelPreflight(); preflightSignature = signature;
-      preflightQueue = nearby.map(chapter => ({ key: materialKey(chapter), chapter, width, height })).filter(item => !preparedFields.has(item.key));
+      preflightQueue = nearby.map(chapter => ({ key: materialKey(chapter), chapter, width, height }));
       runPreflight();
     }
     function schedule() {
@@ -227,7 +217,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       root!.style.setProperty('--erosion-paint-size', `${width}px ${height}px`);
       field!.dataset.chapters = String(chapters.length);
       field!.dataset.ranges = JSON.stringify(chapters.map(c => ({ seed: c.seed, start: Math.round(c.startY), end: Math.round(c.endY), from: c.fromTheme, to: c.toTheme })));
-      lastKey = '';
+      lastKey = ''; contourKey = ''; visibilityDirty = true;
       queuePreflight();
     }
     function localPaint(item: Ink, rect: DOMRect, d: string, from: string, to: string, key: string) {
@@ -268,8 +258,13 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
     function draw(now = performance.now()) {
       frame = 0;
       if (disposed || document.hidden || playingFilm) return;
-      if (!cadence.ready(now)) { schedule(); return; }
       const y = scrollY;
+      const scrollChanged = y !== lastScrollY;
+      // Native scrolling must never wait for a second animation clock. Keep the
+      // 60 Hz budget only for the short, stationary typography alignment pass.
+      if (!scrollChanged && !visibilityDirty && !cadence.ready(now)) { schedule(); return; }
+      if (scrollChanged) cadence.reset();
+      lastScrollY = y;
       let current: MeasuredChapter | undefined;
       let settled: ErosionTheme = 'black';
       for (const chapter of chapters) {
@@ -280,22 +275,29 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
       const progress = current ? clamp((y - current.startY) / (current.endY - current.startY)) : 1;
       const from = palettes[current?.fromTheme ?? settled], to = palettes[current?.toTheme ?? settled];
       const straightY = current ? Math.max(0, Math.min(height, current.top - y)) : 0;
-      const key = `${current?.seed ?? settled}:${progress}:${width}:${height}:${reducedMotion}`;
+      const key = `${current?.seed ?? settled}:${current?.startY}:${current?.endY}:${current?.top}:${progress}:${width}:${height}:${reducedMotion}`;
       queuePreflight();
       if (!current && key === lastKey) return;
       if (key !== contourKey) {
         contourCache = current && !reducedMotion ? buildErosionContour({ width, height, progress, seed: current.seed, direction: current.direction, macroAmplitude: current.macroAmplitude, detailAmount: current.detailAmount, edgeSoftness: current.edgeSoftness }) : null;
-        if (contourCache && current && progress > 0 && progress < 1) rememberPrepared(materialKey(current));
         contourKey = key;
       }
       const contour = contourCache;
       const d = contour?.path ?? (current && reducedMotion ? `M0 ${straightY}H${width}V${height}H0Z` : `M0 0H${width}V${height}H0Z`);
       const at = (x: number, pointY: number) => (contour ? contour.incomingAt(x, pointY) : pointY >= straightY) ? to : from;
-      // Batch geometry reads before style writes. Offscreen copy receives paint on entry.
-      const visibleInk = Array.from(visibleInks).flatMap(item => {
+      // A fling, PageDown or scrollbar jump can outrun IntersectionObserver.
+      // On every changed scroll position, use current DOM bounds for all ink;
+      // the observer is only an optimization for stationary alignment frames.
+      const candidates = scrollChanged || visibilityDirty ? inks : Array.from(visibleInks);
+      visibilityDirty = false;
+      const outsideInk: Ink[] = [];
+      const visibleInk = candidates.flatMap(item => {
         if (!item.element.isConnected) return [];
         const rect = item.element.getBoundingClientRect();
-        if (rect.bottom < -60 || rect.top > height + 60 || !rect.width) return [];
+        if (rect.bottom < -60 || rect.top > height + 60 || !rect.width) {
+          if (item.paintCache || item.fragmentCache) outsideInk.push(item);
+          return [];
+        }
         // Read every wrapped-line rectangle before changing any paint style.
         const region = !current ? 'to' : contour ? contour.classifyRect(rect.left - 1, rect.top - 1, rect.right + 1, rect.bottom + 1) : rect.bottom < straightY ? 'from' : rect.top > straightY ? 'to' : 'mixed';
         const fragments = region === 'mixed' && item.fragmented ? Array.from(item.element.getClientRects()).filter(fragment => fragment.width > 0 && fragment.height > 0) : [];
@@ -303,6 +305,11 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         return [{ ...item, item, rect, fragments, parentRect, region }];
       });
       const visibleRules = rules.map(element => ({ element, rect: element.getBoundingClientRect() })).filter(({rect}) => rect.bottom >= 0 && rect.top <= height);
+      outsideInk.forEach(item => {
+        delete item.element.dataset.erosionSplit;
+        item.element.style.removeProperty('--erosion-local-paint'); item.element.style.removeProperty('--erosion-fragment-paint');
+        item.paintCache = undefined; item.fragmentCache = undefined;
+      });
       if (key !== lastKey) {
         base.current!.setAttribute('fill', from.surface);
         reveal.current!.setAttribute('fill', to.surface);
@@ -351,6 +358,7 @@ export default function ScrollErosion({ path, reducedMotion }: { path: string; r
         style(element, '--erosion-current-ink', at(rect.left + rect.width / 2, rect.top + rect.height / 2)[role]);
       });
       field!.dataset.mixedInks = String(mixedCount);
+      field!.dataset.paintedScroll = String(y);
       visibleRules.forEach(({ element, rect }) => {
         style(element, '--erosion-rule', at(rect.left + rect.width / 2, rect.top).line);
         // Editorial graphics without text nodes sample their own field position.
