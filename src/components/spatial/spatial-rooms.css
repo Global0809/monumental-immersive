@@ -1,5 +1,5 @@
 /* Exhibition surfaces sit inside the shared WebGL architecture. Keep these
-   rules scoped: the preserved classic website never inherits this treatment. */
+   rules scoped: the architecture and content retain clear stacking boundaries. */
 .monumental-spatial:not([data-spatial-room="atrium"]) {
   --spatial-room-width: 1480px;
   --spatial-room-gutter: clamp(20px, 5vw, 96px);
@@ -179,7 +179,6 @@
   .monumental-spatial .spatial-room-crumb > a:first-child { grid-column: 1; grid-row: 1; }
   .monumental-spatial .spatial-room-crumb > span { grid-column: 1; grid-row: 2; max-width: 100%; text-align: left; font-size: 9px; }
   .monumental-spatial .spatial-room-crumb > span[aria-hidden] { display: none; }
-  .monumental-spatial .spatial-room-crumb .spatial-classic-link { grid-column: 2; grid-row: 1 / 3; min-height: 34px; white-space: nowrap; }
   .monumental-spatial:not([data-spatial-room="atrium"]) .route-stage > .page-section,
   .monumental-spatial:not([data-spatial-room="atrium"]) .film-detail > .page-section,
   .monumental-spatial:not([data-spatial-room="atrium"]) .motion-showcase,

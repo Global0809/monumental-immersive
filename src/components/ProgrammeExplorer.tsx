@@ -47,9 +47,3 @@ export function MembershipQuestions() {
     <details><summary>Will my collection follow me to another device?</summary><p>Today your saved films, notes and journeys stay in this browser. Account sign-in and cross-device sync are not connected yet.</p><a href={href('/my-world')}>Open My World <ArrowUpRight size={15}/></a></details>
   </section>;
 }
-
-export function ExperienceMode() {
-  const immersive = new URLSearchParams(location.search).get('experience') !== 'classic';
-  const modeLink = (mode: string) => { const params = new URLSearchParams(location.search); if (mode === 'classic') params.set('experience', 'classic'); else params.delete('experience'); return `${params.size ? '?' + params.toString() : location.pathname}${location.hash}`; };
-  return <div className="experience-mode"><span><strong>Your way into Monumental</strong><small>Choose the 3D observatory or the original editorial website. Your saved collection stays in this browser.</small></span><div><a className={`button button-outline ${immersive ? 'is-selected' : ''}`} href={modeLink('immersive')} aria-current={immersive ? 'true' : undefined}>3D observatory {immersive && <Check size={15}/>}</a><a className={`button button-outline ${!immersive ? 'is-selected' : ''}`} href={modeLink('classic')} aria-current={!immersive ? 'true' : undefined}>Original website {!immersive && <Check size={15}/>}</a></div></div>;
-}

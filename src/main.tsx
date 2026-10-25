@@ -6,6 +6,10 @@ import '@fontsource/barlow-condensed/700.css';
 import '@fontsource-variable/dm-sans';
 import './styles.css';
 import { initializeCatalogue } from './data/catalogue';
+import { immersiveExperienceUrl } from './services/experienceUrl';
+
+const immersiveUrl = immersiveExperienceUrl(location.pathname, location.search, location.hash);
+if (immersiveUrl) history.replaceState(history.state, '', immersiveUrl);
 
 const rootElement = document.getElementById('root')!;
 async function mountApp() {

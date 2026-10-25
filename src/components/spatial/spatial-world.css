@@ -27,7 +27,7 @@
 .monumental-spatial[data-spatial-room=atrium] .header-location,.monumental-spatial[data-spatial-room=atrium] .premium-link{display:none}
 .monumental-spatial[data-spatial-room=atrium] .page-loading{min-height:100svh;background:transparent}
 .monumental-spatial[data-spatial-room=atrium] .site-header .wordmark{pointer-events:auto}
-@media(max-width:700px){.spatial-home-utility{top:80px;right:20px;font-size:9px;gap:14px}.spatial-world-labels{display:none}.spatial-world--fallback:after{width:72vw;left:14%;top:18%}.spatial-classic-link{margin-left:auto}.spatial-world-vignette{background:linear-gradient(180deg,transparent 20%,transparent 40%,#080909aa 75%)}}
+@media(max-width:700px){.spatial-home-utility{top:80px;right:20px;font-size:9px;gap:14px}.spatial-world-labels{display:none}.spatial-world--fallback:after{width:72vw;left:14%;top:18%}.spatial-world-vignette{background:linear-gradient(180deg,transparent 20%,transparent 40%,#080909aa 75%)}}
 @media(prefers-reduced-motion:reduce){.spatial-world-labels>div{transition:none}}
 html[data-motion=reduced] .spatial-home-content{transition:none}
 @media(prefers-reduced-motion:reduce){.spatial-home-content{transition:none}}

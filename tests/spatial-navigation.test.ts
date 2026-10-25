@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spatialRoomForPath, spatialEnabled, classicExperienceHref, spatialPortals } from '../src/services/spatial.ts';
+import { spatialRoomForPath, spatialPortals } from '../src/services/spatial.ts';
+import { immersiveExperienceUrl } from '../src/services/experienceUrl.ts';
 
 test('the spatial world maps existing routes to rooms without changing routes or film identities', () => {
   assert.equal(spatialRoomForPath('/'), 'atrium');
@@ -13,9 +14,10 @@ test('the spatial world maps existing routes to rooms without changing routes or
   assert.notEqual(spatialRoomForPath('/missing-page'), 'atrium', 'NotFound retains interactive recovery links and navigation');
   assert.equal(new Set(spatialPortals.map(portal => portal.id)).size, spatialPortals.length);
 });
-test('classic website escape retains deep links and independent review parameters', () => {
-  assert.equal(spatialEnabled(''), true);
-  assert.equal(spatialEnabled('?experience=classic'), false);
-  assert.equal(classicExperienceHref('?review=transitions','#/film/sintel?t=8'), '?review=transitions&experience=classic#/film/sintel?t=8');
-  assert.equal(classicExperienceHref('', ''), '?experience=classic#/');
+test('legacy mode links enter the immersive site without losing subdirectory paths, filters or timestamps', () => {
+  assert.equal(immersiveExperienceUrl('/', '?experience=classic', '#/'), '/#/');
+  assert.equal(immersiveExperienceUrl('/monumental-immersive/', '?review=transitions&experience=classic', '#/film/sintel?t=8'), '/monumental-immersive/?review=transitions#/film/sintel?t=8');
+  assert.equal(immersiveExperienceUrl('/', '?experience=classic&experience=immersive', '#/search?place=miami'), '/#/search?place=miami');
+  assert.equal(immersiveExperienceUrl('/', '', '#/world'), null);
+  assert.equal(immersiveExperienceUrl('/', '?review=transitions', '#/'), null);
 });

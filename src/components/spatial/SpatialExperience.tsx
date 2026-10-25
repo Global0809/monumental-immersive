@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { go, href } from '../../services/router';
 import { playSound } from '../../services/audio';
 import {
-  classicExperienceHref, enterSpatialWorld, getSpatialState, resetSpatialEntrance,
+  enterSpatialWorld, getSpatialState, resetSpatialEntrance,
   setSpatialReady, setSpatialUnavailable, setSpatialTravelling, spatialPortals, spatialRoomForPath, spatialPageLabel, useSpatial,
 } from '../../services/spatial';
 import type { SpatialSceneController } from './scene';
@@ -124,7 +124,7 @@ export default function SpatialExperience({ path, reducedMotion, paused }: {
       <div className="spatial-world-labels" ref={labels}>{spatialPortals.map((portal, index) => <div key={portal.id} data-portal-label={portal.id}><span>{String(index + 1).padStart(2, '0')}</span><strong>{portal.title}</strong><i>↗</i></div>)}</div>
     </div>
     {spatial.travelling && <div className="spatial-flight-note"><span role="status">Entering {spatialPortals.find(portal => portal.id === spatial.travelling)?.title}</span><button onClick={() => skipFlight.current()}>Skip transition ↗</button></div>}
-    {path !== '/' ? <nav className="spatial-room-crumb" aria-label="Your position in Monumental"><a href={href('/')}>← The observatory</a><span aria-hidden="true">/</span><span>{spatialPageLabel(path)}</span><a className="spatial-classic-link" href={classicExperienceHref(location.search, location.hash)}>Original website ↗</a></nav>
-      : <div className="spatial-home-utility">{spatial.entered && <button data-sound-owned onClick={() => { cancelFlight.current(); resetSpatialEntrance(); playSound('sculpture-unfold'); window.scrollTo({top:0,behavior:'instant'}); }}>Replay entrance</button>}<a href={classicExperienceHref(location.search, location.hash)}>Original website ↗</a></div>}
+    {path !== '/' ? <nav className="spatial-room-crumb" aria-label="Your position in Monumental"><a href={href('/')}>← The observatory</a><span aria-hidden="true">/</span><span>{spatialPageLabel(path)}</span></nav>
+      : spatial.entered && <div className="spatial-home-utility"><button data-sound-owned onClick={() => { cancelFlight.current(); resetSpatialEntrance(); playSound('sculpture-unfold'); window.scrollTo({top:0,behavior:'instant'}); }}>Replay entrance</button></div>}
   </>;
 }

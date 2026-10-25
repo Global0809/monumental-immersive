@@ -41,16 +41,6 @@ export function spatialPageLabel(path: string): string {
   return 'Monumental';
 }
 
-export function spatialEnabled(search: string): boolean {
-  return new URLSearchParams(search).get('experience') !== 'classic';
-}
-
-export function classicExperienceHref(search: string, hash: string): string {
-  const params = new URLSearchParams(search);
-  params.set('experience', 'classic');
-  return `?${params.toString()}${hash || '#/'}`;
-}
-
 type SpatialState = { entered: boolean; ready: boolean; unavailable: boolean; focus: string | null; travelling: string | null };
 let entered = false;
 try { entered = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('monumental.spatial.entered') === '1'; } catch { /* A private session still works. */ }

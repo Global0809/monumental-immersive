@@ -1,6 +1,6 @@
 # Monumental: 20 spatial additions
 
-The observatory already provided rooms and portals. These additions make the space useful for choosing, investigating, composing and keeping stories. Existing films, routes, original-site mode and collection data remain available.
+The observatory already provided rooms and portals. These additions make the space useful for choosing, investigating, composing and keeping stories. Existing films, routes and collection data remain available within the 3D world.
 
 | # | Addition | Where to try it | What it does |
 |---|---|---|---|
@@ -29,7 +29,7 @@ The observatory already provided rooms and portals. These additions make the spa
 
 Components live in `src/components/spatial/`, with shared styles in `spatial-expansion.css` and `expansion-scenes.css`. `spatialPreferences.ts` validates and stores scene preferences; `spatialDiscovery.ts` resolves honest catalogue connections, portable itineraries and safe SVG exports. The existing route, viewer, playback, audio and spatial-travel services are reused.
 
-The laboratory loads on demand, rests offscreen or in a hidden tab, and disposes its renderer, geometry, environment and listeners when closed. Its automatic motion is opt-in. New folding and orbit transitions respect reduced motion. The rhythm grid also rests offscreen, on tab hiding, on mute and when film playback takes priority. The original 3D world and classic website are retained.
+The laboratory loads on demand, rests offscreen or in a hidden tab, and disposes its renderer, geometry, environment and listeners when closed. Its automatic motion is opt-in. New folding and orbit transitions respect reduced motion. The rhythm grid also rests offscreen, on tab hiding, on mute and when film playback takes priority. The 3D world is the sole visitor experience. Legacy experience-mode links are normalized without losing their route or filters.
 
 ## Verification and boundaries
 
@@ -41,4 +41,4 @@ The laboratory loads on demand, rests offscreen or in a hidden tab, and disposes
 
 ## Recovery
 
-Primary source tag `before-twenty-expansions-2026-10-25` preserves the preceding source revision. The original pre-spatial backup remains in the workspace backups directory; original editorial mode remains linked from the website.
+Primary source tag `before-twenty-expansions-2026-10-25` preserves the preceding source revision. The original pre-spatial backup remains in the workspace backups directory; the original editorial website is preserved in the backup rather than offered as a visitor mode.
