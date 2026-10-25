@@ -5,7 +5,7 @@ import { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft';
 import { Play } from '@phosphor-icons/react/dist/csr/Play';
 import { SpeakerHigh } from '@phosphor-icons/react/dist/csr/SpeakerHigh';
 import { SpeakerSlash } from '@phosphor-icons/react/dist/csr/SpeakerSlash';
-import { videos, places, type Video } from '../../data/catalogue';
+import { videos, type Video } from '../../data/catalogue';
 import { durationLabel } from '../../services/discovery';
 import { href } from '../../services/router';
 import type { SpatialPortal } from './types';
@@ -63,9 +63,9 @@ export default function SpatialHub({
 
     <div className="spatial-entry" aria-hidden={entered} inert={entered}>
       <div className="spatial-entry-copy">
-        <p className="spatial-eyebrow">A different way into the world.</p>
+        <p className="spatial-eyebrow">Films. Places. People. Possibilities.</p>
         <h1>CULTURE.<br/><span>STEP</span><br/>INSIDE<span className="spatial-title-stop">.</span></h1>
-        <p className="spatial-entry-description">Films become doorways.<br/>Places become possibilities.<br/>Follow what moves you.</p>
+        <p className="spatial-entry-description">An open door to extraordinary stories.<br/>Step inside. Follow what moves you.</p>
         <div className="spatial-entry-actions">
           <button className="spatial-enter" onClick={() => { window.scrollTo({ top: 0, behavior: 'instant' }); onEnter(); }} data-sound-owned data-cursor="ENTER">
             <span>ENTER MONUMENTAL</span><ArrowRight size={23}/>
@@ -82,8 +82,8 @@ export default function SpatialHub({
 
     <div className="spatial-observatory" aria-hidden={!entered} inert={!entered}>
       <div className="spatial-observatory-heading">
-        <p className="spatial-eyebrow">Choose your next world.</p>
-        <h1 ref={heading} tabIndex={-1}>YOUR WORLD.<br/><span>ALL AROUND YOU.</span></h1>
+        <p className="spatial-eyebrow">Six doorways. Your way through.</p>
+        <h1 ref={heading} tabIndex={-1}>A WORLD<br/><span>WORTH ENTERING.</span></h1>
         <p className="spatial-instructions">{unavailable ? 'Explore the doorways below.' : reducedMotion ? 'Choose a doorway or use the arrows to look around.' : 'Drag to look around. Select a doorway to go further.'}</p>
       </div>
 
@@ -93,20 +93,17 @@ export default function SpatialHub({
         <button onClick={() => onRotate(0.3)} aria-label="Look right" title="Look right" disabled={unavailable} data-sound-owned><ArrowRight size={20}/></button>
       </div>
 
-      <aside className="spatial-film-vignettes" aria-label="Start with a story">
-        <span className="spatial-vignette-label">START WITH A STORY <i/></span>
-        {features.map((video, index) => <button key={video.id} className="spatial-film-vignette" onClick={() => onWatch(video)} aria-label={`Play ${video.title}, ${durationLabel(video.duration)}`} data-cursor="WATCH">
-          <span className="spatial-film-image"><img src={video.poster} alt="" loading="lazy" decoding="async"/><span><Play size={14} weight="fill"/></span></span>
-          <span className="spatial-film-caption"><small>{places.find(place => place.id === video.places[0])?.name ?? video.category} / {durationLabel(video.duration)}</small><strong>{video.title}</strong><em>{video.tags.includes('motion study') ? 'Original motion study' : 'Open cinema'}</em></span>
-          <span className="spatial-film-number" aria-hidden="true">0{index + 1}</span>
-        </button>)}
-      </aside>
-
       <div className="spatial-room-deck">
-        {active && <div className="spatial-room-description">
-          <span className="spatial-room-caption"><i/>{active.title}</span>
-          <p>{active.description}</p>
-          <span className="spatial-room-count">{active.id === 'my-world' ? 'YOUR COLLECTION' : active.id === 'world' ? `${active.count} ${active.count === 1 ? 'DESTINATION' : 'DESTINATIONS'}` : `${active.count} ${active.count === 1 ? 'STORY' : 'STORIES'} TO EXPLORE`}</span>
+        {active && <div className="spatial-room-description" key={active.id}>
+          <span className="spatial-room-preview" aria-hidden="true"><img src={active.image} alt="" decoding="async"/><span>0{portals.indexOf(active) + 1}</span></span>
+          <div className="spatial-room-copy">
+            <span className="spatial-room-caption"><i/>{active.title}</span>
+            <p>{active.description}</p>
+          </div>
+          <div className="spatial-room-access">
+            <span className="spatial-room-count">{active.id === 'my-world' ? 'YOUR COLLECTION' : active.id === 'world' ? `${active.count} ${active.count === 1 ? 'DESTINATION' : 'DESTINATIONS'}` : `${active.count} ${active.count === 1 ? 'STORY' : 'STORIES'} TO EXPLORE`}</span>
+            <a href={href(active.route)} onClick={event => navigate(event, active)} data-cursor="ENTER">Enter {active.title.replace(/^The /, '')}<ArrowUpRight size={19}/></a>
+          </div>
         </div>}
         <nav className="spatial-room-rail" aria-label="Explore Monumental spaces">
           {portals.map((portal, index) => <a
@@ -120,9 +117,16 @@ export default function SpatialHub({
             onBlur={() => onFocus(null)}
             data-cursor="ENTER"
             aria-label={`Explore ${portal.title}. ${portal.description}`}
-          ><span className="spatial-room-order">0{index + 1}<ArrowUpRight size={16}/></span><strong>{portal.title}</strong><span className="spatial-room-rule" aria-hidden="true"/></a>)}
+          ><span className="spatial-room-thumb" aria-hidden="true"><img src={portal.image} alt="" loading="lazy" decoding="async"/></span><span className="spatial-room-link-copy"><span className="spatial-room-order">0{index + 1}<ArrowUpRight size={15}/></span><strong>{portal.title}</strong></span><span className="spatial-room-rule" aria-hidden="true"/></a>)}
         </nav>
       </div>
+
+      <aside className="spatial-film-vignettes" aria-label="Start with a story">
+        <span className="spatial-vignette-label">OR PRESS PLAY</span>
+        {features.map(video => <button key={video.id} className="spatial-film-vignette" onClick={() => onWatch(video)} aria-label={`Play ${video.title}, ${durationLabel(video.duration)}`} data-cursor="WATCH">
+          <Play size={13} weight="fill"/><span>{video.title}</span><small>{durationLabel(video.duration)}</small>
+        </button>)}
+      </aside>
     </div>
 
     <button className="spatial-sound-toggle" onClick={onToggleSound} aria-pressed={sound && !soundUnavailable} disabled={soundUnavailable} data-sound-owned

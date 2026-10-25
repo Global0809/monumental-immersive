@@ -18,12 +18,13 @@ export type SpatialSceneController = {
   setFocus: (id: string | null) => void;
   setScroll: (progress: number) => void;
   rotate: (delta: number) => void;
+  travelTo: (id: string, onComplete: () => void) => void;
+  cancelTravel: () => void;
   destroy: () => void;
 };
 
 const INK = 0x080909;
 const RED = 0xff4d32;
-const LIGHT = 0xefeee9;
 const asset = (url: string) => {
   const base = import.meta.env.BASE_URL;
   if (!url.startsWith('/') || url.startsWith('//') || (base !== '/' && url.startsWith(base))) return url;
@@ -42,7 +43,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     renderer = new THREE.WebGLRenderer({ alpha: false, antialias: true, powerPreference: 'high-performance' });
   } catch {
     options.onUnavailable();
-    return { setState() {}, setFocus() {}, setScroll() {}, rotate() {}, destroy() {} };
+    return { setState() {}, setFocus() {}, setScroll() {}, rotate() {}, travelTo(_id, done) { done(); }, cancelTravel() {}, destroy() {} };
   }
   const canvas = renderer.domElement;
   canvas.setAttribute('aria-hidden', 'true');
@@ -54,12 +55,12 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   host.appendChild(canvas);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.16;
+  renderer.toneMappingExposure = 1.04;
   renderer.setClearColor(INK, 1);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(INK);
-  scene.fog = new THREE.FogExp2(INK, .022);
+  scene.fog = new THREE.FogExp2(INK, .017);
   const camera = new THREE.PerspectiveCamera(46, 1, .08, 110);
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
@@ -72,19 +73,18 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   const pmrem = new THREE.PMREMGenerator(renderer);
   const environment = pmrem.fromScene(environmentScene, .035);
   scene.environment = environment.texture;
-  scene.environmentIntensity = 1.25;
+  scene.environmentIntensity = .95;
   environmentScene.dispose();
   pmrem.dispose();
 
-  const chrome = ownMaterial(new THREE.MeshStandardMaterial({ color: 0xd6d8d5, metalness: 1, roughness: .19 }));
-  const brushed = ownMaterial(new THREE.MeshStandardMaterial({ color: 0x454947, metalness: .92, roughness: .3 }));
+  const chrome = ownMaterial(new THREE.MeshStandardMaterial({ color: 0xe6e8e4, metalness: 1, roughness: .14 }));
+  const brushed = ownMaterial(new THREE.MeshStandardMaterial({ color: 0x373c39, metalness: .94, roughness: .3 }));
   // Architecture absorbs light; only the chrome instrument and portal rims
   // carry the bright room reflections. This keeps the set genuinely obsidian.
-  const stone = ownMaterial(new THREE.MeshStandardMaterial({ color: 0x0d100e, metalness: .12, roughness: .8, envMapIntensity: .08 }));
-  const black = ownMaterial(new THREE.MeshBasicMaterial({ color: 0x101312, toneMapped: false }));
+  const black = ownMaterial(new THREE.MeshBasicMaterial({ color: 0x090b0a, toneMapped: false }));
   const red = ownMaterial(new THREE.MeshBasicMaterial({ color: RED, toneMapped: false }));
   const softWhite = ownMaterial(new THREE.MeshBasicMaterial({ color: 0xb5b8ae, toneMapped: false }));
-  const muted = ownMaterial(new THREE.LineBasicMaterial({ color: 0x29312d, transparent: true, opacity: .7 }));
+  const muted = ownMaterial(new THREE.LineBasicMaterial({ color: 0x424943, transparent: true, opacity: .42 }));
   const mesh = (geometry: THREE.BufferGeometry, material: THREE.Material, parent: THREE.Object3D = scene) => {
     const result = new THREE.Mesh(geometry, material); parent.add(result); return result;
   };
@@ -95,55 +95,95 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   const torus = (radius: number, tube: number, material: THREE.Material, parent: THREE.Object3D = scene, arc = Math.PI * 2) =>
     mesh(ownGeometry(new THREE.TorusGeometry(radius, tube, 10, 112, arc)), material, parent);
 
-  scene.add(new THREE.HemisphereLight(0xdfe8e5, 0x29221a, .65));
-  const key = new THREE.DirectionalLight(0xf2f0e3, 1.8); key.position.set(-8, 12, 8); scene.add(key);
-  const side = new THREE.DirectionalLight(0xc1d2d5, 1.6); side.position.set(10, 5, -15); scene.add(side);
-  const signal = new THREE.PointLight(RED, 28, 24, 2); signal.position.set(0, 1.7, 4); scene.add(signal);
+  scene.add(new THREE.HemisphereLight(0xdfe8e5, 0x151610, .34));
+  const key = new THREE.DirectionalLight(0xf2f0e3, 2.3); key.position.set(-8, 12, 8); scene.add(key);
+  const side = new THREE.DirectionalLight(0xc1d2d5, 2.1); side.position.set(10, 5, -15); scene.add(side);
+  const signal = new THREE.PointLight(RED, 17, 19, 2); signal.position.set(0, 1.7, 4); scene.add(signal);
 
-  // A continuous floor establishes the room's scale, with inlaid rails rather
-  // than a floating starfield. Static linework is batched into one draw call.
-  const floor = mesh(ownGeometry(new THREE.PlaneGeometry(72, 90)), ownMaterial(new THREE.MeshBasicMaterial({ color: 0x151918, toneMapped: false })));
+  // Broad radial inlays and soft pools of light anchor the building. There is
+  // deliberately no construction grid: the floor reads as polished stone.
+  const floor = mesh(ownGeometry(new THREE.PlaneGeometry(72, 90)), ownMaterial(new THREE.MeshBasicMaterial({ color: 0x101311, toneMapped: false })));
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, -1.02, -12);
   const floorLines: number[] = [];
-  for (let x = -24; x <= 24; x += 3) floorLines.push(x, -1, 22, x, -1, -43);
-  for (let z = -40; z <= 22; z += 3) floorLines.push(-25, -1, z, 25, -1, z);
-  const grid = ownGeometry(new THREE.BufferGeometry()); grid.setAttribute('position', new THREE.Float32BufferAttribute(floorLines, 3));
-  scene.add(new THREE.LineSegments(grid, muted));
-  for (const x of [-2.7, 2.7]) {
-    box(scene, [.022, .012, 60], [x, -.985, -7], red);
-    box(scene, [.09, .025, 60], [x - Math.sign(x) * .11, -1, -7], brushed);
+  for (const radius of [4.4, 7.8, 13.6, 21.5]) {
+    for (let i = 0; i < 144; i++) {
+      const a = i / 144 * Math.PI * 2, b = (i + 1) / 144 * Math.PI * 2;
+      floorLines.push(Math.cos(a) * radius, -1, Math.sin(a) * radius - 11.7,
+        Math.cos(b) * radius, -1, Math.sin(b) * radius - 11.7);
+    }
   }
-  for (let z = -25; z < 18; z += 2.8) box(scene, [5.4, .015, .025], [0, -.98, z], stone);
+  const inlay = ownGeometry(new THREE.BufferGeometry()); inlay.setAttribute('position', new THREE.Float32BufferAttribute(floorLines, 3));
+  scene.add(new THREE.LineSegments(inlay, muted));
 
-  // Outside, the visitor sees through a real opening into the collection.
-  const entrance = new THREE.Group(); entrance.position.set(0, 4.4, 6.5); scene.add(entrance);
-  const entryRings: THREE.Mesh[] = [];
-  for (let i = 0; i < 4; i++) {
-    const ring = torus(5.35 - i * .23, i === 0 ? .19 : .075, i % 2 ? brushed : chrome, entrance);
-    ring.position.z = -i * .72; entryRings.push(ring);
+  // A shared procedural radial texture supplies contact shadows and reflected
+  // illumination without shadow maps, screen-space effects, or image assets.
+  function radialTexture(stops: [number, string][]) {
+    const image = document.createElement('canvas'); image.width = image.height = 128;
+    const context = image.getContext('2d');
+    if (context) {
+      const gradient = context.createRadialGradient(64, 64, 0, 64, 64, 64);
+      stops.forEach(([offset, color]) => gradient.addColorStop(offset, color));
+      context.fillStyle = gradient; context.fillRect(0, 0, 128, 128);
+    }
+    return ownTexture(new THREE.CanvasTexture(image));
   }
-  const entrySignal = torus(4.79, .022, red, entrance, Math.PI * 1.22);
-  entrySignal.rotation.z = -.09;
-  entrySignal.position.z = -1.42;
-  const entryLight = torus(5.54, .014, softWhite, entrance, Math.PI * .85);
-  entryLight.rotation.z = Math.PI * .08;
+  const glowTexture = radialTexture([[0, 'rgba(255,255,255,.55)'], [.22, 'rgba(255,255,255,.28)'], [1, 'rgba(255,255,255,0)']]);
+  const shadowTexture = radialTexture([[0, 'rgba(0,0,0,.9)'], [.4, 'rgba(0,0,0,.66)'], [1, 'rgba(0,0,0,0)']]);
+  const groundPlane = ownGeometry(new THREE.PlaneGeometry(1, 1));
+  function pool(x: number, z: number, width: number, depth: number, color: number, opacity: number, shadow = false) {
+    const material = ownMaterial(new THREE.MeshBasicMaterial({ map: shadow ? shadowTexture : glowTexture, color, transparent: true,
+      opacity, depthWrite: false, toneMapped: false, blending: shadow ? THREE.NormalBlending : THREE.AdditiveBlending }));
+    const plane = mesh(groundPlane, material); plane.rotation.x = -Math.PI / 2; plane.position.set(x, shadow ? -.982 : -.99, z); plane.scale.set(width, depth, 1);
+    return plane;
+  }
+  pool(0, -11.7, 13, 11, 0xc9d8ca, .2);
+  pool(0, -11.7, 8, 6.5, 0x000000, .9, true);
+  pool(0, 5.9, 13, 9, RED, .19);
+  for (const x of [-2.45, 2.45]) {
+    box(scene, [.023, .012, 18.8], [x, -.985, 2.7], red);
+    box(scene, [.1, .023, 18.8], [x - Math.sign(x) * .1, -1, 2.7], brushed);
+  }
+
+  // An annular architectural section, with actual depth and bevels, is reused
+  // for the threshold and structural arches. This is geometry, not linework.
+  function archGeometry(inner: number, outer: number, arc: number, depth: number) {
+    const shape = new THREE.Shape();
+    shape.absarc(0, 0, outer, 0, arc, false);
+    shape.lineTo(Math.cos(arc) * inner, Math.sin(arc) * inner);
+    shape.absarc(0, 0, inner, arc, 0, true); shape.closePath();
+    return ownGeometry(new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: .045, bevelSize: .045, bevelSegments: 2, curveSegments: 36, steps: 1 }));
+  }
+  const entrance = new THREE.Group(); entrance.position.set(0, 4.45, 6.5); scene.add(entrance);
+  const outerCasing = torus(5.83, .31, brushed, entrance); outerCasing.scale.z = 1.75;
+  const outerLip = torus(5.92, .055, chrome, entrance); outerLip.position.z = .5;
+  const innerRim = torus(4.57, .07, chrome, entrance); innerRim.position.z = -.46;
+  const bladeGeometry = archGeometry(4.58, 5.79, Math.PI * .155, .26);
+  const entryBlades: THREE.Mesh[] = [];
+  for (let i = 0; i < 12; i++) {
+    const blade = mesh(bladeGeometry, i % 3 === 0 ? chrome : brushed, entrance);
+    blade.rotation.z = i / 12 * Math.PI * 2;
+    blade.position.z = -.08 + (i % 2) * .06;
+    entryBlades.push(blade);
+  }
+  const entrySignal = torus(4.69, .026, red, entrance, Math.PI * 1.36);
+  entrySignal.rotation.z = -.26; entrySignal.position.z = .38;
+  const entryLight = torus(5.98, .018, softWhite, entrance, Math.PI * .73);
+  entryLight.rotation.z = Math.PI * .15; entryLight.position.z = .3;
   for (const direction of [-1, 1]) {
-    box(scene, [.8, 10.3, 1.3], [direction * 5.8, 4.12, 6.5], black);
-    box(scene, [.045, 8.1, .055], [direction * 5.35, 4.5, 7.18], red);
-    box(scene, [2.4, .4, 4.1], [direction * 5.7, -.81, 6.4], brushed);
+    box(scene, [1.3, 7.1, 2], [direction * 6.1, 2.48, 6.1], black);
+    box(scene, [1.8, .3, 4.1], [direction * 5.7, -.83, 6.4], brushed);
   }
-
-  // Repeated structural ribs read as an inhabited architectural space. The
-  // center remains open for the existing sculpture and page content.
-  const ribGeometry = ownGeometry(new THREE.TorusGeometry(13.4, .105, 6, 64, Math.PI));
-  for (const z of [-4, -12, -20, -28]) {
-    const rib = mesh(ribGeometry, brushed); rib.position.set(0, -.8, z);
-    const crown = box(scene, [18, .045, .045], [0, 10.8, z - .08], softWhite);
-    crown.material = ownMaterial(new THREE.MeshBasicMaterial({ color: 0x424e46, toneMapped: false }));
-    for (const x of [-12.7, 12.7]) box(scene, [.27, 9, .38], [x, 3.5, z], black);
+  const ribGeometry = archGeometry(12.7, 13.18, Math.PI, .76);
+  const ribInnerGeometry = archGeometry(12.67, 12.71, Math.PI, .04);
+  for (const z of [-4.3, -14.5, -25]) {
+    const rib = mesh(ribGeometry, brushed); rib.position.set(0, -.93, z);
+    const inner = mesh(ribInnerGeometry, chrome); inner.position.set(0, -.93, z + .78);
   }
-  box(scene, [34, 16, .9], [0, 5.7, -31], black);
-  for (const x of [-15.5, 15.5]) box(scene, [.6, 15, 40], [x, 6, -12], black);
+  box(scene, [34, 17, .9], [0, 6, -32], black);
+  for (const x of [-15.5, 15.5]) box(scene, [.7, 16, 42], [x, 6, -12], black);
+  // Recessed vertical slots reveal the hall's depth without bathing it in gray.
+  const wallLight = ownMaterial(new THREE.MeshBasicMaterial({ color: 0x747c70, toneMapped: false }));
+  for (const x of [-11.8, -8.2, 8.2, 11.8]) box(scene, [.045, 7.7, .015], [x, 3.7, -31.52], wallLight);
   const signCanvas = document.createElement('canvas'); signCanvas.width = 1536; signCanvas.height = 256;
   const signContext = signCanvas.getContext('2d');
   if (signContext) {
@@ -154,27 +194,50 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     signContext.fillText('THE WORLD IS OPEN   /   CULTURE WITHOUT BORDERS', 768, 218);
     const signTexture = ownTexture(new THREE.CanvasTexture(signCanvas)); signTexture.colorSpace = THREE.SRGBColorSpace;
     const sign = mesh(ownGeometry(new THREE.PlaneGeometry(22, 3.67)), ownMaterial(new THREE.MeshBasicMaterial({ map: signTexture, transparent: true, opacity: .72, depthWrite: false, toneMapped: false })));
-    sign.position.set(0, 7.6, -30.51);
+    sign.position.set(0, 7.6, -31.51);
   }
 
-  // Suspended gyroscopic instrument: broad metal, reflected environment, and
-  // a physical plinth make this an object rather than an icon in a canvas.
+  // A continuous, twisted ribbon knot gives the observatory its own object.
+  // Broad polished faces and fine rounded edges catch the studio environment;
+  // its topology is authored once, and only the group transform animates.
   const instrument = new THREE.Group(); instrument.position.set(0, 2.25, -11.7); scene.add(instrument);
-  const instrumentRings: THREE.Mesh[] = [];
-  for (let i = 0; i < 4; i++) {
-    const ring = torus(1.62 + i * .18, i === 0 ? .14 : .075, i === 2 ? brushed : chrome, instrument);
-    ring.rotation.set(.48 + i * .45, .2 + i * .66, i * .52);
-    ring.scale.y = 1.16; instrumentRings.push(ring);
+  function ribbonGeometry() {
+    const segments = 240, sides = 12, positions: number[] = [], indices: number[] = [];
+    const point = (t: number) => new THREE.Vector3((1.6 + .61 * Math.cos(3 * t)) * Math.cos(2 * t),
+      (1.6 + .61 * Math.cos(3 * t)) * Math.sin(2 * t), .72 * Math.sin(3 * t));
+    const axis = new THREE.Vector3(0, 0, 1);
+    for (let i = 0; i <= segments; i++) {
+      const t = i / segments * Math.PI * 2, center = point(t);
+      const tangent = point(t + .001).sub(point(t - .001)).normalize();
+      const across = new THREE.Vector3().crossVectors(tangent, axis).normalize();
+      const normal = new THREE.Vector3().crossVectors(tangent, across).normalize();
+      const twist = t * 2 + .35 * Math.sin(t * 3), cos = Math.cos(twist), sin = Math.sin(twist);
+      const u = across.clone().multiplyScalar(cos).addScaledVector(normal, sin);
+      const v = normal.clone().multiplyScalar(cos).addScaledVector(across, -sin);
+      for (let j = 0; j < sides; j++) {
+        const angle = j / sides * Math.PI * 2;
+        // Superellipse cross section: flat ribbon faces with softened edges.
+        const a = Math.cos(angle), b = Math.sin(angle);
+        const w = Math.sign(a) * Math.pow(Math.abs(a), .36) * (.34 + .045 * Math.sin(t * 3));
+        const h = Math.sign(b) * Math.pow(Math.abs(b), .6) * .045;
+        const vertex = center.clone().addScaledVector(u, w).addScaledVector(v, h);
+        positions.push(vertex.x, vertex.y, vertex.z);
+        if (i < segments) {
+          const here = i * sides + j, next = i * sides + (j + 1) % sides;
+          indices.push(here, next, here + sides, next, next + sides, here + sides);
+        }
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); geometry.setIndex(indices); geometry.computeVertexNormals();
+    return ownGeometry(geometry);
   }
-  const orbitSignal = torus(2.34, .017, red, instrument, Math.PI * 1.4); orbitSignal.rotation.x = 1.1;
-  const core = mesh(ownGeometry(new THREE.IcosahedronGeometry(.55, 1)), chrome, instrument);
-  core.rotation.set(.2, .5, .7);
-  const plinth = mesh(ownGeometry(new THREE.CylinderGeometry(2.8, 3.15, .32, 64)), black);
+  const sculpture = mesh(ribbonGeometry(), chrome, instrument); sculpture.rotation.set(.18, -.23, .2);
+  const orbitSignal = torus(2.65, .016, red, instrument, Math.PI * .66); orbitSignal.rotation.set(1.44, .2, -.9);
+  const plinth = mesh(ownGeometry(new THREE.CylinderGeometry(2.7, 3.05, .34, 80)), black);
   plinth.position.set(0, -.82, -11.7);
-  const plinthLip = torus(2.85, .025, red); plinthLip.rotation.x = Math.PI / 2; plinthLip.position.set(0, -.65, -11.7);
-  const groundHalo = torus(4.1, .016, brushed); groundHalo.rotation.x = Math.PI / 2; groundHalo.position.set(0, -.985, -11.7);
-  const hanging = mesh(ownGeometry(new THREE.CylinderGeometry(.018, .018, 6.7, 6)), brushed);
-  hanging.position.set(0, 7.2, -11.7);
+  const plinthLip = torus(2.75, .018, chrome); plinthLip.rotation.x = Math.PI / 2; plinthLip.position.set(0, -.65, -11.7);
+  const plinthSignal = torus(2.78, .024, red, scene, Math.PI * .6); plinthSignal.rotation.x = Math.PI / 2; plinthSignal.position.set(0, -.72, -11.7);
 
   const portalCoordinates = [
     [-8.8, 2.05, -5.4], [-6.7, 2.05, -13.6], [-2.65, 2.05, -20],
@@ -188,22 +251,25 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     movies: '/media/sintel.jpg', music: '/media/puerto-rico.jpg',
     culture: '/motion/06-deco-atlas.jpg', 'my-world': '/media/tokyo.jpg',
   };
-  const screenGeometry = ownGeometry(new THREE.PlaneGeometry(3.44, 4.72));
-  const frameGeometry = ownGeometry(new THREE.BoxGeometry(3.7, 5.06, .16));
+  const screenWidth = 4.9, screenHeight = 3.18;
+  const screenGeometry = ownGeometry(new THREE.PlaneGeometry(screenWidth, screenHeight));
+  const frameGeometry = ownGeometry(new THREE.BoxGeometry(5.13, 3.42, .23));
   options.portals.slice(0, 6).forEach((portal, index) => {
     const group = new THREE.Group(); group.position.set(...portalCoordinates[index] as [number, number, number]);
     group.lookAt(0, 2.05, 4.5); scene.add(group);
-    const frame = mesh(frameGeometry, chrome, group);
+    const frame = mesh(frameGeometry, brushed, group);
     const pictureMaterial = ownMaterial(new THREE.MeshBasicMaterial({ color: 0x39473c, toneMapped: false }));
-    const picture = mesh(screenGeometry, pictureMaterial, group); picture.position.z = .086;
+    const picture = mesh(screenGeometry, pictureMaterial, group); picture.position.z = .122;
     picture.userData.portalId = portal.id; hitTargets.push(picture);
     const highlight = ownMaterial(new THREE.MeshBasicMaterial({ color: RED, toneMapped: false, transparent: true, opacity: .7 }));
-    box(group, [3.76, .036, .04], [0, -2.53, .1], highlight);
-    box(group, [.032, 5.06, .04], [-1.86, 0, .1], highlight);
-    box(group, [.04, 5.06, .04], [1.86, 0, .1], brushed);
-    box(group, [3.95, .16, .9], [0, -2.94, 0], black);
-    box(group, [.05, .55, .11], [0, -2.69, 0], chrome);
-    const anchor = new THREE.Vector3(0, -2.65, .15); group.localToWorld(anchor);
+    box(group, [5.14, .028, .04], [0, -1.72, .15], highlight);
+    box(group, [5.14, .022, .04], [0, 1.72, .15], chrome);
+    box(group, [.023, .38, .04], [-2.58, -1.54, .15], highlight);
+    box(group, [3.8, .13, 1.1], [0, -2.97, 0], black);
+    box(group, [.12, 1.22, .17], [0, -2.32, -.04], brushed);
+    const anchor = new THREE.Vector3(0, -1.94, .15);
+    pool(group.position.x, group.position.z, 6.5, 3.3, 0x000000, .73, true);
+    pool(group.position.x, group.position.z + .3, 5, 4.4, RED, .12);
     screens.push({ portal, group, frame, light: highlight, marker: anchor });
     const fallback = rasterPosters[portal.id];
     const source = portal.image;
@@ -243,9 +309,9 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       }
       ownTexture(texture); texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
-      // Crop within the physical portrait window, never distort a film poster.
+      // Crop within the physical film window, never distort a film poster.
       const aspect = imageWidth / imageHeight;
-      const frameAspect = 3.44 / 4.72;
+      const frameAspect = screenWidth / screenHeight;
       if (aspect > frameAspect) { texture.repeat.x = frameAspect / aspect; texture.offset.x = (1 - texture.repeat.x) / 2; }
       else { texture.repeat.y = aspect / frameAspect; texture.offset.y = (1 - texture.repeat.y) / 2; }
       pictureMaterial.map = texture; pictureMaterial.color.setHex(0xffffff); pictureMaterial.needsUpdate = true; requestFrame();
@@ -277,6 +343,20 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   const cadence = createFrameCadence(60);
+  type Travel = {
+    start: number; from: THREE.Vector3; targetFrom: THREE.Vector3; to: THREE.Vector3; targetTo: THREE.Vector3;
+    fromFov: number; done: (() => void) | null; settled: boolean;
+  };
+  let travel: Travel | null = null;
+
+  function cancelTravel() {
+    if (!travel) return;
+    travel.done = null; travel = null;
+    previousCamera.copy(camera.position); previousTarget.copy(currentTarget);
+    routeBlend = state.reducedMotion ? 1 : 0;
+    camera.fov = mobile ? 58 : 46; camera.updateProjectionMatrix();
+    requestFrame();
+  }
 
   function requestFrame() {
     if (!disposed && !contextUnavailable && !frameRequest && !document.hidden && !state.paused) frameRequest = requestAnimationFrame(draw);
@@ -285,7 +365,9 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     width = Math.max(1, host.clientWidth); height = Math.max(1, host.clientHeight); mobile = width < 700;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, mobile ? 1.25 : 1.5));
     renderer.setSize(width, height, false);
-    camera.aspect = width / height; camera.fov = mobile ? 58 : 46; camera.updateProjectionMatrix();
+    camera.aspect = width / height;
+    if (!travel) camera.fov = mobile ? 58 : 46;
+    camera.updateProjectionMatrix();
     requestFrame();
   }
   function draw(time: number) {
@@ -303,7 +385,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     currentPointerX += (pointerX - currentPointerX) * ease;
     currentPointerY += (pointerY - currentPointerY) * ease;
     currentRotation += (targetRotation - currentRotation) * ease;
-    const ambient = !state.reducedMotion && (state.room === 'home' || state.room === 'atrium') && scroll < .22;
+    const ambient = !travel && !state.reducedMotion && (state.room === 'home' || state.room === 'atrium') && scroll < .22;
     if (ambient) ambientTime += dt;
 
     cameraOutside.set(mobile ? 0 : -3.8, mobile ? 3.3 : 3.7, mobile ? 27.5 : 23);
@@ -321,7 +403,18 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       desiredCamera.y += currentPointerY * .13;
       desiredTarget.x += currentPointerX * .13;
     }
-    if (routeBlend < 1 && entryProgress === entryTarget) {
+    let completeTravel: (() => void) | null = null;
+    if (travel) {
+      const progress = state.reducedMotion ? 1 : clamp((time - travel.start) / 850, 0, 1);
+      const eased = smooth(progress);
+      camera.position.lerpVectors(travel.from, travel.to, eased);
+      currentTarget.lerpVectors(travel.targetFrom, travel.targetTo, eased);
+      camera.fov = THREE.MathUtils.lerp(travel.fromFov, mobile ? 54 : 42, eased);
+      camera.updateProjectionMatrix();
+      if (progress === 1 && !travel.settled) {
+        travel.settled = true; completeTravel = travel.done; travel.done = null;
+      }
+    } else if (routeBlend < 1 && entryProgress === entryTarget) {
       camera.position.lerpVectors(previousCamera, desiredCamera, smooth(routeBlend));
       currentTarget.lerpVectors(previousTarget, desiredTarget, smooth(routeBlend));
     } else { camera.position.copy(desiredCamera); currentTarget.copy(desiredTarget); }
@@ -330,10 +423,10 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     instrument.rotation.y = ambientTime * .065;
     instrument.position.y = 2.25 + (state.reducedMotion ? 0 : Math.sin(ambientTime * .7) * .055);
     orbitSignal.rotation.z = ambientTime * .09;
-    core.rotation.y = .5 + ambientTime * .13;
-    entrySignal.rotation.z = -.09 + entryProgress * .9;
-    for (let index = 0; index < entryRings.length; index++) {
-      entryRings[index].scale.setScalar(1 + entryProgress * index * .018);
+    entrySignal.rotation.z = -.26 + entryProgress * .65;
+    for (let index = 0; index < entryBlades.length; index++) {
+      entryBlades[index].rotation.z = index / 12 * Math.PI * 2 + entryProgress * .18;
+      entryBlades[index].scale.setScalar(1 + entryProgress * .085);
     }
     let screenMoving = false;
     screens.forEach(screen => {
@@ -347,14 +440,17 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     renderer.render(scene, camera);
     if (options.onProject) {
       const positions = screens.map(screen => {
-        projectVector.set(0, -2.65, .15).applyMatrix4(screen.group.matrixWorld).project(camera);
+        projectVector.copy(screen.marker).applyMatrix4(screen.group.matrixWorld).project(camera);
         return { id: screen.portal.id, x: (projectVector.x * .5 + .5) * width, y: (-projectVector.y * .5 + .5) * height,
           visible: state.entered && entryProgress > .92 && projectVector.z < 1 && projectVector.z > -1 && Math.abs(projectVector.x) < 1.06 && Math.abs(projectVector.y) < .98 };
       });
       options.onProject(positions);
     }
     if (!ready) { ready = true; options.onReady(); }
-    const stillMoving = entryProgress !== entryTarget || routeBlend < 1 || screenMoving || Math.abs(targetRotation - currentRotation) > .0003 || Math.abs(pointerX - currentPointerX) + Math.abs(pointerY - currentPointerY) > .002;
+    // Navigation fires only after the final camera frame is presented. Keep
+    // that composition until route state arrives, avoiding a one-frame jump.
+    if (completeTravel) completeTravel();
+    const stillMoving = (travel ? !travel.settled : entryProgress !== entryTarget || routeBlend < 1) || screenMoving || Math.abs(targetRotation - currentRotation) > .0003 || Math.abs(pointerX - currentPointerX) + Math.abs(pointerY - currentPointerY) > .002;
     if (ambient || stillMoving) requestFrame();
   }
 
@@ -381,6 +477,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   }
   function pointerDown(event: PointerEvent) {
     if (!state.entered || state.paused || event.button !== 0) return;
+    cancelTravel();
     isDragging = true; moved = false; pointerDownX = lastPointerX = event.clientX; pointerDownY = event.clientY;
     canvas.setPointerCapture(event.pointerId); canvas.style.cursor = 'grabbing';
   }
@@ -398,9 +495,12 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   function visibility() { lastTime = 0; cadence.reset(); if (document.hidden) { cancelAnimationFrame(frameRequest); frameRequest = 0; } else requestFrame(); }
   function contextLost(event: Event) {
     event.preventDefault();
+    // A queued navigation must remain usable even if its visual path fails.
+    const complete = travel?.done; if (travel) travel.done = null; travel = null;
     contextUnavailable = true;
     cancelAnimationFrame(frameRequest); frameRequest = 0;
     options.onUnavailable();
+    complete?.();
   }
   canvas.addEventListener('pointerdown', pointerDown);
   canvas.addEventListener('pointermove', pointerMove);
@@ -416,6 +516,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       if (disposed) return;
       const roomChanged = state.room !== next.room;
       const entryChanged = state.entered !== next.entered;
+      if (roomChanged || entryChanged || next.paused) cancelTravel();
       if (entryChanged) {
         entryFrom = entryProgress; entryTarget = next.entered ? 1 : 0; entryStart = performance.now();
         if (next.reducedMotion) entryProgress = entryTarget;
@@ -436,9 +537,25 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     },
     setFocus(id) { focus = id; requestFrame(); },
     setScroll(progress) { scroll = clamp(progress, 0, 1); requestFrame(); },
-    rotate(delta) { targetRotation = clamp(targetRotation + delta, -.9, .9); requestFrame(); },
+    rotate(delta) { cancelTravel(); targetRotation = clamp(targetRotation + delta, -.9, .9); requestFrame(); },
+    travelTo(id, onComplete) {
+      if (disposed) return;
+      const selected = screens.find(screen => screen.portal.id === id);
+      if (!selected || state.reducedMotion || contextUnavailable || !ready || state.paused) { cancelTravel(); onComplete(); return; }
+      // Repeated choices replace the pending callback and begin at the actual
+      // rendered camera. The endpoint always faces the front of the screen.
+      if (travel) travel.done = null;
+      const front = new THREE.Vector3(0, 0, 1).applyQuaternion(selected.group.quaternion);
+      const destination = selected.group.position.clone().addScaledVector(front, mobile ? 5.9 : 5.1);
+      destination.y += .12;
+      travel = { start: performance.now(), from: camera.position.clone(), targetFrom: currentTarget.clone(),
+        to: destination, targetTo: selected.group.position.clone(), fromFov: camera.fov, done: onComplete, settled: false };
+      focus = id; hover = null; pointerX = pointerY = 0; requestFrame();
+    },
+    cancelTravel,
     destroy() {
       if (disposed) return;
+      if (travel) travel.done = null; travel = null;
       disposed = true; cancelAnimationFrame(frameRequest); observer.disconnect();
       canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove);
       canvas.removeEventListener('pointerup', pointerUp); canvas.removeEventListener('pointercancel', pointerUp);

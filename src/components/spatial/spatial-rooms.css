@@ -99,8 +99,17 @@
 /* Collection galleries remain open at their sides. The room is visible between
    shelves; readable text and controls sit on substantial, quiet surfaces. */
 .monumental-spatial:not([data-spatial-room="atrium"]) .route-stage > .browse-page {
-  background: linear-gradient(180deg, rgba(8,9,9,.91) 0%, rgba(8,9,9,.84) 550px, rgba(8,9,9,.72) 100%);
+  background: linear-gradient(180deg, rgba(8,9,9,.94) 0%, rgba(8,9,9,.92) 550px, rgba(8,9,9,.88) 100%);
 }
+.monumental-spatial:not([data-spatial-room="atrium"]) .route-stage > .browse-page--theater{padding:26px clamp(22px,2.5vw,40px) 64px}
+.monumental-spatial .browse-page--theater .page-title-row{margin-bottom:18px;align-items:center;gap:24px}
+.monumental-spatial .browse-page--theater .page-title-row h1{font-size:36px;letter-spacing:.01em;text-transform:uppercase}
+.monumental-spatial .browse-page--theater .page-title-row p{font-size:12px;line-height:1.6;max-width:620px;margin-top:8px}
+.monumental-spatial .browse-page--theater .page-title-row>.button{font-size:11px;min-height:40px;padding:10px 14px;white-space:nowrap}
+.monumental-spatial .browse-page--theater .search-field{scroll-margin-top:160px}
+.collection-theater-loading{min-height:440px}
+.spatial-collection-divider{display:flex;align-items:center;justify-content:space-between;gap:20px;border-top:1px solid #efeee93d;margin-top:36px;padding:24px 0;color:#efeee9;font-size:11px;letter-spacing:.08em}
+.spatial-collection-divider span:last-child{color:#a9aaa6;letter-spacing:0}
 .monumental-spatial:not([data-spatial-room="atrium"]) .browse-page :is(.search-field, .filter-row, .results-line) { position: relative; }
 .monumental-spatial:not([data-spatial-room="atrium"]) :is(.film-card, .ex-story) {
   background: rgba(8, 9, 9, .68);
@@ -158,6 +167,11 @@
   .monumental-spatial:not([data-spatial-room="atrium"]) .ex-world-room { display: block; }
 }
 @media (max-width: 760px) {
+.monumental-spatial:not([data-spatial-room="atrium"]) .route-stage > .browse-page--theater{padding:22px 17px 40px}
+.monumental-spatial .browse-page--theater .page-title-row{gap:14px;align-items:flex-start}
+.monumental-spatial .browse-page--theater .page-title-row h1{font-size:32px}
+.monumental-spatial .browse-page--theater .page-title-row p{font-size:12px;max-width:34ch}
+.monumental-spatial .browse-page--theater .page-title-row>.button{font-size:10px;padding:8px;gap:5px;min-height:38px}
   .monumental-spatial:not([data-spatial-room="atrium"]) { --spatial-room-gutter: 12px; }
   .monumental-spatial:not([data-spatial-room="atrium"]) main { padding-top: calc(var(--header) + 66px); }
   .monumental-spatial .spatial-room-crumb { top: calc(var(--header) + 9px); min-height: 44px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 2px 10px; padding: 5px 10px; font-size: 9px; letter-spacing: .05em; }

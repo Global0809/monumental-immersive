@@ -51,10 +51,10 @@ export function classicExperienceHref(search: string, hash: string): string {
   return `?${params.toString()}${hash || '#/'}`;
 }
 
-type SpatialState = { entered: boolean; ready: boolean; unavailable: boolean; focus: string | null };
+type SpatialState = { entered: boolean; ready: boolean; unavailable: boolean; focus: string | null; travelling: string | null };
 let entered = false;
 try { entered = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('monumental.spatial.entered') === '1'; } catch { /* A private session still works. */ }
-let state: SpatialState = { entered, ready: false, unavailable: false, focus: null };
+let state: SpatialState = { entered, ready: false, unavailable: false, focus: null, travelling: null };
 const listeners = new Set<() => void>();
 const update = (next: Partial<SpatialState>) => {
   if (Object.entries(next).every(([key, value]) => state[key as keyof SpatialState] === value)) return;
@@ -67,7 +67,13 @@ export function enterSpatialWorld() {
 }
 export function resetSpatialEntrance() {
   try { sessionStorage.removeItem('monumental.spatial.entered'); } catch { /* Session-only fallback. */ }
-  update({ entered: false, focus: null });
+  update({ entered: false, focus: null, travelling: null });
+}
+export const setSpatialTravelling = (travelling: string | null) => update({ travelling });
+/** Cancelable event lets the mounted world own camera travel; plain links remain the fallback. */
+export function requestSpatialTravel(id: string): boolean {
+  if (!spatialPortals.some(portal => portal.id === id)) return false;
+  return !window.dispatchEvent(new CustomEvent('monumental:spatial-travel', { detail: id, cancelable: true }));
 }
 export const setSpatialFocus = (focus: string | null) => update({ focus });
 export const setSpatialReady = () => update({ ready: true, unavailable: false });

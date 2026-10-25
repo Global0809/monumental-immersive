@@ -144,7 +144,7 @@ export default function App() {
   else if (route.path === '/world') page = <WorldPage params={route.params} reducedMotion={reducedMotion} onWatch={onWatch}/>;
   else if (route.path === '/time-machine') page = <TimeMachinePage params={route.params} reducedMotion={reducedMotion} onWatch={onWatch}/>;
   else if (route.path === '/live') page = <LivePage/>;
-  else if (route.path.startsWith('/category/') && category) page = <Browse category={category} params={route.params} onWatch={onWatch}/>;
+  else if (route.path.startsWith('/category/') && category) page = <Browse category={category} params={route.params} onWatch={onWatch} immersive={spatial} reducedMotion={reducedMotion}/>;
   else if (route.path === '/search') page = <Browse params={route.params} onWatch={onWatch}/>;
   else if (route.path.startsWith('/film/')) page = <FilmDetail id={route.path.split('/')[2]} startAt={route.params.has('t') ? Number(route.params.get('t')) : undefined} onWatch={onWatch}/>;
   else if (route.path === '/my-world') page = <MyWorld onWatch={onWatch} onPlayJourney={onPlayJourney} reducedMotion={reducedMotion}/>;
