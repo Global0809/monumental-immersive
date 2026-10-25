@@ -6,12 +6,20 @@ No payment or identity secrets were available. This build therefore keeps browsi
 
 Set the public API origin in `VITE_MEMBERSHIP_API_URL` only after implementing the server. The existing browser adapters use credentials-included requests. For a separate origin, configure exact-origin CORS, HTTPS and secure session cookies. Protect state-changing endpoints against CSRF.
 
-- `GET /session`: `{status: 'signed-out'|'free'|'premium'|'expired'|'cancelled', account: null|{id,name?}}`. Derive status from a server-owned session and subscription record.
+- `GET /session`: `{status: 'signed-out'|'free'|'premium'|'expired'|'cancelled', account: null|{id,name?}}`. Signed-out has no account. Every authenticated status requires a nonempty account ID. Derive both from a server-owned session and subscription record.
 - `POST /auth/signin`: accepts `{returnUrl}`; returns `{url}` for the configured identity provider. Allowlist return origins server-side. The adapter returns a setup-pending result if not configured.
 - `POST /checkout`: accepts `{returnUrl}`; returns `{url}` for a provider-hosted checkout. Require approved product IDs/prices on the server. Begin with the provider's test environment. The return page is not proof of payment.
 - `GET /playback/:videoId`: verifies the session, current subscription and title entitlement, then returns a short-lived HTTPS signed playback URL. Deny absent, expired, cancelled, error or insufficient entitlements even if the client requests a premium source directly.
 
-The browser can display subscription state, but the playback server is the authority. It must not trust a `premium` field supplied by the browser. The development-state override is gated by Vite DEV and does not authorize production access.
+The browser can display subscription state, but the playback server is the authority. It must not trust a `premium` field supplied by the browser. The development-state override is gated by Vite DEV and never authorizes premium playback, including locally. Premium sources always require a configured, server-authorized account and playback response.
+
+The shared transport validates endpoint and response URLs, bounds requests to ten seconds by default, supports cancellation and clears expired sessions. An older session or playback response cannot overwrite a newer account state. JSON API redirects are rejected; identity/checkout endpoints return a validated hosted URL instead. Mutation retries are not automatic. Sign-in returns to `/#/my-world` and checkout to `/#/premium`, preserving a GitHub Pages base path when present.
+
+## Catalogue and future discovery
+
+`VITE_CATALOGUE_API_URL` accepts a complete public v1 snapshot endpoint. It sends no cookies or guest library data. Schema and editorial compatibility checks run before the React experience is imported; an invalid/unavailable snapshot falls back to the approved bundled preview. Do not use that preview fallback for rights-sensitive production catalogue withdrawal.
+
+`npm run export:catalogue` generates public import/retrieval inputs locally. Future AI discovery can consume the approved metadata and return cited story IDs using `src/platform/discovery-context.ts`; no AI provider or automatic data transfer is connected. See `architecture/README.md` for implementation status, database proposal, migration boundaries and the rollout sequence.
 
 ## Webhooks, media and persistence
 

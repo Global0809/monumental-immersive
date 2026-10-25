@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --import tsx --test tests/*.test.ts",
+    "export:catalogue": "node --import tsx scripts/export-catalogue.ts",
     "build:pages": "tsc -b && vite build --base=/monumental-immersive/ --outDir docs && node scripts/prepare-pages.mjs"
   },
   "dependencies": {

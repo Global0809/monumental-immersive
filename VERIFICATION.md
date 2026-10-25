@@ -82,4 +82,13 @@ One first audition after inactivity was not observed in the endurance run's one-
 
 ## Limits
 
+### Website platform foundation — 2026-10-25
+
+- Full automated suite: 91 passed, including 29 new catalogue, service and discovery-contract checks. Production TypeScript/Vite build passed; the existing Three.js chunk-size advisory remains.
+- Public catalogue export: 14 records, versioned snapshot and source-linked discovery context. No private viewer fields or premium media URLs exported.
+- Browser verification against the production preview: Movies retained all four films; the free Big Buck Bunny trailer reached its end without a media error; Home retained its sculpture and destination selector; Puerto Rico selection showed Island Current; Premium retained its truthful disabled-purchasing/account state. No console errors observed.
+- Separate local API fixture: changed metadata rendered on the actual film page before App initialization; replacing it with an unsupported schema restored the approved bundled title on reload. Fixture and API environment were local QA only, not production configuration.
+- Existing visual design and fast-scroll erosion source were retained. No new animation loop or AI request was introduced. This pass did not repeat the older endurance/device-performance measurements above.
+- `architecture/schema.sql` is an unapplied design proposal, reviewed for structure but not executed against PostgreSQL. Real backend ownership, payment, media-signing and AI-provider integration tests remain required before those services launch.
+
 This is a functioning streaming and cultural-discovery preview. Production account authentication, cross-device sync, paid entitlements, billing, live ingest and administrative dashboards are not connected. Full assistive-technology, physical-device, production-load and human acoustic evaluations were not performed. Future client uploads still require content review and rights-cleared assets.

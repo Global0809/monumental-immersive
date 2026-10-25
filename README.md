@@ -40,9 +40,13 @@ Premium has a designed information page and local interest saving. Production si
 
 ## Add content
 
-Use `src/data/catalogue.ts` as the shared source. Add a Video record with a unique id, measured duration, poster, media source, categories, valid place and period IDs, access, status, credits and context. Local assets live in `public/media`; captions in `public/captions`. A new record appears across discovery, search, World, Time Machine and related films through its metadata. Add destination records with accurate coordinates when extending the globe.
+Edit the authored preview in `src/data/catalogue.seed.ts`; `src/data/catalogue.ts` is the shared facade. Add a Video record with a unique id, measured duration, poster, media source, categories, valid place and period IDs, access, status, credits and context. Local assets live in `public/media`; captions in `public/captions`. A new record appears across discovery, search, World, Time Machine and related films through its metadata. Destination expansion must also update the authored sculpture/editorial scene configuration and image credits.
 
-The UI groups Film under Movies and Documentary / Art & Design / Food under Culture. Keep explicit content-review requirements for Kids. Available content must have a playable source; planned programming must remain status `development`.
+The UI groups Film under Movies and Documentary / Art & Design / Food under Culture. Keep explicit content-review requirements for Kids. Available free content must have a playable source; premium sources stay on the authorization server. Planned programming must remain status `development`.
+
+## Platform foundation
+
+See [architecture/README.md](architecture/README.md) for the website-only architecture, implemented boundaries, unapplied database proposal and phased backend plan. `VITE_CATALOGUE_API_URL` optionally connects a validated public v1 catalogue; leaving it empty preserves the current bundled preview. `npm run export:catalogue` writes public catalogue and retrieval-context JSON to `output/platform/` for a future CMS/AI integration. This does not enable an AI assistant, deploy a database or connect production membership.
 
 ## Main implementation files
 

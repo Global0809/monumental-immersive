@@ -5,5 +5,20 @@ import '@fontsource/barlow-condensed/600.css';
 import '@fontsource/barlow-condensed/700.css';
 import '@fontsource-variable/dm-sans';
 import './styles.css';
-import App from './App';
-ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
+import { initializeCatalogue } from './data/catalogue';
+
+const rootElement = document.getElementById('root')!;
+async function mountApp() {
+  // Import after catalogue hydration: several editorial modules derive their
+  // collections at module scope. Never let a late request rewrite a mounted UI.
+  const { default: App } = await import('./App');
+  ReactDOM.createRoot(rootElement).render(<React.StrictMode><App/></React.StrictMode>);
+}
+function showBootFailure() {
+  const message = document.createElement('p');
+  message.textContent = 'Monumental could not open. Please refresh to try again.';
+  message.setAttribute('role', 'alert');
+  rootElement.replaceChildren(message);
+}
+const catalogueReady = initializeCatalogue(import.meta.env.VITE_CATALOGUE_API_URL);
+void (catalogueReady ? catalogueReady.then(mountApp) : mountApp()).catch(showBootFailure);
