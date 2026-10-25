@@ -26,7 +26,6 @@ export function erosionChapters(path: string): ErosionChapter[] {
     chapter('.portal-section', 'red', 'go-somewhere', { macroAmplitude: .18, detailAmount: 1.2 }),
     chapter('.category-section', 'black', 'all-culture'),
   ];
-  else if (path === '/transitions') chapters = [chapter('.transition-lab-sample', 'red', 'transition-study'), chapter('.transition-lab-return', 'black', 'transition-return')];
   else if (path === '/world') chapters = [chapter('.ex-connections', 'red', 'world-thread'), chapter('.ex-results', 'black', 'world-stories')];
   else if (path === '/time-machine') chapters = [chapter('.ex-era-results', 'red', 'era-context')];
   else if (path.startsWith('/category/') || path === '/search') chapters = [chapter('.results-line', 'red', 'catalogue-' + path)];
@@ -39,7 +38,7 @@ export function erosionChapters(path: string): ErosionChapter[] {
   else if (path === '/credits') chapters = [chapter('.credits-list', 'red', 'credits', { macroAmplitude: .11 })];
   else chapters = [];
   // The real concept-film chapter already exists even on shorter Live pages.
-  if (path !== '/' && path !== '/motion' && path !== '/transitions') chapters.push(chapter('.route-stage > .motion-showcase', path === '/live' ? 'red' : 'black', 'motion-' + path));
+  if (path !== '/' && path !== '/motion') chapters.push(chapter('.route-stage > .motion-showcase', path === '/live' ? 'red' : 'black', 'motion-' + path));
   chapters.push(chapter('.site-footer', 'black', 'closing', { macroAmplitude: .1 }));
   return chapters;
 }

@@ -34,8 +34,6 @@ html[data-erosion=ready] [data-erosion-paint=solid] [data-erosion-ink=accent]{co
 html[data-erosion=ready] [data-erosion-ink]::selection{background:var(--ink);color:var(--accent);-webkit-text-fill-color:var(--accent)}
 html[data-erosion=ready] [data-erosion-rule]{border-color:var(--erosion-rule,var(--line))}
 html[data-erosion=ready] [data-erosion-paint=solid] [data-erosion-rule]{border-color:var(--erosion-line-solid)}
-html[data-erosion=ready] [data-erosion-paint=solid] :is(.journey-duration-track>i,.journey-place-thread svg){--erosion-icon:var(--erosion-accent-solid)!important}
-html[data-erosion=ready] [data-erosion-paint=solid] :is(.empty-inline,.passport-counter){--erosion-icon:var(--erosion-ink-solid)!important}
 html[data-erosion=ready] .route-stage :focus-visible{outline:2px solid var(--text);outline-offset:4px;box-shadow:0 0 0 7px var(--ink)}
 /* Explicit material islands retain the original dark palette and interactive state. */
 html[data-erosion=ready] [data-erosion-protect]{--text:#efeee9;--bg:#080909;--muted:#a9aaa6;--line:#ffffff25;--ex-ink:#efeee9;--ex-muted:#989a95;--ex-line:#ffffff24;-webkit-text-fill-color:initial}
