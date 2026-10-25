@@ -362,6 +362,7 @@
 }
 
 /* Reactive exploration tools. Spatial motion remains an enhancement to native controls. */
+.cultural-atlas__viewport:focus-visible{outline:2px solid #ff4d32;outline-offset:-4px}
 .cultural-atlas__zoom{position:absolute;z-index:5;right:20px;top:43%;display:flex;flex-direction:column;align-items:center;gap:4px;background:#080909bf;border:1px solid #ffffff1a;padding:5px;backdrop-filter:blur(8px)}
 .cultural-atlas__zoom button{display:grid;place-items:center;width:34px;height:36px;background:none;border:0;color:#c4c9bb;padding:0;cursor:pointer}.cultural-atlas__zoom button:hover{color:#ff4d32;background:#ffffff08}.cultural-atlas__zoom button:disabled{opacity:.25;cursor:default}.cultural-atlas__zoom>span{font-size:8px;letter-spacing:.03em;color:#9da28f;min-width:30px;text-align:center;padding-block:3px}.cultural-atlas__zoom button:focus-visible{outline:1px solid #ff4d32;outline-offset:1px}
 @media(max-width:700px){.cultural-atlas__zoom{right:5%;top:54%;padding:3px;gap:1px}.cultural-atlas__zoom button{width:32px;height:36px}.cultural-atlas__zoom>span{font-size:8px}}

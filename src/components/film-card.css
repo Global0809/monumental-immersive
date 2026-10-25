@@ -15,3 +15,4 @@
   .film-card .film-place{font-size:10px}
   .film-grid .film-card .card-preview-error{bottom:42px;font-size:10px;max-width:calc(100% - 12px)}
 }
+@media(max-width:760px){.film-grid .film-card .save-small,.film-grid .film-card .film-play{width:44px;height:44px}.film-grid .film-card .card-preview-toggle{min-height:44px}.film-grid .film-card .film-play{bottom:52px}.film-grid.list-view .film-card .film-play{bottom:13px}.film-grid.list-view .film-card .save-small{top:auto;bottom:13px}}

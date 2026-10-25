@@ -67,7 +67,7 @@ export default function CityExperience({ placeId, reducedMotion, onWatch, openRe
       if (disposed) return;
       controller.current = createCityScene(host, {
         reducedMotion,
-        onSelect: (index) => { setSelected(index); playSound('select'); },
+        onSelect: (index) => { if (selectedRef.current === index) controller.current?.select(index); else setSelected(index); playSound('select'); },
         onProject: (index, x, y, visible) => {
           const marker = markers.current[index];
           if (!marker) return;
@@ -87,8 +87,15 @@ export default function CityExperience({ placeId, reducedMotion, onWatch, openRe
   useEffect(() => { controller.current?.select(selected); }, [selected]);
 
   if (placeId !== 'miami') return null;
-  const select = (index: number | null) => { setSelected(index); playSound('select'); };
-  const close = () => { setOpen(false); setSelected(null); playSound('close'); requestAnimationFrame(() => trigger.current?.focus({ preventScroll: true })); };
+  const select = (index: number | null) => { if (selected === index) controller.current?.select(index); else setSelected(index); playSound('select'); };
+  const close = () => {
+    setOpen(false); setSelected(null); playSound('close');
+    requestAnimationFrame(() => {
+      const globe = document.querySelector<HTMLElement>('.cultural-atlas__viewport');
+      if (globe) { globe.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'center' }); globe.focus({ preventScroll: true }); }
+      else trigger.current?.focus({ preventScroll: true });
+    });
+  };
 
   return <section id="city-experience" className={`city-experience ${open ? 'is-open' : ''}`} aria-labelledby="city-title" onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); close(); } }}>
     <div className="city-intro">
@@ -99,10 +106,14 @@ export default function CityExperience({ placeId, reducedMotion, onWatch, openRe
       <header className="city-workspace-header"><div><h3 ref={heading} tabIndex={-1}>MIAMI, AT HUMAN SCALE.</h3><p>Illustrated interpretation · Three conceptual places, not a map of real venues.</p></div><button data-sound-owned className="text-link" onClick={close}><ArrowLeft/>Back to globe</button></header>
       <nav className="city-breadcrumb" aria-label="Exploration scale"><button data-sound-owned onClick={close}>Planet</button><span aria-hidden="true">/</span><button data-sound-owned aria-current={selected === null ? 'step' : undefined} onClick={() => select(null)}>Miami</button>{activeLocation && <><span aria-hidden="true">/</span><span aria-current="step">{activeLocation.name}</span></>}{film && <><span aria-hidden="true">/</span><a href={href('/film/' + film.id)}>Story <ArrowUpRight size={12}/></a></>}</nav>
       <div className="city-spatial-layout">
-        <div className={`city-scene ${unavailable ? 'is-unavailable' : ''}`}>
+        <div className={`city-scene ${unavailable ? 'is-unavailable' : ''}`} tabIndex={0} role="group" aria-label="Miami miniature. Left and right arrow keys select places. Home returns to the overview." onKeyDown={event => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') { event.preventDefault(); select(selected === null ? (event.key === 'ArrowRight' ? 0 : locations.length - 1) : (selected + (event.key === 'ArrowRight' ? 1 : -1) + locations.length) % locations.length); }
+          else if (event.key === 'Home') { event.preventDefault(); select(null); }
+        }}>
           <div className="city-canvas" ref={canvasHost} aria-hidden="true"/>
           {!unavailable && <div className="city-hotspots" role="group" aria-label="Places in the miniature">{locations.map((location, index) => <button data-sound-owned ref={element => { markers.current[index] = element; }} key={location.videoId} style={{ visibility: 'hidden' }} className={selected === index ? 'is-selected' : ''} aria-label={`Explore ${location.name}`} aria-pressed={selected === index} onClick={() => select(index)}><i aria-hidden="true"/><span>{location.kind.split(' / ')[0]}</span></button>)}</div>}
-          <div className="city-scene-corner"><span>MIAMI / INTERPRETATION</span><button data-sound-owned onClick={() => { select(null); controller.current?.select(null); }} aria-label="Reset miniature to overview">Overview <ArrowUpRight size={14}/></button></div>
+          <div className="city-scene-corner"><span>MIAMI / INTERPRETATION</span><button data-sound-owned onClick={() => select(null)} aria-label="Reset miniature to overview">Overview <ArrowUpRight size={14}/></button></div>
           {unavailable ? <p className="city-scene-fallback" role="status">The spatial view is unavailable on this device.<br/>Explore all three places using the list below.</p> : !ready ? <p className="city-scene-fallback" role="status">Building your miniature…</p> : <p className="city-scene-help">Drag to orbit · Select a red marker<br/><span>The same places are listed below.</span></p>}
         </div>
         <aside className="city-story" aria-live="polite">

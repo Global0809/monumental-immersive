@@ -19,6 +19,7 @@ import { MagnifyingGlassMinus } from '@phosphor-icons/react/dist/csr/MagnifyingG
 import { Crosshair } from '@phosphor-icons/react/dist/csr/Crosshair';
 import { places } from "../data/catalogue";
 import { playSound } from "../services/audio";
+import { resolveDragAxis, type DragAxis } from "../services/exploreInteraction";
 import "./atlas.css";
 
 type AtlasProps = {
@@ -304,6 +305,8 @@ export default function Atlas({
     let targetRotation: { x: number; y: number } | null = null;
     let pointerX = 0;
     let pointerY = 0;
+    let activePointer: number | null = null, startPointerX = 0, startPointerY = 0;
+    let dragAxis: DragAxis = 'pending';
     let baseDistance = 3.45;
     let targetZoom = 0;
     const world = new THREE.Vector3();
@@ -473,16 +476,21 @@ export default function Atlas({
     document.addEventListener("visibilitychange", visibility);
     window.addEventListener('monumental:playback', playback);
     const pointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) return;
+      if (event.button !== 0 || activePointer !== null) return;
       targetRotation = null;
       dragging = true;
-      pointerX = event.clientX;
-      pointerY = event.clientY;
+      activePointer = event.pointerId; dragAxis = 'pending';
+      pointerX = startPointerX = event.clientX;
+      pointerY = startPointerY = event.clientY;
       canvas.setPointerCapture(event.pointerId);
       canvas.style.cursor = "grabbing";
     };
     const pointerMove = (event: PointerEvent) => {
-      if (!dragging) return;
+      if (!dragging || activePointer !== event.pointerId) return;
+      if (event.pointerType !== 'mouse') {
+        dragAxis = resolveDragAxis(event.clientX - startPointerX, event.clientY - startPointerY, dragAxis);
+        if (dragAxis !== 'horizontal') return;
+      }
       globe.rotation.y += (event.clientX - pointerX) * 0.006;
       if (event.pointerType === "mouse")
         globe.rotation.x = THREE.MathUtils.clamp(
@@ -495,8 +503,11 @@ export default function Atlas({
       lastInteraction = performance.now();
       requestDraw();
     };
-    const pointerUp = () => {
+    const pointerUp = (event: PointerEvent) => {
+      if (activePointer !== event.pointerId) return;
       dragging = false;
+      activePointer = null;
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
       canvas.style.cursor = "grab";
       lastInteraction = performance.now();
     };
@@ -657,6 +668,7 @@ export default function Atlas({
       destinationMenu.current.open = false;
       destinationMenu.current.querySelector("summary")?.focus();
     }
+    controls.current?.focus(id);
     onSelect(id);
   };
   const zoom = (step: number) => {
@@ -674,7 +686,14 @@ export default function Atlas({
         className="cultural-atlas__viewport"
         ref={host}
         data-cursor="Orbit"
-        aria-label="Interactive cultural globe. Drag horizontally to rotate, or use the controls below."
+        tabIndex={status === 'fallback' ? undefined : 0}
+        aria-label="Interactive cultural globe. Drag or use left and right arrows to rotate. Plus and minus zoom. Home returns to Miami."
+        onKeyDown={event => {
+          if (event.target !== event.currentTarget || status === 'fallback') return;
+          if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); controls.current?.rotate(event.key === 'ArrowLeft' ? -.3 : .3); playSound('drag'); }
+          else if (event.key === '+' || event.key === '=' || event.key === '-') { event.preventDefault(); zoom(event.key === '-' ? -1 : 1); }
+          else if (event.key === 'Home') { event.preventDefault(); controls.current?.reset(); setZoomLevel(0); choosePlace('miami'); playSound('focus'); }
+        }}
       >
         <div className="cultural-atlas__atmosphere" aria-hidden="true" />
         {status !== "fallback" && <div className="cultural-atlas__zoom" aria-label="Globe camera controls" data-sound-owned>
@@ -741,7 +760,7 @@ export default function Atlas({
             </button>
             <button
               data-sound="focus"
-              onClick={() => { controls.current?.reset(); setZoomLevel(0); }}
+              onClick={() => { controls.current?.reset(); setZoomLevel(0); choosePlace('miami'); }}
               aria-label="Reset globe to Miami"
               title="Return to Miami"
             >

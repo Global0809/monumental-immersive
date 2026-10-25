@@ -3,6 +3,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import gsap from 'gsap';
 import { attachXray } from '../services/xrayMaterial';
 import { createFrameCadence } from '../services/frameCadence';
+import { resolveDragAxis, type DragAxis } from '../services/exploreInteraction';
 
 export interface CitySceneController { select: (index: number | null, immediate?: boolean) => void; dispose: () => void }
 interface CityOptions { reducedMotion: boolean; onSelect: (index: number) => void; onProject: (index: number, x: number, y: number, visible: boolean) => void; onUnavailable: () => void }
@@ -111,11 +112,11 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   });
   const xray = attachXray(renderer, [chrome, pale, black, red, glass], scanMeshes);
 
-  let disposed = false, raf = 0, width = 0, height = 0, inView = true, playingFilm = false, dirty = true, active: number | null = null;
+  let disposed = false, contextAvailable = true, raf = 0, width = 0, height = 0, inView = true, playingFilm = document.body.classList.contains('monumental-player-active'), dirty = true, active: number | null = null;
   let tween: gsap.core.Tween | undefined;
   const cameraState = { azimuth: .47, elevation: .58, radius: 25, x: 0, y: .5, z: 0 };
   const projected = new THREE.Vector3(), raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
-  const canRender = () => !disposed && inView && !document.hidden && !playingFilm;
+  const canRender = () => !disposed && contextAvailable && inView && !document.hidden && !playingFilm;
   const cadence = createFrameCadence();
   function updateCamera() {
     target.set(cameraState.x, cameraState.y, cameraState.z);
@@ -152,13 +153,13 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
     else tween = gsap.to(cameraState, { ...values, duration: 1.15, ease: 'power3.inOut', overwrite: true, onUpdate: invalidate });
     invalidate();
   }
-  let drag: { id: number; x: number; y: number; azimuth: number; moved: boolean } | null = null;
+  let drag: { id: number; x: number; y: number; azimuth: number; moved: boolean; axis: DragAxis } | null = null;
   const canvas = renderer.domElement;
-  const down = (event: PointerEvent) => { if (event.button !== 0) return; tween?.kill(); drag = { id: event.pointerId, x: event.clientX, y: event.clientY, azimuth: cameraState.azimuth, moved: false }; canvas.setPointerCapture(event.pointerId); };
-  const move = (event: PointerEvent) => { if (!drag || drag.id !== event.pointerId) return; const delta = event.clientX - drag.x; if (Math.abs(delta) > 5) drag.moved = true; if (!drag.moved) return; cameraState.azimuth = drag.azimuth - delta * .006; invalidate(); };
+  const down = (event: PointerEvent) => { if (event.button !== 0 || drag) return; tween?.kill(); drag = { id: event.pointerId, x: event.clientX, y: event.clientY, azimuth: cameraState.azimuth, moved: false, axis: 'pending' }; canvas.setPointerCapture(event.pointerId); };
+  const move = (event: PointerEvent) => { if (!drag || drag.id !== event.pointerId) return; const delta = event.clientX - drag.x; drag.axis = resolveDragAxis(delta, event.clientY - drag.y, drag.axis); if (drag.axis !== 'horizontal') return; drag.moved = true; cameraState.azimuth = drag.azimuth - delta * .006; invalidate(); };
   const up = (event: PointerEvent) => {
     if (!drag || event.pointerId !== drag.id) return;
-    if (!drag.moved && Math.abs(event.clientY - drag.y) < 8) {
+    if (!drag.moved && drag.axis === 'pending' && Math.abs(event.clientY - drag.y) < 8) {
       const bounds = canvas.getBoundingClientRect(); pointer.set((event.clientX - bounds.left) / bounds.width * 2 - 1, -(event.clientY - bounds.top) / bounds.height * 2 + 1); raycaster.setFromCamera(pointer, camera);
       const hit = raycaster.intersectObjects(clickTargets, false)[0]; if (hit) options.onSelect(hit.object.userData.location);
     }
@@ -168,7 +169,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   canvas.addEventListener('pointerdown', down); canvas.addEventListener('pointermove', move); canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', cancel);
   const visibility = () => { if (!canRender()) { cancelAnimationFrame(raf); raf = 0; } else if (dirty || !options.reducedMotion) invalidate(); };
   const playback = (event: Event) => { playingFilm = Boolean((event as CustomEvent).detail?.active); visibility(); };
-  const contextLost = (event: Event) => { event.preventDefault(); options.onUnavailable(); cancelAnimationFrame(raf); raf = 0; inView = false; };
+  const contextLost = (event: Event) => { event.preventDefault(); contextAvailable = false; tween?.kill(); options.onUnavailable(); cancelAnimationFrame(raf); raf = 0; };
   canvas.addEventListener('webglcontextlost', contextLost);
   document.addEventListener('visibilitychange', visibility); window.addEventListener('monumental:playback', playback);
   const observer = new IntersectionObserver(([entry]) => { inView = entry.isIntersecting; visibility(); }, { threshold: .01 }); observer.observe(host);

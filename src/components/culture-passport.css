@@ -6,3 +6,6 @@
 .passport-counter>span{font-size:10px}
 .passport-detail-place .text-link{min-height:40px}
 @media(max-width:360px){.passport-introduction{gap:12px;align-items:flex-start}.passport-introduction h2{font-size:43px}.passport-counter{max-width:82px;flex-shrink:0}.passport-counter>span{font-size:10px;line-height:1.5}}
+.passport-card-top>small,.passport-seal>span{font-size:9px}.passport-card-state,.passport-local-note,.passport-detail-place .text-link{font-size:12px}.passport-detail-stories small{font-size:11px}.passport-detail-place .text-link{min-height:44px}.passport-card{scroll-margin-top:110px}.passport-detail-stories>button{min-height:58px}
+@media(max-width:760px){.passport-card-top>small{font-size:8px;letter-spacing:.02em}.passport-card-state{font-size:11px}.passport-introduction p{font-size:12px}.passport-seal>span{font-size:9px}.passport-local-note{font-size:11px}.passport-detail-place .text-link{font-size:12px}}
+.passport-detail{position:relative;scroll-margin-top:130px}.passport-detail.is-open{padding-top:45px}.passport-close{position:absolute;right:9px;top:7px;display:grid;place-items:center;width:40px;height:40px;background:none;border:0;color:var(--muted)}.passport-close:hover{color:var(--text)}

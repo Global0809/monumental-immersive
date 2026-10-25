@@ -11,6 +11,7 @@ import { places, type Video } from '../../data/catalogue';
 import { durationLabel } from '../../services/discovery';
 import { href } from '../../services/router';
 import { playSound } from '../../services/audio';
+import { isLocalMediaSource } from '../../services/mediaPreview';
 import { SaveButton } from '../FilmCard';
 import './collection-theater.css';
 
@@ -37,6 +38,7 @@ export default function CollectionTheater({ category, items, onWatch, reducedMot
   const root = useRef<HTMLElement>(null);
   const screen = useRef<HTMLDivElement>(null);
   const reflection = useRef<HTMLDivElement>(null);
+  const filmstrip = useRef<HTMLDivElement>(null);
   const media = useRef<HTMLVideoElement>(null);
   const previewEpoch = useRef(0);
   const touch = useRef<{ x: number; y: number } | null>(null);
@@ -60,7 +62,7 @@ export default function CollectionTheater({ category, items, onWatch, reducedMot
   const preview = active?.tags.includes('full film')
     ? items.find(item => item.id === active.id.replace(/-full$/, '') && item.tags.includes('trailer') && item.access === 'free')
     : active?.access === 'free' ? active : undefined;
-  const canPreview = Boolean(preview?.status === 'available' && preview.src?.includes('/media/'));
+  const canPreview = Boolean(preview?.status === 'available' && isLocalMediaSource(preview.src));
 
   const stopPreview = () => {
     previewEpoch.current += 1;
@@ -80,6 +82,15 @@ export default function CollectionTheater({ category, items, onWatch, reducedMot
   };
 
   useEffect(() => { setSelectedId(''); stopPreview(); setPreviewFailed(false); }, [category]);
+  useEffect(() => {
+    const strip = filmstrip.current;
+    if (!strip || !selectedId) return;
+    const selected = strip.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!selected) return;
+    const bounds = strip.getBoundingClientRect();
+    const item = selected.getBoundingClientRect();
+    strip.scrollTo({ left: strip.scrollLeft + item.left - bounds.left - (bounds.width - item.width) / 2, behavior: reducedMotion ? 'instant' : 'smooth' });
+  }, [active?.id, selectedId, reducedMotion]);
   useEffect(() => {
     const element = screen.current;
     if (!element) return;
@@ -103,6 +114,7 @@ export default function CollectionTheater({ category, items, onWatch, reducedMot
   useEffect(() => {
     const video = media.current;
     if (!previewing || !video) return;
+    if (preview?.src && video.getAttribute('src') !== preview.src) video.setAttribute('src', preview.src);
     let current = true;
     const epoch = previewEpoch.current;
     void video.play().catch(() => {
@@ -217,7 +229,7 @@ export default function CollectionTheater({ category, items, onWatch, reducedMot
     </div>
     <div className="ct-selection">
       <div className="ct-selection-heading"><span>Choose your next story</span><div className="ct-pagination"><span aria-hidden="true">{String(index + 1).padStart(2, '0')}<i>/ {String(selection.length).padStart(2, '0')}</i></span><button aria-label="Previous featured story" disabled={selection.length < 2} onClick={() => step(-1)}><ArrowLeft size={17}/></button><button aria-label="Next featured story" disabled={selection.length < 2} onClick={() => step(1)}><ArrowRight size={17}/></button></div></div>
-      <div className="ct-filmstrip" aria-label="Featured stories">{selection.map((item, itemIndex) => <button key={item.id} onClick={() => choose(item.id)} aria-pressed={item.id === active.id} aria-label={`Feature ${item.title}, ${formatOf(item)}`}><span className="ct-thumbnail"><img src={item.poster} alt="" loading="lazy"/><span>{String(itemIndex + 1).padStart(2, '0')}</span></span><span className="ct-thumbnail-copy"><strong>{titleOf(item)}</strong><small>{formatOf(item)} · {durationLabel(item.duration)}</small></span></button>)}</div>
+      <div className="ct-filmstrip" ref={filmstrip} aria-label="Featured stories">{selection.map((item, itemIndex) => <button key={item.id} onClick={() => choose(item.id)} aria-pressed={item.id === active.id} aria-label={`Feature ${item.title}, ${formatOf(item)}`}><span className="ct-thumbnail"><img src={item.poster} alt="" loading="lazy"/><span>{String(itemIndex + 1).padStart(2, '0')}</span></span><span className="ct-thumbnail-copy"><strong>{titleOf(item)}</strong><small>{formatOf(item)} · {durationLabel(item.duration)}</small></span></button>)}</div>
     </div>
     <span className="ct-sr-only" aria-live="polite">Featured: {active.title}, {index + 1} of {selection.length}.</span>
   </section>;

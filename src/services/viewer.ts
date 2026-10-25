@@ -257,6 +257,22 @@ export function removeJourney(id: string): void {
     journeys: state.journeys.filter((journey) => journey.id !== id),
   }));
 }
+/** Keep the saved identity when a guest edits an itinerary. Missing records stay missing. */
+export function updateJourney(id: string, name: string, videoIds: string[]): Journey | null {
+  const existing = getViewer().journeys.find(journey => journey.id === id);
+  const ids = strings(videoIds);
+  if (!existing || !ids.length) return null;
+  const journey = { ...existing, name: name.trim().slice(0, 100) || 'My cultural journey', videoIds: ids };
+  updateViewer(state => ({ journeys: state.journeys.map(item => item.id === id ? journey : item) }));
+  return journey;
+}
+
+/** Undo never overwrites a newer saved itinerary or silently evicts another one. */
+export function restoreJourney(journey: Journey): boolean {
+  const state = getViewer();
+  if (state.journeys.length >= MAX_SAVED_JOURNEYS || state.journeys.some(item => item.id === journey.id)) return false;
+  return updateViewer({ journeys: [...state.journeys, journey] }).journeys.some(item => item.id === journey.id);
+}
 export function clearHistory(): void {
   updateViewer({ history: {} });
 }
@@ -290,7 +306,9 @@ export const viewerStore = {
   togglePlace,
   saveProgress,
   createJourney,
+  updateJourney,
   removeJourney,
+  restoreJourney,
   clearHistory,
   saveMoment,
   removeMoment,

@@ -5,11 +5,13 @@ import { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft';
 import { ArrowRight } from '@phosphor-icons/react/dist/csr/ArrowRight';
 import { Play } from '@phosphor-icons/react/dist/csr/Play';
 import { Pause } from '@phosphor-icons/react/dist/csr/Pause';
+import { Trash } from '@phosphor-icons/react/dist/csr/Trash';
 import { places, videos, type Place, type Video } from '../data/catalogue';
-import { useViewer, usePersistentStorage, type Journey } from '../services/viewer';
+import { getViewer, removeJourney, restoreJourney, togglePlace, toggleSaved, updateViewer, useViewer, usePersistentStorage, type Journey } from '../services/viewer';
 import { href } from '../services/router';
 import { playSound } from '../services/audio';
 import { createFrameCadence } from '../services/frameCadence';
+import { notify } from '../services/feedback';
 import './personal-monument.css';
 
 type Arrangement = 'orbit' | 'column' | 'unfolded';
@@ -57,20 +59,20 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
     ...videos.filter(film => viewer.saved.includes(film.id)).map(film => ({ key: `film:${film.id}`, kind: 'film' as const, title: film.title, film, films: [film] })),
     ...viewer.journeys.map(journey => ({ key: `journey:${journey.id}`, kind: 'journey' as const, title: journey.name, journey, films: journey.videoIds.map(id => videos.find(video => video.id === id)).filter((video): video is Video => Boolean(video)) })).filter(part => part.films.length > 0),
   ], [viewer.savedPlaces, viewer.saved, viewer.journeys]);
-  const selected = parts.find(part => part.key === selectedKey) || parts[0];
+  const visibleParts = filter === 'all' ? parts : parts.filter(part => part.kind === filter);
+  const selected = visibleParts.find(part => part.key === selectedKey) || visibleParts[0];
   const selectedRef = useRef(selected?.key);
   selectedRef.current = selected?.key;
   const chooseRef = useRef<(key: string) => void>(() => {});
-  chooseRef.current = key => { setSelectedKey(key); setResetMessage(''); playSound('select'); };
+  chooseRef.current = key => { setSelectedKey(key); if (filter !== 'all' && parts.find(part => part.key === key)?.kind !== filter) setFilter('all'); setResetMessage(''); playSound('select'); };
   const counts = { place: parts.filter(part => part.kind === 'place').length, film: parts.filter(part => part.kind === 'film').length, journey: parts.filter(part => part.kind === 'journey').length };
-  const visibleParts = filter === 'all' ? parts : parts.filter(part => part.kind === filter);
 
   useEffect(() => {
     try { localStorage.setItem(PREF_KEY, JSON.stringify(preferences)); setPreferencesStored(true); }
     catch { setPreferencesStored(false); }
     actions.current?.redraw();
   }, [preferences]);
-  useEffect(() => { actions.current?.redraw(); }, [selectedKey, paused, reducedMotion]);
+  useEffect(() => { actions.current?.redraw(); }, [selected?.key, paused, reducedMotion]);
   useEffect(() => {
     const element = surface.current;
     if (!element) return;
@@ -79,7 +81,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
       if (entry.isIntersecting) { setEntered(true); actions.current?.redraw(); }
     }, { rootMargin: '100px', threshold: 0 });
     observer.observe(element);
-    return () => observer.disconnect();
+    return () => { state.current.visible = false; observer.disconnect(); };
   }, [parts.length > 0]);
 
   useEffect(() => {
@@ -95,6 +97,8 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
       let renderer: InstanceType<typeof THREE.WebGLRenderer>;
       try { renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'low-power' }); }
       catch { setFallback(true); return; }
+      // If later scene setup fails, still release the already-created context.
+      cleanup = () => { renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); actions.current = null; };
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.6));
       renderer.setClearColor(0x080909, 0);
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -267,7 +271,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
         geometries.forEach(geometry => geometry.dispose()); [chrome, red, thread, activeMaterial].forEach(material => material.dispose());
         environment.dispose(); renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); actions.current = null;
       };
-    })().catch(() => { if (!disposed) setFallback(true); });
+    })().catch(() => { cleanup(); if (!disposed) setFallback(true); });
     return () => { disposed = true; cleanup(); };
   }, [entered, parts]);
 
@@ -277,6 +281,20 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
     playSound('select');
   }
   function pickPart(part: Part) { chooseRef.current(part.key); }
+  function removePart(part: Part) {
+    const before = getViewer();
+    if (part.place && before.savedPlaces.includes(part.place.id)) togglePlace(part.place.id);
+    else if (part.film && before.saved.includes(part.film.id)) toggleSaved(part.film.id);
+    else if (part.journey && before.journeys.some(journey => journey.id === part.journey!.id)) removeJourney(part.journey.id);
+    else return;
+    playSound('remove');
+    notify(`${part.title} removed from your collection`, 'Undo', () => {
+      if (part.place) updateViewer(state => ({ savedPlaces: state.savedPlaces.includes(part.place!.id) ? state.savedPlaces : [...state.savedPlaces, part.place!.id] }));
+      else if (part.film) updateViewer(state => ({ saved: state.saved.includes(part.film!.id) ? state.saved : [...state.saved, part.film!.id] }));
+      else if (part.journey && !restoreJourney(part.journey)) { notify('This journey is already present or your journey collection is full.'); return; }
+      playSound('save');
+    });
+  }
   const typeLabel = { place: 'Destination anchor', film: 'Film segment', journey: 'Journey thread' };
 
   return <section className="personal-monument" aria-labelledby={headingId}>
@@ -298,9 +316,11 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
           {selected && <><div className="personal-monument__selected-title" aria-live="polite"><span>{typeLabel[selected.kind]}</span><h3>{selected.title}</h3></div>
             {selected.place && <><img src={selected.place.image} alt={selected.place.name} loading="lazy"/><p>{selected.place.tagline} This anchor represents a destination you saved.</p><a className="button button-light" href={href('/world', { place: selected.place.id })}>Explore {selected.place.name}<ArrowUpRight size={18}/></a></>}
             {selected.film && <><img src={selected.film.poster} alt="" loading="lazy"/><p>{selected.film.description}</p><div className="personal-monument__film-meta">{selected.film.category} · {formatDuration(selected.film.duration)} · {selected.film.status === 'available' ? 'Available preview' : 'In development'}</div><div className="personal-monument__detail-actions">{selected.film.status === 'available' && selected.film.src && <button className="button button-light" onClick={() => onWatch(selected.film!)}><Play size={18} weight="fill"/>Play film</button>}<a className="text-link" href={href(`/film/${selected.film.id}`)}>Story details <ArrowUpRight size={16}/></a></div></>}
-            {selected.journey && <><p>This thread follows the films in your saved journey, in their chosen order.</p><ol className="personal-monument__journey">{selected.films.map((film, index) => <li key={`${film.id}-${index}`}><a href={href(`/film/${film.id}`)}><span>{film.title}</span><small>{formatDuration(film.duration)}{film.status !== 'available' ? ' · In development' : ''}</small></a>{film.status === 'available' && film.src && <button aria-label={`Play ${film.title}`} onClick={() => onWatch(film)}><Play size={16} weight="fill"/></button>}</li>)}</ol><a className="text-link" href={href('/journey')}>Build another journey <ArrowUpRight size={16}/></a></>}
+            {selected.journey && <><p>This thread follows the films in your saved journey, in their chosen order.</p><ol className="personal-monument__journey">{selected.films.map((film, index) => <li key={`${film.id}-${index}`}><a href={href(`/film/${film.id}`)}><span>{film.title}</span><small>{formatDuration(film.duration)}{film.status !== 'available' ? ' · In development' : ''}</small></a>{film.status === 'available' && film.src && <button aria-label={`Play ${film.title}`} onClick={() => onWatch(film)}><Play size={16} weight="fill"/></button>}</li>)}</ol><a className="text-link" href={href('/journey', { edit: selected.journey.id })}>Edit this journey <ArrowUpRight size={16}/></a></>}
             {selected.kind === 'place' && selected.films.length > 0 && <div className="personal-monument__related"><span>Stories connected to this place</span>{selected.films.slice(0, 3).map(film => <a href={href(`/film/${film.id}`)} key={film.id}>{film.title}<ArrowUpRight size={15}/></a>)}</div>}
+            <button className="text-link personal-monument__remove" onClick={() => removePart(selected)}><Trash size={16}/>Remove {selected.kind === 'place' ? 'place' : selected.kind} from collection</button>
           </>}
+          {!selected && <p>No {filter === 'place' ? 'places' : filter === 'film' ? 'films' : 'journeys'} are saved in this view. Choose another filter or add something from the collection.</p>}
         </div>
       </div>
       <div className="personal-monument__arrangement"><fieldset><legend>Arrange your sculpture</legend><div>{(['orbit', 'column', 'unfolded'] as const).map(arrangement => <button key={arrangement} aria-pressed={preferences.arrangement === arrangement} onClick={() => { setPreferences(value => ({ ...value, arrangement })); setResetMessage(''); }}>{arrangement === 'orbit' ? 'Orbit' : arrangement === 'column' ? 'Column' : 'Unfold'}</button>)}</div></fieldset><label>Spacing <span>{preferences.spacing}%</span><input type="range" min="0" max="100" value={preferences.spacing} onChange={event => { setPreferences(value => ({ ...value, spacing: Number(event.target.value) })); setResetMessage(''); }}/></label><button data-sound-owned className="text-link" onClick={reset}><ArrowCounterClockwise size={17}/>Reset arrangement</button></div>

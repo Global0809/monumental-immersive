@@ -1,4 +1,3 @@
-import { isLocalMedia } from '../services/assets';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowCounterClockwise } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise';
 import { ArrowRight } from '@phosphor-icons/react/dist/csr/ArrowRight';
@@ -12,11 +11,13 @@ import { Sparkle } from '@phosphor-icons/react/dist/csr/Sparkle';
 import { ShareNetwork } from '@phosphor-icons/react/dist/csr/ShareNetwork';
 import { WarningCircle } from '@phosphor-icons/react/dist/csr/WarningCircle';
 import { X } from '@phosphor-icons/react/dist/csr/X';
-import type { Video } from "../data/catalogue";
+import { videos, type Video } from "../data/catalogue";
 import { getViewer, saveProgress, useViewer, usePersistentStorage } from "../services/viewer";
 import { setPlaybackActive } from "../services/audio";
 import { requestPlayback, resolveEntitlement } from "../services/membership";
 import { href } from '../services/router';
+import { isLocalMediaSource, playableQueueAfter } from '../services/mediaPreview';
+import { SaveButton } from './FilmCard';
 import PlayerCompanion from "./PlayerCompanion";
 import "./player.css";
 
@@ -93,7 +94,8 @@ export function VideoPlayer({
   const [countdown, setCountdown] = useState(5);
   const [momentLink,setMomentLink] = useState('');
   const queueIndex = queue.findIndex(item => item.id === video.id);
-  const queueNext = queueIndex >= 0 ? queue[queueIndex + 1] : undefined;
+  const playableNext = playableQueueAfter(queue, video.id);
+  const queueNext = playableNext[0];
   const videoRef = useRef(video);
   videoRef.current = video;
   const entitlement = resolveEntitlement(video);
@@ -106,21 +108,22 @@ export function VideoPlayer({
             (track): track is Caption => track && typeof track.src === "string",
           )
         : [];
-  const nextVideos = (queue.length ? queue.slice(queueIndex + 1) : related)
+  const nextVideos = (queue.length ? playableNext : related)
     .filter(
       (item) =>
         item.id !== video.id &&
         item.status === "available" &&
-        item.access === "free",
+        item.access === "free" && Boolean(item.src),
     )
     .slice(0, 3);
+  const recoveryTrailer = video.tags.includes('full film') ? videos.find(item => item.id === video.id.replace(/-full$/, '') && item.status === 'available' && item.access === 'free' && item.tags.includes('trailer') && isLocalMediaSource(item.src)) : undefined;
 
   // A tiny local-video sample gives the surrounding cinema the colour of the actual frame.
   // Remote guest films retain a neutral stage; their servers need not allow pixel sampling.
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
-    if (!cinemaGlow || reducedMotion || !isLocalMedia(video.src)) {
+    if (!cinemaGlow || reducedMotion || !isLocalMediaSource(video.src)) {
       element.style.removeProperty('--cinema-left'); element.style.removeProperty('--cinema-right'); return;
     }
     const sample = document.createElement('canvas'); sample.width = 4; sample.height = 2;
@@ -327,8 +330,9 @@ export function VideoPlayer({
     }
     try {
       await element.play();
-      setNotice("");
+      if (media.current === element) setNotice("");
     } catch {
+      if (media.current !== element) return;
       setNotice(
         "Press the video’s play control to begin. Your browser may require direct playback.",
       );
@@ -573,6 +577,7 @@ export function VideoPlayer({
                   Try again
                 </button>
               )}
+              {recoveryTrailer && onNext && <button className="ms-player-quiet" type="button" onClick={() => onNext(recoveryTrailer.id)}><Play size={16} weight="fill"/>Watch the available trailer</button>}
               <button
                 className="ms-player-quiet"
                 type="button"
@@ -618,7 +623,7 @@ export function VideoPlayer({
         </div>
         <div className="ms-player-toolbar">
           <div className="ms-player-transport">
-            <button className="ms-player-icon-button ms-player-skip" aria-label="Back 10 seconds" disabled={!source || !duration} onClick={() => seekBy(-10)}><ArrowCounterClockwise size={23}/><span>10</span></button>
+            <button className="ms-player-icon-button ms-player-skip" aria-label="Back 10 seconds" disabled={!source || !duration || state === 'error'} onClick={() => seekBy(-10)}><ArrowCounterClockwise size={23}/><span>10</span></button>
             <button
               type="button"
               className="ms-player-icon-button"
@@ -632,7 +637,7 @@ export function VideoPlayer({
                 <Pause size={18} weight="fill" />
               )}
             </button>
-            <button className="ms-player-icon-button ms-player-skip" aria-label="Forward 10 seconds" disabled={!source || !duration} onClick={() => seekBy(10)}><ArrowClockwise size={23}/><span>10</span></button>
+            <button className="ms-player-icon-button ms-player-skip" aria-label="Forward 10 seconds" disabled={!source || !duration || state === 'error'} onClick={() => seekBy(10)}><ArrowClockwise size={23}/><span>10</span></button>
             <span
               className="ms-player-clock"
               aria-label={`${formatPlaybackTime(position)} of ${formatPlaybackTime(duration)}`}
@@ -642,13 +647,15 @@ export function VideoPlayer({
             </span>
           </div>
           <div className="ms-player-options">
+            <SaveButton video={video} small/>
             <button className="ms-player-icon-button" aria-label="Copy link to this moment" title="Copy link to this moment" onClick={() => void shareMoment()} disabled={!duration}><ShareNetwork size={19}/></button>
-            {isLocalMedia(video.src) && <button disabled={reducedMotion} className="ms-player-icon-button ms-player-glow-toggle" aria-label="Cinema glow" aria-pressed={cinemaGlow} title="Cinema glow" onClick={() => setCinemaGlow(v => !v)}><Sparkle size={20}/></button>}
+            {isLocalMediaSource(video.src) && <button disabled={reducedMotion} className="ms-player-icon-button ms-player-glow-toggle" aria-label="Cinema glow" aria-pressed={cinemaGlow} title="Cinema glow" onClick={() => setCinemaGlow(v => !v)}><Sparkle size={20}/></button>}
             <label className="ms-player-speed">
               Speed
               <select
                 aria-label="Playback speed"
                 value={speed}
+                disabled={!source || state === 'error'}
                 onChange={(event) => {
                   const value = Number(event.target.value);
                   setSpeed(value);

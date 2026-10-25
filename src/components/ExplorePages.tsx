@@ -25,6 +25,7 @@ import { playSound, type SoundType } from "../services/audio";
 import { notify } from "../services/feedback";
 import "./explore.css";
 import { selectDestination } from "../services/exploration";
+import { resolveDragAxis, type DragAxis } from "../services/exploreInteraction";
 
 const CityExperience = lazy(() => import("./CityExperience"));
 const Atlas = lazy(() => import("./Atlas"));
@@ -126,7 +127,7 @@ export function WorldPage({ params, reducedMotion, onWatch }: ExploreProps) {
     <Suspense fallback={null}><CityExperience openRequest={cityRequest} placeId={selected.id} reducedMotion={reducedMotion} onWatch={onWatch}/></Suspense>
     {connections.length > 0 && <section className="ex-connections" aria-label={`Cultural connections from ${selected.name}`}><div className="ex-connection-intro"><span className="ex-kicker">FOLLOW THE THREAD</span><h2>{selected.name}<br /><span>is a beginning.</span></h2><p>These lines connect shared themes and collections. Choose a place to see its perspective.</p></div><div className="ex-connection-links">{connections.map((connection, index) => <button className="ex-connection-link ex-reactive" key={connection.place.id} data-sound-owned onClick={() => { selectPlace(connection.place.id); root.current?.scrollIntoView({ block: "start", behavior: reducedMotion ? "instant" : "smooth" }); }}><img src={asset(connection.place.image)} alt="" loading="lazy" /><span className="ex-connection-number">0{index + 1}</span><span className="ex-connection-copy"><small>{connection.reason}</small><strong>{connection.place.name}</strong><span>{connection.films} playable {connection.films === 1 ? "story" : "stories"}</span></span><ArrowUpRight size={23} /></button>)}</div></section>}
     <section className="ex-results" ref={section}>
-      <div className="ex-section-heading"><div><span className="ex-kicker">STORIES WITH A SENSE OF PLACE</span><h2>Inside {selected.name}<span>({String(items.length).padStart(2, "0")})</span></h2></div><a href={href("/time-machine", { place: selected.id })}>Travel through time <ArrowUpRight size={19} /></a></div>
+      <div className="ex-section-heading"><div><span className="ex-kicker">STORIES WITH A SENSE OF PLACE</span><h2>Inside {selected.name}<span>({String(items.length).padStart(2, "0")})</span></h2></div><a href={href("/time-machine", { place: selected.id, category: category === "All" ? undefined : category })}>Travel through time <ArrowUpRight size={19} /></a></div>
       <p className="ex-place-description">{selected.description}</p>
       <ChannelFilter value={category} onChange={value => updateRoute("/world", params, { category: value === "All" ? "" : value })} />
       <StoryCards items={items} onWatch={onWatch} empty={`There are no ${category.toLowerCase()} stories in this ${selected.name} collection yet. The next chapter is still being made.`} onReset={() => updateRoute("/world", params, { category: "" })} />
@@ -158,7 +159,7 @@ function EraComparison({ current, comparison, category, place, onChange, onClose
 export function TimeMachinePage({ params, reducedMotion, onWatch }: ExploreProps) {
   const root = useRef<HTMLDivElement>(null);
   const fan = useRef<HTMLDivElement>(null);
-  const drag = useRef<{ x: number; pointer: number; moved: boolean } | null>(null);
+  const drag = useRef<{ x: number; y: number; pointer: number; axis: DragAxis; moved: boolean } | null>(null);
   const dragClick = useRef(false);
   const viewer = useViewer();
   const period = periods.find(era => era.id === params.get("period")) || periods[0];
@@ -175,37 +176,39 @@ export function TimeMachinePage({ params, reducedMotion, onWatch }: ExploreProps
   const selectPeriod = (id: string) => { if (id !== period.id) updateRoute("/time-machine", params, { period: id, compare: params.get("compare") === id ? period.id : params.get("compare") || "" }, "era"); };
   useArrival(root, period.id, reducedMotion);
   const moveScrub = (event: PointerEvent<HTMLDivElement>) => {
-    if (!drag.current || contactSheet) return;
+    if (!drag.current || drag.current.pointer !== event.pointerId || contactSheet) return;
     const delta = event.clientX - drag.current.x;
+    drag.current.axis = resolveDragAxis(delta, event.clientY - drag.current.y, drag.current.axis);
+    if (drag.current.axis !== 'horizontal') return;
     if (Math.abs(delta) > 9) { drag.current.moved = true; event.currentTarget.setPointerCapture(event.pointerId); }
     if (drag.current.moved && !reducedMotion) fan.current?.style.setProperty("--scrub-shift", `${Math.max(-100, Math.min(100, delta * .3))}px`);
   };
   const finishScrub = (event: PointerEvent<HTMLDivElement>, cancel = false) => {
     const gesture = drag.current;
+    if (!gesture || gesture.pointer !== event.pointerId) return;
     drag.current = null;
     fan.current?.style.removeProperty("--scrub-shift");
-    if (!gesture) return;
-    dragClick.current = gesture.moved;
+    dragClick.current = !cancel && gesture.moved;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     const delta = event.clientX - gesture.x;
-    if (!cancel && Math.abs(delta) > 45) selectPeriod(periods[Math.max(0, Math.min(periods.length - 1, index + (delta < 0 ? 1 : -1)))].id);
+    if (!cancel && gesture.axis === 'horizontal' && Math.abs(delta) > 45) selectPeriod(periods[Math.max(0, Math.min(periods.length - 1, index + (delta < 0 ? 1 : -1)))].id);
   };
   return <div ref={root} className={`ex-page ex-time ${reducedMotion ? "ex-reduced" : ""}`}>
-    <header className="ex-page-label"><span>THE TIME MACHINE / 02</span><a href={href("/world")}>SPACE IS ONLY HALF THE STORY <ArrowUpRight size={16} /></a></header>
+    <header className="ex-page-label"><span>THE TIME MACHINE / 02</span><a href={href("/world", { place: place?.id, category: category === "All" ? undefined : category })}>SPACE IS ONLY HALF THE STORY <ArrowUpRight size={16} /></a></header>
     <section className="ex-time-room" aria-label="Explore cultural eras">
       <div className="ex-time-heading"><h1>GOOD STORIES<br />DON’T EXPIRE.</h1><p>Rewind the culture.<br />Discover what shaped the now.</p></div>
       <div className="ex-era-toolbar"><div className="ex-view-switch" role="group" aria-label="Era presentation" data-sound-owned><button aria-pressed={!contactSheet} onClick={() => updateRoute("/time-machine", params, { view: "" })}><Stack size={16} /> Film strip</button><button aria-pressed={contactSheet} onClick={() => updateRoute("/time-machine", params, { view: "contact" })}><SquaresFour size={16} /> Contact sheet</button></div><span>{contactSheet ? "SIX OPEN DOORS. CHOOSE YOUR MOMENT." : "DRAG THE FILMS / USE ARROW KEYS"}</span></div>
       <div className={`ex-era-room ${contactSheet ? "ex-era-room--contact" : ""}`} role="group" aria-label="Era explorer. Drag horizontally or use left and right arrow keys to select an era." tabIndex={0} data-sound-owned
-        onPointerDown={event => { if (event.button === 0 && !contactSheet) { drag.current = { x: event.clientX, pointer: event.pointerId, moved: false }; dragClick.current = false; } }} onPointerMove={moveScrub} onPointerLeave={event => { if (drag.current && !drag.current.moved) finishScrub(event, true); }} onPointerUp={event => finishScrub(event)} onPointerCancel={event => finishScrub(event, true)}
-        onClickCapture={event => { if (dragClick.current) { event.preventDefault(); event.stopPropagation(); dragClick.current = false; } }}
-        onKeyDown={event => { const target = event.target as HTMLElement; if (!target.closest("button") && target !== event.currentTarget) return; const next = event.key === "ArrowRight" ? index + 1 : event.key === "ArrowLeft" ? index - 1 : event.key === "Home" ? 0 : event.key === "End" ? periods.length - 1 : null; if (next !== null) { event.preventDefault(); selectPeriod(periods[Math.max(0, Math.min(periods.length - 1, next))].id); } }}>
+        onPointerDown={event => { if (event.button === 0 && !contactSheet && !drag.current) { drag.current = { x: event.clientX, y: event.clientY, pointer: event.pointerId, axis: 'pending', moved: false }; dragClick.current = false; } }} onPointerMove={moveScrub} onPointerLeave={event => { if (drag.current && !drag.current.moved) finishScrub(event, true); }} onPointerUp={event => finishScrub(event)} onPointerCancel={event => finishScrub(event, true)}
+        onClickCapture={event => { if (dragClick.current && event.detail !== 0) { event.preventDefault(); event.stopPropagation(); dragClick.current = false; } }}
+        onKeyDown={event => { const target = event.target as HTMLElement; if (!target.closest("button") && target !== event.currentTarget) return; const next = event.key === "ArrowRight" ? index + 1 : event.key === "ArrowLeft" ? index - 1 : event.key === "Home" ? 0 : event.key === "End" ? periods.length - 1 : null; if (next !== null) { event.preventDefault(); const id = periods[Math.max(0, Math.min(periods.length - 1, next))].id; selectPeriod(id); if (target.closest('button')) event.currentTarget.querySelector<HTMLButtonElement>(`[data-era="${id}"]`)?.focus({ preventScroll: true }); } }}>
         <span className="ex-year-ghost ex-reactive" aria-hidden="true" key={period.id}>{period.label}</span>
         <div className="ex-era-fan" ref={fan} role="group" aria-label="Select an era">
           {periods.map((era, eraIndex) => {
             const meta = eras[era.id];
             const offset = eraIndex - index; const playableCount = videos.filter(video => video.period === era.id && video.status === "available").length;
             const style = { "--era-offset": offset, "--era-distance": Math.abs(offset), zIndex: 10 - Math.abs(offset) } as CSSProperties;
-            return <button key={era.id} className={`ex-era-frame ${era.id === period.id ? "is-active" : ""}`} style={style} aria-pressed={era.id === period.id} onClick={() => selectPeriod(era.id)} aria-label={`Explore ${era.label}: ${meta.title.toLowerCase()}`}><span className="ex-film-perfs" aria-hidden="true" /><div className="ex-era-picture"><img src={asset(meta.image)} alt="" draggable={false} /><span className="ex-era-place">{meta.place}</span><span className="ex-era-number">{era.label}</span></div><span className="ex-era-frame-bottom">{meta.shorthand}<ArrowUpRight size={18} /></span><span className="ex-era-count">{playableCount} playable {playableCount === 1 ? "story" : "stories"}</span><span className="ex-film-perfs" aria-hidden="true" /></button>;
+            return <button key={era.id} data-era={era.id} className={`ex-era-frame ${era.id === period.id ? "is-active" : ""}`} style={style} aria-pressed={era.id === period.id} onClick={() => selectPeriod(era.id)} aria-label={`Explore ${era.label}: ${meta.title.toLowerCase()}`}><span className="ex-film-perfs" aria-hidden="true" /><div className="ex-era-picture"><img src={asset(meta.image)} alt="" draggable={false} /><span className="ex-era-place">{meta.place}</span><span className="ex-era-number">{era.label}</span></div><span className="ex-era-frame-bottom">{meta.shorthand}<ArrowUpRight size={18} /></span><span className="ex-era-count">{playableCount} playable {playableCount === 1 ? "story" : "stories"}</span><span className="ex-film-perfs" aria-hidden="true" /></button>;
           })}
         </div>
         <span className="ex-era-image-note">{["1930s", "1970s", "1990s"].includes(period.id) ? "Contemporary imagery / historical context" : period.id === "now" ? "Contemporary culture / the story continues" : "Film release era / fictional worlds"}</span>

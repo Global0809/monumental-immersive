@@ -7,6 +7,7 @@ export interface Filters {
   period?: string;
   access?: string;
   duration?: string;
+  status?: string;
 }
 export function filterVideos(
   filters: Filters,
@@ -38,6 +39,7 @@ export function filterVideos(
       (!filters.category || v.category === filters.category) &&
       (!filters.period || v.period === filters.period) &&
       (!filters.access || v.access === filters.access) &&
+      (!filters.status || v.status === filters.status) &&
       (!filters.duration ||
         (v.status === "available" &&
           (filters.duration === "short"

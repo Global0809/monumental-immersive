@@ -576,3 +576,6 @@ html[data-motion=reduced] .ms-queue-meter i{animation:none}
 }
 
 .ms-moment-link{display:block;width:calc(100% - 48px);margin:10px 24px;padding:12px;background:#080909;color:var(--player-text);border:1px solid var(--player-line);font-size:12px}
+
+.ms-player-options>.save-small{position:static;display:grid;place-items:center;width:44px;height:44px;border:1px solid var(--player-line);background:transparent;flex:none}
+.ms-player-options>.save-small[aria-pressed=true]{color:var(--player-accent);border-color:var(--player-accent)}

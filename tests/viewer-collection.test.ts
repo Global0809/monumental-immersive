@@ -5,6 +5,8 @@ import {
   getViewer,
   MAX_SAVED_JOURNEYS,
   removeJourney,
+  restoreJourney,
+  updateJourney,
   saveProgress,
   togglePlace,
   toggleSaved,
@@ -83,4 +85,28 @@ test('explicit collection changes still validate, persist, and leave the previou
   assert.deepEqual(normalized.saved, ['miami-frequency']);
   assert.deepEqual(normalized.moments, []);
   assert.deepEqual(persisted().moments, []);
+});
+
+test('editing a saved journey preserves its identity and position without duplicating the collection', () => {
+  updateViewer({ journeys: [{ id: 'a', name: 'First', videoIds: ['miami-frequency'] }, { id: 'b', name: 'Second', videoIds: ['island-current'] }] });
+  const result = updateJourney('a', '  A new direction  ', ['island-current', 'miami-frequency', 'island-current']);
+  assert.equal(result?.id, 'a');
+  assert.equal(result?.name, 'A new direction');
+  assert.deepEqual(getViewer().journeys.map(journey => journey.id), ['a', 'b']);
+  assert.deepEqual(persisted().journeys[0].videoIds, ['island-current', 'miami-frequency']);
+  assert.equal(updateJourney('missing', 'Cannot recreate', ['miami-frequency']), null);
+  assert.equal(updateJourney('a', 'Cannot empty', []), null);
+});
+
+test('journey Undo does not replace a newer saved journey or evict a full collection', () => {
+  const original = { id: 'a', name: 'Original', videoIds: ['miami-frequency'] };
+  updateViewer({ journeys: [original] });
+  removeJourney('a');
+  assert.equal(restoreJourney(original), true);
+  updateJourney('a', 'Newer version', ['island-current']);
+  assert.equal(restoreJourney(original), false);
+  assert.equal(getViewer().journeys[0].name, 'Newer version');
+  updateViewer({ journeys: Array.from({ length: MAX_SAVED_JOURNEYS }, (_, index) => ({ id: `full-${index}`, name: 'Saved', videoIds: ['miami-frequency'] })) });
+  assert.equal(restoreJourney(original), false);
+  assert.equal(getViewer().journeys.length, MAX_SAVED_JOURNEYS);
 });

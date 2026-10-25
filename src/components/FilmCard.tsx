@@ -1,4 +1,3 @@
-import { isLocalMedia } from '../services/assets';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight } from '@phosphor-icons/react/dist/csr/ArrowUpRight';
 import { Check } from '@phosphor-icons/react/dist/csr/Check';
@@ -12,6 +11,7 @@ import { toggleSaved, updateViewer, useViewer } from '../services/viewer';
 import { durationLabel } from '../services/discovery';
 import { playSound } from '../services/audio';
 import { notify } from '../services/feedback';
+import { isLocalMediaSource } from '../services/mediaPreview';
 import './film-card.css';
 
 export function SaveButton({ video, small = false }: { video: Video; small?: boolean }) {
@@ -32,13 +32,14 @@ export default function FilmCard({ video, onWatch }: { video: Video; onWatch: (v
   const [failed, setFailed] = useState(false);
   const [previewProgress, setPreviewProgress] = useState(0);
   const media = useRef<HTMLVideoElement>(null);
+  const previewEpoch = useRef(0);
   const root = useRef<HTMLElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const identifier = useRef(Symbol(video.id));
-  const canPreview = video.status === 'available' && video.access === 'free' && isLocalMedia(video.src);
+  const canPreview = video.status === 'available' && video.access === 'free' && isLocalMediaSource(video.src);
   const completion = progress && progress.duration > 0 ? Math.min(100, progress.time / progress.duration * 100) : 0;
 
-  const stop = () => { clearTimeout(timer.current); media.current?.pause(); setPreviewing(false); setReady(false); };
+  const stop = () => { previewEpoch.current += 1; clearTimeout(timer.current); media.current?.pause(); setPreviewing(false); setReady(false); };
   const start = () => {
     if (!canPreview || document.hidden || document.querySelector('.ms-player-dialog[open]')) return;
     window.dispatchEvent(new CustomEvent('monumental:preview', { detail: identifier.current }));
@@ -48,7 +49,7 @@ export default function FilmCard({ video, onWatch }: { video: Video; onWatch: (v
     const stopOther = (event: Event) => { if ((event as CustomEvent).detail !== identifier.current) stop(); };
     const playback = () => stop();
     const visibility = () => { if (document.hidden) stop(); };
-    const observer = new IntersectionObserver(entries => { if (!entries[0].isIntersecting) stop(); }, { threshold: .15 });
+    const observer = new IntersectionObserver(([entry]) => { if (!entry?.isIntersecting || entry.intersectionRatio < .15) stop(); }, { threshold: [0, .15] });
     if (root.current) observer.observe(root.current);
     window.addEventListener('monumental:preview', stopOther);
     window.addEventListener('monumental:playback', playback);
@@ -59,14 +60,20 @@ export default function FilmCard({ video, onWatch }: { video: Video; onWatch: (v
   useEffect(() => {
     const element = media.current;
     if (!previewing || !element) return;
+    if (video.src && element.getAttribute('src') !== video.src) element.setAttribute('src', video.src);
+    const epoch = previewEpoch.current;
+    let active = true;
+    void element.play().catch(() => {
+      if (!active || previewEpoch.current !== epoch) return;
+      setFailed(true); stop();
+    });
     return () => {
-      if (!element.isConnected) {
-        element.pause();
-        element.removeAttribute('src');
-        element.load();
-      }
+      active = false;
+      element.pause();
+      element.removeAttribute('src');
+      element.load();
     };
-  }, [previewing]);
+  }, [previewing, video.src]);
 
   return <article ref={root} className={`film-card ${previewing ? 'is-previewing' : ''}`}>
     <div className="film-image" onPointerEnter={event => {
@@ -74,9 +81,9 @@ export default function FilmCard({ video, onWatch }: { video: Video; onWatch: (v
     }} onPointerLeave={stop}>
       <a href={href('/film/' + video.id)} data-transition-film={video.id} aria-label={`Details: ${video.title}`} data-cursor="STORY">
         <img src={video.poster} alt="" loading="lazy"/>
-        {previewing && <video ref={media} className={`card-video ${ready ? 'is-ready' : ''}`} src={video.src} muted loop playsInline autoPlay preload="none" aria-hidden="true" onPlaying={() => setReady(true)} onCanPlay={() => { void media.current?.play().catch(() => { setFailed(true); setPreviewing(false); }); }} onTimeUpdate={() => {
+        {previewing && <video key={video.id} ref={media} className={`card-video ${ready ? 'is-ready' : ''}`} src={video.src} muted loop playsInline preload="none" aria-hidden="true" onPlaying={() => setReady(true)} onTimeUpdate={() => {
           if (media.current && Number.isFinite(media.current.duration)) setPreviewProgress(media.current.currentTime / media.current.duration * 100);
-        }} onError={() => { setFailed(true); setPreviewing(false); }}/>}<span className="film-image-shade"/>
+        }} onError={() => { setFailed(true); stop(); }}/>}<span className="film-image-shade"/>
       </a>
       <span className="film-type">{video.status === 'development' ? 'In development' : video.tags.includes('motion study') ? 'Preview study' : 'Open cinema'}</span>
       <SaveButton video={video} small/>
