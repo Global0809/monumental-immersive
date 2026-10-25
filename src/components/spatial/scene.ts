@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createFrameCadence } from '../../services/frameCadence';
+import { getSpatialPreferences, subscribeSpatialPreferences, qualityRatio } from '../../services/spatialPreferences';
 
 export type SpatialScenePortal = { id: string; title: string; route: string; image: string };
 export type SpatialProjection = { id: string; x: number; y: number; visible: boolean };
@@ -343,6 +344,21 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   const cadence = createFrameCadence(60);
+  let preferences = getSpatialPreferences();
+  let overhead = 0;
+  const overheadPosition = new THREE.Vector3(0,26,4), overheadLook = new THREE.Vector3(0,0,-11);
+  const updatePreferences = () => {
+    preferences = getSpatialPreferences();
+    brushed.wireframe = preferences.cutaway;
+    black.wireframe = preferences.cutaway;
+    // Images and the central chrome instrument preserve their materials.
+    key.intensity = .8 + preferences.light * .027;
+    side.intensity = .65 + preferences.light * .025;
+    signal.intensity = 7 + preferences.light * .18;
+    renderer.toneMappingExposure = .7 + preferences.light * .0062;
+    resize(); requestFrame();
+  };
+  const unsubscribePreferences = subscribeSpatialPreferences(updatePreferences);
   type Travel = {
     start: number; from: THREE.Vector3; targetFrom: THREE.Vector3; to: THREE.Vector3; targetTo: THREE.Vector3;
     fromFov: number; done: (() => void) | null; settled: boolean;
@@ -363,7 +379,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   }
   function resize() {
     width = Math.max(1, host.clientWidth); height = Math.max(1, host.clientHeight); mobile = width < 700;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, mobile ? 1.25 : 1.5));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, qualityRatio(preferences.quality, mobile)));
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     if (!travel) camera.fov = mobile ? 58 : 46;
@@ -393,6 +409,11 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     const angle = currentRotation;
     cameraInside.set(Math.sin(angle) * 6.4, 2.65 + scroll * .65, 5.1 + (1 - Math.cos(angle)) * 2.5 - scroll * 1.25);
     targetInside.copy(routeTarget);
+    const overheadTarget = preferences.view === 'overhead' && state.room === 'atrium' ? 1 : 0;
+    overhead += (overheadTarget - overhead) * ease;
+    overheadPosition.y = mobile ? 24 : 26;
+    cameraInside.lerp(overheadPosition, overhead);
+    targetInside.lerp(overheadLook, overhead);
     // Existing route content remains central; architecture turns only enough
     // to convey travelling to another part of the same building.
     targetInside.x += Math.sin(angle) * 6;
@@ -442,7 +463,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       const positions = screens.map(screen => {
         projectVector.copy(screen.marker).applyMatrix4(screen.group.matrixWorld).project(camera);
         return { id: screen.portal.id, x: (projectVector.x * .5 + .5) * width, y: (-projectVector.y * .5 + .5) * height,
-          visible: state.entered && entryProgress > .92 && projectVector.z < 1 && projectVector.z > -1 && Math.abs(projectVector.x) < 1.06 && Math.abs(projectVector.y) < .98 };
+          visible: scroll < .22 && state.entered && entryProgress > .92 && projectVector.z < 1 && projectVector.z > -1 && Math.abs(projectVector.x) < 1.06 && Math.abs(projectVector.y) < .98 };
       });
       options.onProject(positions);
     }
@@ -450,7 +471,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     // Navigation fires only after the final camera frame is presented. Keep
     // that composition until route state arrives, avoiding a one-frame jump.
     if (completeTravel) completeTravel();
-    const stillMoving = (travel ? !travel.settled : entryProgress !== entryTarget || routeBlend < 1) || screenMoving || Math.abs(targetRotation - currentRotation) > .0003 || Math.abs(pointerX - currentPointerX) + Math.abs(pointerY - currentPointerY) > .002;
+    const stillMoving = Math.abs(overheadTarget-overhead) > .001 || (travel ? !travel.settled : entryProgress !== entryTarget || routeBlend < 1) || screenMoving || Math.abs(targetRotation - currentRotation) > .0003 || Math.abs(pointerX - currentPointerX) + Math.abs(pointerY - currentPointerY) > .002;
     if (ambient || stillMoving) requestFrame();
   }
 
@@ -509,7 +530,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   canvas.addEventListener('pointerleave', pointerLeave);
   canvas.addEventListener('webglcontextlost', contextLost);
   document.addEventListener('visibilitychange', visibility);
-  const observer = new ResizeObserver(resize); observer.observe(host); resize();
+  const observer = new ResizeObserver(resize); observer.observe(host); updatePreferences();
 
   return {
     setState(next) {
@@ -556,7 +577,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     destroy() {
       if (disposed) return;
       if (travel) travel.done = null; travel = null;
-      disposed = true; cancelAnimationFrame(frameRequest); observer.disconnect();
+      disposed = true; cancelAnimationFrame(frameRequest); observer.disconnect(); unsubscribePreferences();
       canvas.removeEventListener('pointerdown', pointerDown); canvas.removeEventListener('pointermove', pointerMove);
       canvas.removeEventListener('pointerup', pointerUp); canvas.removeEventListener('pointercancel', pointerUp);
       canvas.removeEventListener('pointerleave', pointerLeave); canvas.removeEventListener('webglcontextlost', contextLost);

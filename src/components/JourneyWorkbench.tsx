@@ -20,9 +20,13 @@ import { playSound } from '../services/audio';
 import { notify } from '../services/feedback';
 import { go, href, readRoute, useRoute } from '../services/router';
 import './journey-workbench.css';
+import JourneyTimeline from './spatial/JourneyTimeline';
+import { decodeItinerary } from '../services/spatialDiscovery';
 gsap.registerPlugin(Flip);
 
 function loadDraft(editingId = readRoute().params.get('edit')): JourneyDraft {
+  const shared = decodeItinerary(readRoute().params);
+  if (shared) return { ...emptyJourneyDraft(), ...shared, generated: true };
   const draft = readJourneyDraft();
   if (!editingId || draft?.editingId === editingId) return draft || emptyJourneyDraft();
   const saved = getViewer().journeys.find(journey => journey.id === editingId);
@@ -42,6 +46,9 @@ export default function JourneyWorkbench({ onPlayJourney }: { onPlayJourney: (vi
   const [active, setActive] = useState(0);
   const { params } = useRoute();
   const requestedEdit = params.get('edit');
+  const sharedKey = params.get('stops');
+  const sharedName = params.get('name');
+  useEffect(() => { const shared=decodeItinerary(params); if(shared){setDraft({...emptyJourneyDraft(),...shared,generated:true});setSaved(false);setActive(0);setDraftMessage('A shared itinerary, copied into your own editable draft.');} }, [sharedKey, sharedName]);
   const dragFrom = useRef<number | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -60,7 +67,7 @@ export default function JourneyWorkbench({ onPlayJourney }: { onPlayJourney: (vi
     const nextMood = surprise ? moods[Math.floor(Math.random() * moods.length)] : mood;
     const nextPlace = surprise ? places[Math.floor(Math.random() * places.length)].id : place;
     patch({ mood: nextMood, place: nextPlace, videoIds: buildJourney(nextMood, minutes, nextPlace).map(video => video.id), journeyMinutes: minutes, name: `${nextMood} from ${places.find(p => p.id === nextPlace)?.name}`, generated: true, emptied: false, editingId: null });
-    if (requestedEdit) go('/journey');
+    if (requestedEdit || sharedKey) go('/journey');
     setSaved(false); setActive(0); setDraftMessage('A new route is ready. Rearrange the stops to make it yours.'); playSound('destination');
   }
   function move(from: number, to: number) {
@@ -92,12 +99,12 @@ export default function JourneyWorkbench({ onPlayJourney }: { onPlayJourney: (vi
     const result = updating ? updateJourney(editingId, name, draft.videoIds) : createJourney(name, draft.videoIds);
     if (!result) { notify(updating ? 'The original journey was removed elsewhere. Use Save as new to keep this draft.' : `You have ${MAX_SAVED_JOURNEYS} saved journeys. Remove one in My World, then save again.`); return; }
     patch({ editingId: result.id }); setSaved(true); playSound('save'); notify(updating ? 'Journey updated in My World' : 'Journey saved to My World');
-    if (requestedEdit && requestedEdit !== result.id) go('/journey', { edit: result.id });
+    if (sharedKey || (requestedEdit && requestedEdit !== result.id)) go('/journey', { edit: result.id });
   }
   function startNew() {
     const previous = draft, empty = emptyJourneyDraft();
     setDraft(empty); setSaved(false); setActive(0); setDraftMessage('A fresh draft is ready. Saved journeys in My World are unchanged.');
-    if (requestedEdit) go('/journey');
+    if (requestedEdit || sharedKey) go('/journey');
     notify('Started a new draft', 'Undo', () => setDraft(current => current === empty ? previous : current));
   }
   return <section className="journey-page page-section" ref={root}>
@@ -116,6 +123,7 @@ export default function JourneyWorkbench({ onPlayJourney }: { onPlayJourney: (vi
       <div className="journey-manifest-heading"><div><span className="journey-manifest-label">YOUR CULTURAL ITINERARY</span><h2>{durationLabel(total).toUpperCase()}.<br/><span>{journey.length} DIFFERENT PERSPECTIVES.</span></h2></div><div><span>{journeyPlaces.length} connected places</span><div className="journey-duration-track" aria-label={`${Math.round(total)} seconds of ${journeyMinutes * 60} seconds available`}><i style={{ scale: `${Math.min(total / (journeyMinutes * 60),1)} 1` }}/></div><small>Built for {journeyMinutes} {journeyMinutes === 1 ? 'minute' : 'minutes'}</small></div></div>
       {journeyPlaces.length > 0 && <div className="journey-place-thread" aria-label="Places in this journey">{journeyPlaces.map((p,i) => <a key={p.id} href={href('/world',{place:p.id})}><img src={p.image} alt=""/><span>{p.name}</span>{i < journeyPlaces.length-1 && <ArrowUpRight/>}</a>)}</div>}
       <div className="journey-edit-bar"><label>Give your journey a name<input aria-label="Journey name" value={name} maxLength={80} onChange={e => { patch({ name: e.target.value }); setSaved(false); }}/></label><span>Drag to reorder, or use the arrows.</span></div>
+      <JourneyTimeline items={journey} name={name} active={active} onSelect={setActive} onMove={move}/>
       <ol className="journey-stops">{journey.map((video,i) => <li className={`journey-stop ${active === i ? 'is-active' : ''} ${dragging === i ? 'is-dragging' : ''}`} key={video.id} draggable onDragStart={e => { dragFrom.current = i; setDragging(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain',video.id); }} onDragEnd={() => { dragFrom.current = null; setDragging(null); }} onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }} onDrop={e => { e.preventDefault(); if (dragFrom.current !== null) move(dragFrom.current,i); dragFrom.current = null; setDragging(null); }} onPointerEnter={() => setActive(i)} onFocusCapture={() => setActive(i)}>
         <span className="journey-stop-number">{String(i + 1).padStart(2,'0')}</span><span className="journey-drag-icon" aria-hidden="true"><DotsSixVertical size={20}/></span><a className="journey-stop-picture" aria-label={`Details: ${video.title}`} href={href('/film/' + video.id)} draggable={false}><img src={video.poster} alt="" draggable={false}/></a><div className="journey-stop-info"><small>{video.category} / {durationLabel(video.duration)}</small><a href={href('/film/' + video.id)}>{video.title}</a><span>{video.places.map(id => places.find(p => p.id === id)?.name).join(' → ') || 'Independent cinema'}</span></div><div className="journey-reorder"><button data-sound-owned disabled={i === 0} aria-label={`Move ${video.title} up`} onClick={() => move(i,i-1)}><ArrowUp size={17}/></button><button data-sound-owned disabled={i === journey.length - 1} aria-label={`Move ${video.title} down`} onClick={() => move(i,i+1)}><ArrowDown size={17}/></button></div><button className="journey-remove" aria-label={`Remove ${video.title} from journey`} onClick={() => removeStop(video, i)}><X size={17}/></button>
       </li>)}</ol>

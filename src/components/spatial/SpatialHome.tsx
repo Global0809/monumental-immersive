@@ -4,6 +4,7 @@ import { playSound, setSoundEnabled } from '../../services/audio';
 import { useViewer } from '../../services/viewer';
 import { enterSpatialWorld, requestSpatialTravel, rotateSpatialWorld, setSpatialFocus, spatialPortals, useSpatial } from '../../services/spatial';
 import SpatialHub from './SpatialHub';
+import ObservatoryTools from './ObservatoryTools';
 
 export default function SpatialHome({ onWatch, reducedMotion, soundUnavailable }: {
   onWatch: (video: Video) => void; reducedMotion: boolean; soundUnavailable: boolean;
@@ -21,5 +22,5 @@ export default function SpatialHome({ onWatch, reducedMotion, soundUnavailable }
       if (!requestSpatialTravel(id)) { enterSpatialWorld(); playSound('destination'); go(portal.route); }
     }}
     onRotate={delta => { rotateSpatialWorld(delta); playSound('select'); }}
-    onWatch={onWatch}/></div>
+    onWatch={onWatch}/>{spatial.entered && <ObservatoryTools/>}</div>
 }
