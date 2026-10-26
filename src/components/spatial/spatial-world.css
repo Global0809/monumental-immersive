@@ -9,7 +9,7 @@
 .spatial-world[data-home=true] .spatial-world-canvas{pointer-events:auto;touch-action:pan-y}
 .spatial-world-canvas canvas{display:block;width:100%;height:100%;outline:none}
 .spatial-world-vignette{position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(8,9,9,.08),transparent 30%,transparent 75%,rgba(8,9,9,.4))}
-.spatial-world[data-home=false] .spatial-world-vignette{background:rgba(8,9,9,.8)}
+.spatial-world[data-home=false] .spatial-world-vignette{background:rgba(8,9,9,.42)}
 .spatial-world-labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .spatial-world-labels>div{position:absolute;top:0;left:0;display:flex;align-items:center;gap:12px;opacity:0;white-space:nowrap;color:#efeee9;text-shadow:0 1px 8px #080909;font-size:12px;will-change:transform;transition:opacity .18s;pointer-events:none}
 .spatial-world-labels>div strong{font-weight:500;letter-spacing:.06em;text-transform:uppercase}

@@ -56,7 +56,7 @@ export default function SpatialExperience({ path, reducedMotion, paused }: {
       setSpatialTravelling(id);
       skipFlight.current = finish;
       // A backgrounded tab must never strand navigation waiting on RAF.
-      flightTimer = window.setTimeout(finish, 1600);
+      flightTimer = window.setTimeout(finish, 2200);
       controller.current.travelTo(id, finish);
     };
     const requestTravel = (event: Event) => {

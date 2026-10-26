@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createFrameCadence } from '../../services/frameCadence';
 import { getSpatialPreferences, subscribeSpatialPreferences, qualityRatio } from '../../services/spatialPreferences';
+import { CAMERA_TRAVEL_MS, cameraEase, doorwayFlight, doorwayPose, portalPositions } from './cameraPath';
+import { createAtmosphere } from './atmosphere';
 
 export type SpatialScenePortal = { id: string; title: string; route: string; image: string };
 export type SpatialProjection = { id: string; x: number; y: number; visible: boolean };
@@ -63,6 +65,8 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   scene.background = new THREE.Color(INK);
   scene.fog = new THREE.FogExp2(INK, .017);
   const camera = new THREE.PerspectiveCamera(46, 1, .08, 110);
+  const atmosphere = createAtmosphere();
+  scene.add(atmosphere.points);
   const geometries = new Set<THREE.BufferGeometry>();
   const materials = new Set<THREE.Material>();
   const textures = new Set<THREE.Texture>();
@@ -240,10 +244,6 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   const plinthLip = torus(2.75, .018, chrome); plinthLip.rotation.x = Math.PI / 2; plinthLip.position.set(0, -.65, -11.7);
   const plinthSignal = torus(2.78, .024, red, scene, Math.PI * .6); plinthSignal.rotation.x = Math.PI / 2; plinthSignal.position.set(0, -.72, -11.7);
 
-  const portalCoordinates = [
-    [-8.8, 2.05, -5.4], [-6.7, 2.05, -13.6], [-2.65, 2.05, -20],
-    [2.65, 2.05, -20], [6.7, 2.05, -13.6], [8.8, 2.05, -5.4],
-  ];
   const screens: { portal: SpatialScenePortal; group: THREE.Group; frame: THREE.Mesh; light: THREE.MeshBasicMaterial; marker: THREE.Vector3 }[] = [];
   const hitTargets: THREE.Mesh[] = [];
   const loader = new THREE.TextureLoader();
@@ -256,7 +256,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   const screenGeometry = ownGeometry(new THREE.PlaneGeometry(screenWidth, screenHeight));
   const frameGeometry = ownGeometry(new THREE.BoxGeometry(5.13, 3.42, .23));
   options.portals.slice(0, 6).forEach((portal, index) => {
-    const group = new THREE.Group(); group.position.set(...portalCoordinates[index] as [number, number, number]);
+    const group = new THREE.Group(); group.position.set(...portalPositions[index]);
     group.lookAt(0, 2.05, 4.5); scene.add(group);
     const frame = mesh(frameGeometry, brushed, group);
     const pictureMaterial = ownMaterial(new THREE.MeshBasicMaterial({ color: 0x39473c, toneMapped: false }));
@@ -335,6 +335,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   const cameraInside = new THREE.Vector3(0, 2.6, 5.1);
   const targetInside = new THREE.Vector3(0, 2.25, -12);
   const routeTarget = new THREE.Vector3(0, 2.25, -12);
+  let roomPose = doorwayPose(0, false);
   const currentTarget = new THREE.Vector3();
   const previousCamera = new THREE.Vector3();
   const previousTarget = new THREE.Vector3();
@@ -361,7 +362,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   const unsubscribePreferences = subscribeSpatialPreferences(updatePreferences);
   type Travel = {
     start: number; from: THREE.Vector3; targetFrom: THREE.Vector3; to: THREE.Vector3; targetTo: THREE.Vector3;
-    fromFov: number; done: (() => void) | null; settled: boolean;
+    room: string; curve: THREE.CubicBezierCurve3; done: (() => void) | null; settled: boolean;
   };
   let travel: Travel | null = null;
 
@@ -370,7 +371,6 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     travel.done = null; travel = null;
     previousCamera.copy(camera.position); previousTarget.copy(currentTarget);
     routeBlend = state.reducedMotion ? 1 : 0;
-    camera.fov = mobile ? 58 : 46; camera.updateProjectionMatrix();
     requestFrame();
   }
 
@@ -382,8 +382,15 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, qualityRatio(preferences.quality, mobile)));
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
-    if (!travel) camera.fov = mobile ? 58 : 46;
+    camera.fov = mobile ? 58 : 46;
     camera.updateProjectionMatrix();
+    roomPose = doorwayPose(screens.findIndex(screen => screen.portal.id === state.room), mobile);
+    atmosphere.configure(height, renderer.getPixelRatio(), mobile, preferences.quality, preferences.light);
+    if (travel) {
+      const resized = doorwayPose(screens.findIndex(screen => screen.portal.id === travel!.room), mobile);
+      travel.to.copy(resized.position); travel.targetTo.copy(resized.target);
+      travel.curve = doorwayFlight(travel.from, travel.to, screens.findIndex(screen => screen.portal.id === travel!.room));
+    }
     requestFrame();
   }
   function draw(time: number) {
@@ -397,12 +404,12 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       entryProgress = THREE.MathUtils.lerp(entryFrom, entryTarget, smooth(t));
       if (t === 1) entryProgress = entryTarget;
     }
-    routeBlend = Math.min(1, routeBlend + dt / .95);
+    routeBlend = Math.min(1, routeBlend + dt / 1.1);
     currentPointerX += (pointerX - currentPointerX) * ease;
     currentPointerY += (pointerY - currentPointerY) * ease;
     currentRotation += (targetRotation - currentRotation) * ease;
     const ambient = !travel && !state.reducedMotion && (state.room === 'home' || state.room === 'atrium') && scroll < .22;
-    if (ambient) ambientTime += dt;
+    if (!state.reducedMotion) ambientTime += dt;
 
     cameraOutside.set(mobile ? 0 : -3.8, mobile ? 3.3 : 3.7, mobile ? 27.5 : 23);
     targetOutside.set(mobile ? 0 : -6.6, mobile ? 4.2 : 3.2, 1);
@@ -419,25 +426,30 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     targetInside.x += Math.sin(angle) * 6;
     desiredCamera.lerpVectors(cameraOutside, cameraInside, entryProgress);
     desiredTarget.lerpVectors(targetOutside, targetInside, entryProgress);
+    const inRoom = state.room !== 'home' && state.room !== 'atrium';
+    if (inRoom) {
+      desiredCamera.copy(roomPose.position);
+      desiredTarget.copy(roomPose.target);
+      // Reading moves the gaze very slightly, never the camera's distance.
+      desiredTarget.y += scroll * .1;
+    }
     if (!state.reducedMotion) {
-      desiredCamera.x += currentPointerX * .27;
-      desiredCamera.y += currentPointerY * .13;
-      desiredTarget.x += currentPointerX * .13;
+      desiredCamera.x += currentPointerX * (inRoom ? .07 : .27);
+      desiredCamera.y += currentPointerY * (inRoom ? .035 : .13);
+      desiredTarget.x += currentPointerX * (inRoom ? .035 : .13);
     }
     let completeTravel: (() => void) | null = null;
     if (travel) {
-      const progress = state.reducedMotion ? 1 : clamp((time - travel.start) / 850, 0, 1);
-      const eased = smooth(progress);
-      camera.position.lerpVectors(travel.from, travel.to, eased);
+      const progress = state.reducedMotion ? 1 : clamp((time - travel.start) / CAMERA_TRAVEL_MS, 0, 1);
+      const eased = cameraEase(progress);
+      travel.curve.getPoint(eased, camera.position);
       currentTarget.lerpVectors(travel.targetFrom, travel.targetTo, eased);
-      camera.fov = THREE.MathUtils.lerp(travel.fromFov, mobile ? 54 : 42, eased);
-      camera.updateProjectionMatrix();
       if (progress === 1 && !travel.settled) {
         travel.settled = true; completeTravel = travel.done; travel.done = null;
       }
     } else if (routeBlend < 1 && entryProgress === entryTarget) {
-      camera.position.lerpVectors(previousCamera, desiredCamera, smooth(routeBlend));
-      currentTarget.lerpVectors(previousTarget, desiredTarget, smooth(routeBlend));
+      camera.position.lerpVectors(previousCamera, desiredCamera, cameraEase(routeBlend));
+      currentTarget.lerpVectors(previousTarget, desiredTarget, cameraEase(routeBlend));
     } else { camera.position.copy(desiredCamera); currentTarget.copy(desiredTarget); }
     camera.lookAt(currentTarget);
     camera.updateMatrixWorld();
@@ -458,6 +470,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       screen.group.scale.setScalar(nextScale);
       if (Math.abs(nextScale - wantedScale) > .0005) screenMoving = true;
     });
+    atmosphere.update(ambientTime);
     renderer.render(scene, camera);
     if (options.onProject) {
       const positions = screens.map(screen => {
@@ -472,7 +485,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     // that composition until route state arrives, avoiding a one-frame jump.
     if (completeTravel) completeTravel();
     const stillMoving = Math.abs(overheadTarget-overhead) > .001 || (travel ? !travel.settled : entryProgress !== entryTarget || routeBlend < 1) || screenMoving || Math.abs(targetRotation - currentRotation) > .0003 || Math.abs(pointerX - currentPointerX) + Math.abs(pointerY - currentPointerY) > .002;
-    if (ambient || stillMoving) requestFrame();
+    if (!state.reducedMotion || ambient || stillMoving) requestFrame();
   }
 
   function intersect(event: PointerEvent) {
@@ -540,7 +553,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       if (roomChanged || entryChanged || next.paused) cancelTravel();
       if (entryChanged) {
         entryFrom = entryProgress; entryTarget = next.entered ? 1 : 0; entryStart = performance.now();
-        if (next.reducedMotion) entryProgress = entryTarget;
+        if (next.reducedMotion || !ready) entryProgress = entryTarget;
       }
       if (roomChanged) {
         previousCamera.copy(camera.position); previousTarget.copy(currentTarget);
@@ -548,6 +561,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
         // There is no previous camera composition to travel from at that point.
         routeBlend = !ready || next.reducedMotion ? 1 : 0;
         const selected = screens.find(screen => screen.portal.id === next.room);
+        roomPose = doorwayPose(screens.findIndex(screen => screen.portal.id === next.room), mobile);
         routeTarget.set(selected ? selected.group.position.x * .4 : 0, 2.25, selected ? Math.min(-9, selected.group.position.z) : -12);
         targetRotation = 0;
       }
@@ -566,12 +580,11 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       // Repeated choices replace the pending callback and begin at the actual
       // rendered camera. The endpoint always faces the front of the screen.
       if (travel) travel.done = null;
-      const front = new THREE.Vector3(0, 0, 1).applyQuaternion(selected.group.quaternion);
-      const destination = selected.group.position.clone().addScaledVector(front, mobile ? 5.9 : 5.1);
-      destination.y += .12;
+      const destination = doorwayPose(screens.indexOf(selected), mobile);
       travel = { start: performance.now(), from: camera.position.clone(), targetFrom: currentTarget.clone(),
-        to: destination, targetTo: selected.group.position.clone(), fromFov: camera.fov, done: onComplete, settled: false };
-      focus = id; hover = null; pointerX = pointerY = 0; requestFrame();
+        to: destination.position, targetTo: destination.target, room: id,
+        curve: doorwayFlight(camera.position, destination.position, screens.indexOf(selected)), done: onComplete, settled: false };
+      focus = id; hover = null; pointerX = pointerY = currentPointerX = currentPointerY = 0; requestFrame();
     },
     cancelTravel,
     destroy() {
@@ -583,7 +596,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       canvas.removeEventListener('pointerleave', pointerLeave); canvas.removeEventListener('webglcontextlost', contextLost);
       document.removeEventListener('visibilitychange', visibility);
       geometries.forEach(value => value.dispose()); materials.forEach(value => value.dispose()); textures.forEach(value => value.dispose());
-      environment.dispose(); scene.clear(); renderer.dispose(); renderer.forceContextLoss(); canvas.remove();
+      atmosphere.dispose(); environment.dispose(); scene.clear(); renderer.dispose(); renderer.forceContextLoss(); canvas.remove();
     },
   };
 }
