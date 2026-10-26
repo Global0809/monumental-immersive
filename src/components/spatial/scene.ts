@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createFrameCadence } from '../../services/frameCadence';
 import { getSpatialPreferences, subscribeSpatialPreferences, qualityRatio } from '../../services/spatialPreferences';
-import { CAMERA_TRAVEL_MS, cameraEase, doorwayFlight, doorwayPose, portalPositions } from './cameraPath';
+import { CAMERA_TRAVEL_MS, cameraEase, doorwayFlight, doorwayPose, portalPositions, roomFlight, observatoryPose } from './cameraPath';
 import { createAtmosphere } from './atmosphere';
 
 export type SpatialScenePortal = { id: string; title: string; route: string; image: string };
@@ -21,7 +21,7 @@ export type SpatialSceneController = {
   setFocus: (id: string | null) => void;
   setScroll: (progress: number) => void;
   rotate: (delta: number) => void;
-  travelTo: (id: string, onComplete: () => void) => void;
+  travelTo: (id: string, onComplete: () => void, duration?: number) => void;
   cancelTravel: () => void;
   destroy: () => void;
 };
@@ -367,7 +367,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   const unsubscribePreferences = subscribeSpatialPreferences(updatePreferences);
   type Travel = {
     start: number; from: THREE.Vector3; targetFrom: THREE.Vector3; to: THREE.Vector3; targetTo: THREE.Vector3;
-    room: string; curve: THREE.CubicBezierCurve3; done: (() => void) | null; settled: boolean;
+    room: string; duration: number; curve: THREE.CubicBezierCurve3; done: (() => void) | null; settled: boolean;
   };
   let travel: Travel | null = null;
 
@@ -393,9 +393,9 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     roomPose = doorwayPose(screens.findIndex(screen => screen.portal.id === state.room), mobile);
     atmosphere.configure(height, renderer.getPixelRatio(), mobile, preferences.quality, preferences.light);
     if (travel) {
-      const resized = doorwayPose(screens.findIndex(screen => screen.portal.id === travel!.room), mobile);
+      const resized = travel.room === 'atrium' ? observatoryPose(mobile, preferences.view === 'overhead') : doorwayPose(screens.findIndex(screen => screen.portal.id === travel!.room), mobile);
       travel.to.copy(resized.position); travel.targetTo.copy(resized.target);
-      travel.curve = doorwayFlight(travel.from, travel.to, screens.findIndex(screen => screen.portal.id === travel!.room));
+      travel.curve = state.room === 'atrium' ? doorwayFlight(travel.from, travel.to, screens.findIndex(screen => screen.portal.id === travel!.room)) : roomFlight(travel.from, travel.to);
     }
     requestFrame();
   }
@@ -446,7 +446,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     }
     let completeTravel: (() => void) | null = null;
     if (travel) {
-      const progress = state.reducedMotion ? 1 : clamp((time - travel.start) / CAMERA_TRAVEL_MS, 0, 1);
+      const progress = state.reducedMotion ? 1 : clamp((time - travel.start) / travel.duration, 0, 1);
       const eased = cameraEase(progress);
       travel.curve.getPoint(eased, camera.position);
       currentTarget.lerpVectors(travel.targetFrom, travel.targetTo, eased);
@@ -592,6 +592,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       if (disposed) return;
       const roomChanged = state.room !== next.room;
       const entryChanged = state.entered !== next.entered;
+      const arrived = travel?.settled && travel.room === next.room;
       if (roomChanged || entryChanged || next.paused) cancelTravel();
       if (roomChanged || entryChanged || next.paused || next.reducedMotion) atmosphere.input.reset();
       if (entryChanged) {
@@ -600,13 +601,14 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       }
       if (roomChanged) {
         previousCamera.copy(camera.position); previousTarget.copy(currentTarget);
-        // The first state often changes home -> atrium before the first frame.
-        // There is no previous camera composition to travel from at that point.
-        routeBlend = !ready || next.reducedMotion ? 1 : 0;
+        // SpatialNavigator owns authored travel. History, reduced motion and
+        // poster handoffs adopt their room pose without a second camera tween.
+        routeBlend = 1;
         const selected = screens.find(screen => screen.portal.id === next.room);
         roomPose = doorwayPose(screens.findIndex(screen => screen.portal.id === next.room), mobile);
         routeTarget.set(selected ? selected.group.position.x * .4 : 0, 2.25, selected ? Math.min(-9, selected.group.position.z) : -12);
         targetRotation = 0;
+        if (arrived) { currentRotation = 0; scroll = 0; overhead = next.room === 'atrium' && preferences.view === 'overhead' ? 1 : 0; }
       }
       state = { ...next };
       if (state.reducedMotion) { entryProgress = entryTarget; routeBlend = 1; }
@@ -616,18 +618,18 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     setFocus(id) { focus = id; requestFrame(); },
     setScroll(progress) { scroll = clamp(progress, 0, 1); requestFrame(); },
     rotate(delta) { cancelTravel(); targetRotation = clamp(targetRotation + delta, -.9, .9); requestFrame(); },
-    travelTo(id, onComplete) {
+    travelTo(id, onComplete, duration = CAMERA_TRAVEL_MS) {
       if (disposed) return;
       const selected = screens.find(screen => screen.portal.id === id);
-      if (!selected || state.reducedMotion || contextUnavailable || !ready || state.paused) { cancelTravel(); onComplete(); return; }
+      if ((!selected && id !== 'atrium') || state.reducedMotion || contextUnavailable || !ready || state.paused) { cancelTravel(); onComplete(); return; }
       // Repeated choices replace the pending callback and begin at the actual
       // rendered camera. The endpoint always faces the front of the screen.
       if (travel) travel.done = null;
-      const destination = doorwayPose(screens.indexOf(selected), mobile);
+      const destination = id === 'atrium' ? observatoryPose(mobile, preferences.view === 'overhead') : doorwayPose(screens.indexOf(selected!), mobile);
       atmosphere.input.reset();
       travel = { start: performance.now(), from: camera.position.clone(), targetFrom: currentTarget.clone(),
-        to: destination.position, targetTo: destination.target, room: id,
-        curve: doorwayFlight(camera.position, destination.position, screens.indexOf(selected)), done: onComplete, settled: false };
+        to: destination.position, targetTo: destination.target, room: id, duration,
+        curve: state.room === 'atrium' && selected ? doorwayFlight(camera.position, destination.position, screens.indexOf(selected)) : roomFlight(camera.position, destination.position), done: onComplete, settled: false };
       focus = id; hover = null; pointerX = pointerY = currentPointerX = currentPointerY = 0; requestFrame();
     },
     cancelTravel,

@@ -31,3 +31,22 @@ export function doorwayFlight(from: Vector3, to: Vector3, index: number) {
   return new CubicBezierCurve3(from.clone(), a, b, to.clone());
 }
 export const CAMERA_TRAVEL_MS = 1100;
+
+/** Cross-room moves follow the open aisle, bowing towards the visitor to
+ * avoid the central sculpture. They start at the actual rendered camera. */
+export function roomFlight(from: Vector3, to: Vector3) {
+  const a = from.clone().lerp(to, .28);
+  const b = from.clone().lerp(to, .72);
+  const crossesCenter = from.x * to.x < 0 && Math.abs(from.x - to.x) > 5;
+  if (crossesCenter) {
+    a.z = Math.max(a.z, -1.5); b.z = Math.max(b.z, -1.5);
+    a.y = Math.max(a.y, 3.1); b.y = Math.max(b.y, 3.1);
+  }
+  return new CubicBezierCurve3(from.clone(), a, b, to.clone());
+}
+
+export function observatoryPose(mobile: boolean, overhead = false) {
+  return overhead
+    ? { position: new Vector3(0, mobile ? 24 : 26, 4), target: new Vector3(0, 0, -11) }
+    : { position: new Vector3(0, 2.65, 5.1), target: new Vector3(0, 2.25, -12) };
+}

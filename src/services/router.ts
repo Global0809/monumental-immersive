@@ -77,6 +77,14 @@ export function go(
   path: string,
   params: Record<string, string | undefined> = {},
 ) {
+  // The persistent spatial shell can coordinate an exit before committing.
+  // Filters on the current page and consumers without that shell stay native.
+  if (!window.dispatchEvent(new CustomEvent('monumental:navigate', {
+    detail: { path, params }, cancelable: true,
+  }))) return;
+  commitRoute(path, params);
+}
+export function commitRoute(path: string, params: Record<string, string | undefined> = {}) {
   const next = href(path, params);
   if (next === location.hash) return;
   intendedHash = next;

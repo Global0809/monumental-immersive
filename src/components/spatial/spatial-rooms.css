@@ -60,7 +60,7 @@
   width: calc(100% - var(--spatial-room-gutter) * 2);
   max-width: var(--spatial-room-width);
   margin-inline: auto;
-  animation: spatial-room-arrive .65s cubic-bezier(.2,.75,.2,1);
+  /* SpatialNavigator coordinates arrival with the camera. */
 }
 
 /* A single structural cap establishes a room, rather than decorating every
