@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { go } from '../../services/router';
 import { playSound } from '../../services/audio';
 import {
-  enterSpatialWorld, getSpatialState, resetSpatialEntrance,
+  enterSpatialWorld, getSpatialState,
   setSpatialReady, setSpatialUnavailable, spatialPortals, spatialRoomForPath, useSpatial,
 } from '../../services/spatial';
 import type { SpatialSceneController } from './scene';
@@ -42,9 +42,9 @@ export default function SpatialExperience({ path, reducedMotion, paused }: {
     window.addEventListener('resize', measure, { passive: true });
     window.addEventListener('monumental:spatial-rotate', rotate);
     const labelElements = new Map([...labels.current?.querySelectorAll<HTMLElement>('[data-portal-label]') || []].map(element => [element.dataset.portalLabel!, element]));
-    import('./scene').then(({ createSpatialScene }) => {
+    import('./tunnelScene').then(({ createTunnelScene }) => {
       if (disposed || !host.current) return;
-      controller.current = createSpatialScene(host.current, {
+      controller.current = createTunnelScene(host.current, {
         portals: spatialPortals, reducedMotion: latest.current.reducedMotion,
         onReady: () => { if (!disposed) setSpatialReady(); },
         onUnavailable: () => { if (!disposed) { setSpatialUnavailable(); } },
@@ -76,12 +76,11 @@ export default function SpatialExperience({ path, reducedMotion, paused }: {
   useEffect(() => { controller.current?.setFocus(spatial.focus); }, [spatial.focus]);
 
   return <>
-    <div className={`spatial-world ${spatial.unavailable ? 'spatial-world--fallback' : ''}`} data-entered={spatial.entered || path !== '/'} data-home={path === '/'} data-travelling={!!spatial.travelling} aria-hidden="true">
+    <div className={`spatial-world ${spatial.unavailable ? 'spatial-world--fallback' : ''}`} data-entered={spatial.entered || path !== '/'} data-home={path === '/'} data-travelling={!!spatial.travelling}>
       <div className="spatial-world-canvas" ref={host}/>
-      <div className="spatial-world-vignette"/>
-      <div className="spatial-world-labels" ref={labels}>{spatialPortals.map((portal, index) => <div key={portal.id} data-portal-label={portal.id}><span>{String(index + 1).padStart(2, '0')}</span><strong>{portal.title}</strong><i>↗</i></div>)}</div>
+      <div className="spatial-world-vignette" aria-hidden="true"/>
+      <div className="spatial-world-labels" ref={labels} aria-hidden="true">{spatialPortals.map((portal, index) => <div key={portal.id} data-portal-label={portal.id}><span>{String(index + 1).padStart(2, '0')}</span><strong>{portal.title}</strong><i>↗</i></div>)}</div>
     </div>
     <SpatialNavigator path={path} reducedMotion={reducedMotion} paused={paused} controller={controller}/>
-    {path === '/' && spatial.entered && <div className="spatial-home-utility"><button data-sound-owned onClick={() => { controller.current?.cancelTravel(); resetSpatialEntrance(); playSound('sculpture-unfold'); window.scrollTo({top:0,behavior:'instant'}); }}>Replay entrance</button></div>}
   </>;
 }

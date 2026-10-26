@@ -32,6 +32,7 @@ export function spatialRoomForPath(path: string): string {
 }
 
 export function spatialPageLabel(path: string): string {
+  if (path === '/') return 'The Passage';
   const portal = spatialPortals.find(item => item.route === path);
   if (portal) return portal.title;
   if (path.startsWith('/film/')) return 'The screening room';

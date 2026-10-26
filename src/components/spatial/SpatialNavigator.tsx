@@ -16,7 +16,7 @@ import { spatialPassagePlan } from '../../services/spatialNavigation';
 import type { SpatialSceneController } from './scene';
 import './spatial-navigation.css';
 
-const rooms = [{ id: 'atrium', route: '/', title: 'Observatory', icon: House },
+const rooms = [{ id: 'atrium', route: '/', title: 'The Passage', icon: House },
   ...spatialPortals.map((portal, index) => ({ ...portal, title: ['World', 'Time Machine', 'Cinema', 'Music', 'Culture', 'My World'][index], icon: [GlobeHemisphereWest, ClockCounterClockwise, FilmStrip, MusicNotes, Aperture, BookmarkSimple][index] }))];
 type Journey = { from: string; title: string; path: string; room: string; crossRoom: boolean };
 
@@ -86,7 +86,7 @@ export default function SpatialNavigator({ path, reducedMotion, paused, controll
         commitRoute(destination, params);
       };
       pending.current = { hash: targetHash, commit };
-      setJourney({ from: spatialPageLabel(settings.path), title: destination === '/' ? 'The Observatory' : spatialPageLabel(destination), path: destination, room: plan.room, crossRoom: plan.crossRoom });
+      setJourney({ from: spatialPageLabel(settings.path), title: destination === '/' ? 'The Passage' : spatialPageLabel(destination), path: destination, room: plan.room, crossRoom: plan.crossRoom });
       setSpatialTravelling(plan.room);
       document.documentElement.dataset.spatialPassage = 'departing';
       const main = document.getElementById('main');
@@ -169,7 +169,7 @@ export default function SpatialNavigator({ path, reducedMotion, paused, controll
 
   return <>
     {path !== '/' && <nav className="spatial-wayfinding" aria-label="Your position in Monumental">
-      <a className="spatial-return" href={href('/')}><ArrowLeft size={18}/><span>Observatory</span></a>
+      <a className="spatial-return" href={href('/')}><ArrowLeft size={18}/><span>The Passage</span></a>
       <div className="spatial-current"><i aria-hidden="true"/><span>{spatialPageLabel(path)}</span></div>
       <div className="spatial-adjacent"><a href={href(previous.route)} aria-label={`Previous room: ${previous.title}`} title={previous.title}><ArrowLeft size={18}/></a><a href={href(next.route)} aria-label={`Next room: ${next.title}`}><span>{next.title}</span><ArrowRight size={18}/></a></div>
     </nav>}
