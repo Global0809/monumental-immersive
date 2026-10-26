@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   TUNNEL_STATION_IDS, TUNNEL_SPACING,
   tunnelStationZ, tunnelReadingZ, tunnelChapterZ, tunnelCompact,
+  tunnelGateOpen, getTunnelInspection, setTunnelInspection, subscribeTunnelInspection,
 } from '../src/services/tunnelJourney';
 import { spatialPortals } from '../src/services/spatial';
 
@@ -91,4 +92,44 @@ test('compact mode responds independently to width, height and reduced motion', 
   assert.equal(tunnelCompact(979, 659), true);
   assert.equal(tunnelCompact(1920, 1080), false);
   assert.equal(tunnelCompact(1920, 1080, true), true, 'reduced motion uses compact mode regardless of viewport');
+});
+
+test('gates clear the camera before passage and reverse deterministically', () => {
+  for (const gate of [-27, -61, -197]) {
+    assert.equal(tunnelGateOpen(gate + 23, gate), 0);
+    for (let distance = 10; distance >= -7; distance--) assert.equal(tunnelGateOpen(gate + distance, gate), 1);
+    assert.equal(tunnelGateOpen(gate - 19, gate), 0);
+    const positions = Array.from({ length: 161 }, (_, i) => gate + 30 - i * .4);
+    const values = positions.map(position => tunnelGateOpen(position, gate));
+    assert.ok(values.every(value => value >= 0 && value <= 1));
+    assert.deepEqual([...positions].reverse().map(position => tunnelGateOpen(position, gate)), [...values].reverse());
+    for (let i = 1; i < values.length; i++) assert.ok(Math.abs(values[i] - values[i - 1]) < .06, 'gate motion has no position discontinuity');
+  }
+  assert.equal(tunnelGateOpen(NaN, 0), 0);
+});
+
+test('inspection has one owner, bounded rotation, and no updates after unsubscribe', () => {
+  setTunnelInspection({ station: null, expanded: false, rotation: 0 });
+  let notifications = 0;
+  const unsubscribe = subscribeTunnelInspection(() => notifications++);
+  try {
+    setTunnelInspection({ station: 'world', expanded: true, rotation: 0 });
+    const stable = getTunnelInspection();
+    setTunnelInspection({ station: 'world', expanded: true, rotation: 0 });
+    assert.equal(getTunnelInspection(), stable);
+    assert.equal(notifications, 1);
+    setTunnelInspection({ station: 'music', expanded: true, rotation: 100 });
+    assert.deepEqual(getTunnelInspection(), { station: 'music', expanded: true, rotation: Math.PI });
+    setTunnelInspection({ station: 'music', expanded: true, rotation: NaN });
+    assert.equal(getTunnelInspection().rotation, 0);
+    setTunnelInspection({ station: 'unknown', expanded: true, rotation: 1 });
+    assert.deepEqual(getTunnelInspection(), { station: null, expanded: false, rotation: 0 });
+    unsubscribe();
+    const count = notifications;
+    setTunnelInspection({ station: 'culture', expanded: true, rotation: -.3 });
+    assert.equal(notifications, count);
+  } finally {
+    unsubscribe();
+    setTunnelInspection({ station: null, expanded: false, rotation: 0 });
+  }
 });

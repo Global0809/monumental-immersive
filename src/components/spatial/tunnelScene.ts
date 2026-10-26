@@ -4,8 +4,8 @@ import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer
 import { createFrameCadence } from '../../services/frameCadence';
 import { getSpatialPreferences, subscribeSpatialPreferences } from '../../services/spatialPreferences';
 import {
-  getTunnelFrame, getTunnelPanels, subscribeTunnelFrame, subscribeTunnelPanels,
-  tunnelCompact, tunnelReadingZ, tunnelStationZ, TUNNEL_STATION_IDS,
+  getTunnelFrame, getTunnelPanels, getTunnelInspection, subscribeTunnelFrame, subscribeTunnelPanels, subscribeTunnelInspection,
+  tunnelCompact, tunnelGateOpen, tunnelReadingZ, tunnelStationZ, TUNNEL_STATION_IDS,
   type TunnelPanelBinding,
 } from '../../services/tunnelJourney';
 import { createAtmosphere } from './atmosphere';
@@ -40,11 +40,12 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   }
   let disposed = false, unavailable = false, ready = false;
   let state: SpatialSceneState = { entered: false, room: 'atrium', paused: false, reducedMotion: options.reducedMotion };
-  let frame = getTunnelFrame(), preferences = getSpatialPreferences();
+  let frame = getTunnelFrame(), preferences = getSpatialPreferences(), inspection = getTunnelInspection();
   let width = 1, height = 1, compact = false, ratio = 1;
   let frameRequest = 0, lastTime = 0, elapsed = 0, innerScroll = 0, focus: string | null = null;
   let pointerX = 0, pointerY = 0, currentX = 0, currentY = 0, rotation = 0;
   let travel: Travel | null = null;
+  let previousCameraZ = frame.z, travelSpeed = 0;
   let performanceAverage = 16.7, performanceSamples = 0, adaptiveReduction = 0;
   const cadence = createFrameCadence();
   const canvas = renderer.domElement;
@@ -66,7 +67,9 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   const cssScene = new THREE.Scene();
   const cssRenderer = new CSS3DRenderer();
   cssRenderer.domElement.className = 'tunnel-css-world';
-  Object.assign(cssRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', overflow: 'hidden', zIndex: '1' });
+  // A spatial viewport must not become an independent scroll container. Hidden
+  // overflow allows focus/scrollIntoView to shift HTML away from the WebGL camera.
+  Object.assign(cssRenderer.domElement.style, { position: 'fixed', inset: '0', pointerEvents: 'none', overflow: 'clip', zIndex: '1' });
   // Keep the single semantic copy inside the main landmark. Native modal and
   // navigation inertness then cover the spatial controls as well as ordinary DOM.
   (document.getElementById('main') || host).appendChild(cssRenderer.domElement);
@@ -82,7 +85,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
     const value = mesh(boxShape, surface, parent); value.scale.set(...size); value.position.set(...position); return value;
   };
   const torus = (parent: THREE.Object3D, radius: number, tube: number, surface: THREE.Material, arc = Math.PI * 2, segments = 72) =>
-    mesh(geometry(new THREE.TorusGeometry(radius, tube, 8, segments, arc)), surface, parent);
+    mesh(geometry(new THREE.TorusGeometry(radius, tube, 12, segments, arc)), surface, parent);
 
   const roomEnvironment = new RoomEnvironment();
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -95,6 +98,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   const graphite = material(new THREE.MeshStandardMaterial({ color: 0x121513, metalness: .72, roughness: .4 }));
   const floorSurface = material(new THREE.MeshBasicMaterial({ color: 0x090b0a, toneMapped: false }));
   const signal = material(new THREE.MeshBasicMaterial({ color: RED, toneMapped: false }));
+  const packetSurface = material(new THREE.MeshBasicMaterial({ color: 0xb76b56, transparent: true, opacity: .65, depthWrite: false, toneMapped: false }));
   const ivory = material(new THREE.MeshBasicMaterial({ color: 0x9caaa0, transparent: true, opacity: .48, toneMapped: false }));
   const seams = material(new THREE.LineBasicMaterial({ color: 0x58645b, transparent: true, opacity: .23, depthWrite: false }));
   scene.add(new THREE.HemisphereLight(0xe4e9e0, 0x1c1915, .75));
@@ -143,6 +147,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
     ribMatrix.scale.set(.36, .18, 1.1); ribMatrix.updateMatrix(); struts.setMatrixAt(i * 4 + j, ribMatrix.matrix);
   }
   struts.instanceMatrix.needsUpdate = true; architecture.add(struts);
+  const railCurves: THREE.CatmullRomCurve3[] = [];
   for (let rail = 0; rail < 8; rail++) {
     const points: THREE.Vector3[] = [];
     for (let step = 0; step < 64; step++) {
@@ -150,6 +155,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
       points.push(new THREE.Vector3(Math.cos(a) * 8.2, Math.sin(a) * 6.55, 18 - step * 4));
     }
     const curve = new THREE.CatmullRomCurve3(points);
+    railCurves.push(curve);
     mesh(geometry(new THREE.TubeGeometry(curve, 128, rail % 4 === 1 ? .023 : .038, 4, false)), rail % 4 === 1 ? signal : satin, architecture);
   }
   // The floor has a few long inlays, never a dense wire grid behind the copy.
@@ -163,22 +169,121 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   const seamShape = geometry(new THREE.BufferGeometry()); seamShape.setAttribute('position', new THREE.Float32BufferAttribute(seamPoints, 3));
   architecture.add(new THREE.LineSegments(seamShape, seams));
 
-  const entrance = new THREE.Group(); entrance.position.set(3.25, .1, -11.5); entrance.scale.setScalar(1.32); scene.add(entrance);
-  const irisBlades: THREE.Mesh[] = [];
-  for (let i = 0; i < 7; i++) {
-    const blade = torus(entrance, 2.2 - i * .055, .17, chrome, Math.PI * 1.68);
-    blade.rotation.set(i * .115, i * .15, i * Math.PI * .285);
-    blade.position.z = (i - 3) * .21; irisBlades.push(blade);
+  // Six mechanical thresholds share one petal profile. Only nearby gates draw;
+  // their three instanced surfaces keep the extra structure inexpensive.
+  const gateProfile = new THREE.Shape();
+  const gatePivot = 6.75, gateArc = .34;
+  gateProfile.absarc(-gatePivot, 0, 8.08, -gateArc, gateArc, false);
+  gateProfile.lineTo(Math.cos(gateArc) * 5.6 - gatePivot, Math.sin(gateArc) * 5.6);
+  gateProfile.absarc(-gatePivot, 0, 5.6, gateArc, -gateArc, true); gateProfile.closePath();
+  const gateShape = geometry(new THREE.ExtrudeGeometry(gateProfile, {
+    depth: .2, bevelEnabled: true, bevelSegments: 2, steps: 1, bevelSize: .035, bevelThickness: .035, curveSegments: 14,
+  }));
+  const gateSignalShape = geometry(new THREE.TorusGeometry(7.92, .018, 5, 16, .19));
+  const gates = TUNNEL_STATION_IDS.map((_, index) => {
+    const root = new THREE.Group(); root.position.z = tunnelStationZ(index) + 5; root.scale.y = .81; scene.add(root);
+    const leaves = new THREE.InstancedMesh(gateShape, chrome, 6);
+    const mechanisms = new THREE.InstancedMesh(boxShape, graphite, 12);
+    const markings = new THREE.InstancedMesh(gateSignalShape, signal, 6);
+    for (const part of [leaves, mechanisms, markings]) { part.instanceMatrix.setUsage(THREE.DynamicDrawUsage); part.frustumCulled = false; root.add(part); }
+    return { root, leaves, mechanisms, markings, open: -1, phase: index * .17 };
+  });
+  const mechanismMatrix = new THREE.Object3D();
+  function updateGates() {
+    for (const gate of gates) {
+      const distance = camera.position.z - gate.root.position.z;
+      gate.root.visible = !preferences.cutaway && distance > -6 && distance < (compact ? 50 : 80);
+      if (!gate.root.visible) continue;
+      const open = state.reducedMotion ? 1 : tunnelGateOpen(camera.position.z, gate.root.position.z);
+      if (gate.open === open) continue;
+      gate.open = open;
+      for (let i = 0; i < 6; i++) {
+        const a = i * Math.PI / 3 + gate.phase;
+        const radius = gatePivot + open * 1.95;
+        mechanismMatrix.position.set(Math.cos(a) * radius, Math.sin(a) * radius, -open * .85);
+        mechanismMatrix.rotation.set(0, open * .48, a + open * .075);
+        mechanismMatrix.scale.set(1, 1, 1); mechanismMatrix.updateMatrix(); gate.leaves.setMatrixAt(i, mechanismMatrix.matrix);
+        for (let side = 0; side < 2; side++) {
+          const angle = a + (side ? .22 : -.22);
+          mechanismMatrix.position.set(Math.cos(angle) * (7.55 + open * .55), Math.sin(angle) * (7.55 + open * .55), -.32 - open * .55);
+          mechanismMatrix.rotation.set(0, 0, angle); mechanismMatrix.scale.set(.5 + open * 1.3, .105, .16);
+          mechanismMatrix.updateMatrix(); gate.mechanisms.setMatrixAt(i * 2 + side, mechanismMatrix.matrix);
+        }
+        mechanismMatrix.position.set(Math.cos(a) * open * 1.55, Math.sin(a) * open * 1.55, .25 - open * .85);
+        mechanismMatrix.rotation.set(0, 0, a - .095); mechanismMatrix.scale.set(1, 1, 1);
+        mechanismMatrix.updateMatrix(); gate.markings.setMatrixAt(i, mechanismMatrix.matrix);
+      }
+      gate.leaves.instanceMatrix.needsUpdate = gate.mechanisms.instanceMatrix.needsUpdate = gate.markings.instanceMatrix.needsUpdate = true;
+    }
   }
-  const irisSignal = torus(entrance, 2.6, .026, signal, Math.PI * .63); irisSignal.rotation.z = -.85;
-  for (let i = 0; i < 6; i++) {
-    const a = i / 6 * Math.PI * 2;
-    const clasp = box(entrance, [.16, .52, .32], [Math.cos(a) * 2.6, Math.sin(a) * 2.6, -.35], satin);
-    clasp.rotation.z = a;
-  }
-  const axis = box(entrance, [.028, 5.65, .028], [0, 0, -.6], satin); axis.rotation.z = .46;
 
-  type Station = { root: THREE.Group; moving: THREE.Group; marker: THREE.Mesh; picture?: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>; loaded?: boolean };
+  // Quiet solid signal packets follow existing rails, never additive sprites.
+  // Absolute camera travel drives their phase, including reverse scrolling.
+  const packets = new THREE.InstancedMesh(boxShape, packetSurface, 16); packets.frustumCulled = false;
+  packets.instanceMatrix.setUsage(THREE.DynamicDrawUsage); architecture.add(packets);
+  const packetPosition = new THREE.Vector3(), packetTangent = new THREE.Vector3(), packetAxis = new THREE.Vector3(0, 0, 1);
+  const packetMatrix = new THREE.Object3D();
+  function updatePackets() {
+    packets.visible = !state.reducedMotion && !compact && !preferences.cutaway;
+    if (!packets.visible) return;
+    for (let i = 0; i < 16; i++) {
+      const rail = i % railCurves.length;
+      const t = THREE.MathUtils.euclideanModulo(Math.floor(i / 8) * .5 + rail * .071 + (12 - camera.position.z) / 252 * .7, 1);
+      railCurves[rail].getPointAt(t, packetPosition); railCurves[rail].getTangentAt(t, packetTangent);
+      const distance = camera.position.z - packetPosition.z;
+      packetMatrix.position.copy(packetPosition); packetMatrix.quaternion.setFromUnitVectors(packetAxis, packetTangent);
+      const shown = distance > 1 && distance < 76;
+      packetMatrix.scale.set(shown ? .028 : 0, shown ? .028 : 0, .7 + Math.min(travelSpeed * .025, 1.5));
+      packetMatrix.updateMatrix(); packets.setMatrixAt(i, packetMatrix.matrix);
+    }
+    packets.instanceMatrix.needsUpdate = true;
+  }
+
+  const entrance = new THREE.Group(); entrance.position.set(3.25, .1, -11.5); entrance.scale.setScalar(1.32); scene.add(entrance);
+  const irisBlades: { root: THREE.Group; angle: number }[] = [];
+  const irisProfile = new THREE.Shape();
+  irisProfile.moveTo(1.05, -.14); irisProfile.bezierCurveTo(1.28, -.8, 2.01, -1.04, 2.45, -.62);
+  irisProfile.bezierCurveTo(2.85, -.16, 2.76, .47, 2.23, .77);
+  irisProfile.lineTo(1.54, .38); irisProfile.quadraticCurveTo(1.1, .3, 1.05, -.14);
+  const irisShape = geometry(new THREE.ExtrudeGeometry(irisProfile, {
+    depth: .18, bevelEnabled: true, bevelSegments: 3, steps: 1, bevelSize: .055, bevelThickness: .055, curveSegments: 24,
+  }));
+  const irisCollars: THREE.Mesh[] = [];
+  for (let i = 0; i < 3; i++) {
+    const collar = torus(entrance, 2.87 - i * .14, i === 0 ? .105 : .062, i === 1 ? satin : chrome, Math.PI * (i === 0 ? 1.88 : 2));
+    collar.position.z = -.5 - i * .3; collar.rotation.z = .65 + i * .45; irisCollars.push(collar);
+  }
+  for (let i = 0; i < 7; i++) {
+    const angle = i * Math.PI * 2 / 7, blade = new THREE.Group(); entrance.add(blade);
+    mesh(irisShape, chrome, blade);
+    const edge = torus(blade, 2.38, .045, satin, .57, 24); edge.rotation.z = -.2; edge.position.z = .27;
+    const pin = mesh(geometry(new THREE.CylinderGeometry(.09, .09, .3, 16)), graphite, blade);
+    pin.rotation.x = Math.PI / 2; pin.position.set(2.36, .1, .25);
+    irisBlades.push({ root: blade, angle });
+  }
+  const irisSignal = torus(entrance, 2.98, .022, signal, Math.PI * .49); irisSignal.rotation.z = -.85;
+  const irisMechanisms = new THREE.InstancedMesh(boxShape, satin, 14); entrance.add(irisMechanisms);
+  for (let i = 0; i < 14; i++) {
+    const a = i / 14 * Math.PI * 2;
+    mechanismMatrix.position.set(Math.cos(a) * 2.72, Math.sin(a) * 2.72, -.62);
+    mechanismMatrix.rotation.set(0, 0, a); mechanismMatrix.scale.set(.2, .075, .7);
+    mechanismMatrix.updateMatrix(); irisMechanisms.setMatrixAt(i, mechanismMatrix.matrix);
+  }
+  function updateEntrance() {
+    entrance.visible = camera.position.z > -27;
+    if (!entrance.visible) return;
+    const open = state.reducedMotion ? 0 : cameraEase(clamp((12 - camera.position.z) / 20));
+    entrance.rotation.set(.035 + open * .07, .13 + open * .2, -.08 - open * .12);
+    irisBlades.forEach(({ root, angle }, i) => {
+      root.position.set(Math.cos(angle) * open * .72, Math.sin(angle) * open * .72, (i % 2) * .055 + open * (i % 2 ? .18 : -.18));
+      root.rotation.set(Math.sin(angle) * open * .12, Math.cos(angle) * open * .12, angle + open * .33);
+    });
+    irisCollars.forEach((collar, i) => { collar.rotation.z = .65 + i * .45 + open * (i % 2 ? -.28 : .3); });
+    irisSignal.rotation.z = -.85 - open * .52;
+  }
+
+  type InspectionPart = { object: THREE.Object3D; position: THREE.Vector3; rotation: THREE.Euler; scale: THREE.Vector3; offset: THREE.Vector3; turn: THREE.Vector3; spread: THREE.Vector3 };
+  type Station = { root: THREE.Group; moving: THREE.Group; marker: THREE.Mesh; baseRotation: THREE.Euler; parts: InspectionPart[]; inspection: number; turn: number; picture?: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>; loaded?: boolean };
   const stations: Station[] = [];
   const cageShape = geometry(new THREE.IcosahedronGeometry(1.55, 1));
   const cageEdges = geometry(new THREE.EdgesGeometry(cageShape));
@@ -250,7 +355,32 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
       }
       const pedestal = mesh(geometry(new THREE.CylinderGeometry(1.7, 2, .32, 32)), graphite, root); pedestal.position.y = -2.7;
     }
-    stations.push({ root, moving, marker, picture });
+    // Every inspection starts with captured authored transforms, so opening,
+    // closing and rotating cannot accumulate drift over repeated interactions.
+    const parts: InspectionPart[] = moving.children.map((object, part) => {
+      const offset = new THREE.Vector3(), turn = new THREE.Vector3(), spread = new THREE.Vector3(1, 1, 1);
+      if (index === 0) {
+        if (part >= 2 && part < 7) { offset.set(0, (part - 4) * .26, (part - 4) * .2); turn.set((part - 4) * .11, .2, (part - 4) * -.09); }
+        else if (part >= 7) { offset.copy(object.position).multiplyScalar(.27); }
+      } else if (index === 1) {
+        offset.set((part - 3.5) * .085, (part - 3.5) * .07, (3.5 - part) * .36);
+        turn.set(0, (part - 3.5) * .045, (part - 3.5) * .045);
+      } else if (index === 2) {
+        if (part < 4) { offset.set((part - 1.5) * .12, -.16, -(part + 1) * .35); turn.set(.08, -.12, part * .07); }
+        else { offset.set(0, .14, .72); }
+      } else if (index === 3) {
+        if (part < 27) { offset.set(object.position.x * .2, Math.sin(part * 1.7) * .22, object.position.z * .2); spread.y = .88; }
+        else { spread.setScalar(1.14); offset.y = -.16; }
+      } else if (index === 4) {
+        offset.set(object.position.x * .3, Math.sin(part * .6) * .22, Math.cos(part * .5) * .22);
+        turn.set(0, (part - 5.5) * .075, .16);
+      } else {
+        offset.set(Math.sin(part * 1.1) * .18, (part - 2.5) * .28, (part - 2.5) * .19);
+        turn.set((part - 2.5) * .1, .24, -.14);
+      }
+      return { object, position: object.position.clone(), rotation: object.rotation.clone(), scale: object.scale.clone(), offset, turn, spread };
+    });
+    stations.push({ root, moving, marker, picture, parts, baseRotation: moving.rotation.clone(), inspection: 0, turn: 0 });
   }
   const atmosphere = createAtmosphere(); scene.add(atmosphere.points);
 
@@ -396,14 +526,14 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
     if (disposed || unavailable || state.paused || document.hidden) return;
     if (!cadence.ready(time)) { requestFrame(); return; }
     const rawDt = lastTime ? time - lastTime : 16.7, dt = Math.min(rawDt / 1000, .05); lastTime = time;
-    if (!state.reducedMotion) elapsed += dt;
+    if (!state.reducedMotion && !inspection.expanded) elapsed += dt;
     if (rawDt < 90) { performanceAverage = lerp(performanceAverage, rawDt, .025); performanceSamples++; }
     if (performanceSamples > 170 && performanceAverage > 24 && adaptiveReduction < .3) {
       adaptiveReduction += .15; performanceSamples = 0; performanceAverage = 16.7; resize();
     }
     const ease = 1 - Math.exp(-dt * 7);
-    currentX = lerp(currentX, state.reducedMotion || compact || travel ? 0 : pointerX, ease);
-    currentY = lerp(currentY, state.reducedMotion || compact || travel ? 0 : pointerY, ease);
+    currentX = lerp(currentX, state.reducedMotion || compact || travel || inspection.expanded ? 0 : pointerX, ease);
+    currentY = lerp(currentY, state.reducedMotion || compact || travel || inspection.expanded ? 0 : pointerY, ease);
     let complete: (() => void) | null = null;
     if (travel) {
       const progress = clamp((time - travel.start) / travel.duration);
@@ -420,16 +550,38 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
     camera.lookAt(look); camera.updateMatrixWorld();
     movingLight.position.set(-2.5, 3.3, camera.position.z - 8);
     redLight.position.set(4.8, -2.5, camera.position.z - 16);
-    entrance.visible = camera.position.z > -27;
-    entrance.rotation.y = .11 + Math.sin(elapsed * .12) * .08;
-    irisBlades.forEach((blade, i) => { blade.rotation.z = i * Math.PI * .285 + elapsed * (i % 2 ? .045 : -.035); });
-    irisSignal.rotation.z = -.85 - elapsed * .035;
+    travelSpeed = lerp(travelSpeed, Math.min(100, Math.abs(camera.position.z - previousCameraZ) / Math.max(dt, .001)), ease);
+    previousCameraZ = camera.position.z;
+    updateEntrance(); updateGates(); updatePackets();
+    let dominant = -1, nearest = Infinity;
+    for (let index = 0; index < stations.length; index++) {
+      const distance = camera.position.z - stations[index].root.position.z;
+      if (distance > 7 && distance < 34 && Math.abs(distance - 13) < nearest) { dominant = index; nearest = Math.abs(distance - 13); }
+    }
     for (let index = 0; index < stations.length; index++) {
       const station = stations[index], distance = camera.position.z - station.root.position.z;
       station.root.visible = distance > -8 && distance < 95;
       if (!station.root.visible) continue;
+      const inspecting = inspection.expanded && inspection.station === TUNNEL_STATION_IDS[index];
+      const blend = state.reducedMotion ? 1 : 1 - Math.exp(-dt * 8);
+      station.inspection = lerp(station.inspection, inspecting ? 1 : 0, blend);
+      station.turn = lerp(station.turn, inspecting ? inspection.rotation : 0, blend);
+      if (Math.abs(station.inspection - (inspecting ? 1 : 0)) < .001) station.inspection = inspecting ? 1 : 0;
+      if (Math.abs(station.turn - (inspecting ? inspection.rotation : 0)) < .001) station.turn = inspecting ? inspection.rotation : 0;
+      const articulation = cameraEase(station.inspection);
       station.moving.position.y = state.reducedMotion ? 0 : Math.sin(elapsed * .6 + index) * .065;
-      if (index === 0 || index === 3 || index === 5) station.moving.rotation.y = elapsed * (index === 3 ? -.095 : .065);
+      station.moving.rotation.copy(station.baseRotation);
+      if (index === 0 || index === 3 || index === 5) station.moving.rotation.y += elapsed * (index === 3 ? -.095 : .065);
+      station.moving.rotation.y += station.turn;
+      if (dominant === index && !inspection.expanded) {
+        station.moving.rotation.y += currentX * .09;
+        station.moving.rotation.x += currentY * .055;
+      }
+      for (const part of station.parts) {
+        part.object.position.copy(part.position).addScaledVector(part.offset, articulation);
+        part.object.rotation.set(part.rotation.x + part.turn.x * articulation, part.rotation.y + part.turn.y * articulation, part.rotation.z + part.turn.z * articulation);
+        part.object.scale.set(part.scale.x * lerp(1, part.spread.x, articulation), part.scale.y * lerp(1, part.spread.y, articulation), part.scale.z * lerp(1, part.spread.z, articulation));
+      }
       station.marker.rotation.z = index * .75 + .1 + elapsed * .025;
       station.root.scale.setScalar(focus === TUNNEL_STATION_IDS[index] ? 1.015 : 1);
       if (station.picture && !station.loaded && distance < 62) {
@@ -444,7 +596,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
     }
     atmosphere.points.position.set(0, -2.5, camera.position.z - 12);
     atmosphere.points.visible = !state.reducedMotion;
-    atmosphere.update(elapsed, dt, state.reducedMotion);
+    if (!inspection.expanded) atmosphere.update(elapsed, dt, state.reducedMotion);
     updatePanels(); renderer.render(scene, camera);
     if (!compact && !state.reducedMotion) cssRenderer.render(cssScene, camera);
     if (!ready) { ready = true; options.onProject?.([]); options.onReady(); }
@@ -453,7 +605,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   }
 
   function pointerMove(event: PointerEvent) {
-    if (state.paused || state.reducedMotion || !event.isPrimary) return;
+    if (state.paused || state.reducedMotion || inspection.expanded || !event.isPrimary) return;
     pointerX = event.clientX / width * 2 - 1; pointerY = 1 - event.clientY / height * 2;
     const target = event.target instanceof Element ? event.target : null;
     if (!target?.closest('video,input,textarea,select,[contenteditable="true"],[role="dialog"],[data-atmosphere-protected]')) {
@@ -462,7 +614,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
     requestFrame();
   }
   function pointerDown(event: PointerEvent) {
-    if (event.button !== 0 || state.paused || state.reducedMotion || travel || !event.isPrimary) return;
+    if (event.button !== 0 || state.paused || state.reducedMotion || inspection.expanded || travel || !event.isPrimary) return;
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest('a,button,input,textarea,select,label,video,[role="dialog"],[role="slider"],[contenteditable="true"]')) return;
     pointerMove(event); atmosphere.input.press(); if (event.pointerType === 'touch') atmosphere.input.release();
@@ -483,6 +635,11 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   }
   const unsubscribeFrame = subscribeTunnelFrame(next => { frame = next; requestFrame(); });
   const unsubscribePanels = subscribeTunnelPanels(registerPanels);
+  const unsubscribeInspection = subscribeTunnelInspection(next => {
+    inspection = next;
+    if (next.expanded) { pointerX = pointerY = 0; atmosphere.input.reset(); }
+    requestFrame();
+  });
   const unsubscribePreferences = subscribeSpatialPreferences(updatePreferences);
   const observer = new ResizeObserver(resize); observer.observe(host);
   window.addEventListener('pointermove', pointerMove, { passive: true });
@@ -535,12 +692,13 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
     destroy() {
       if (disposed) return;
       disposed = true; if (travel) travel.done = null; travel = null;
-      cancelAnimationFrame(frameRequest); observer.disconnect(); panelObserver.disconnect(); unsubscribeFrame(); unsubscribePanels(); unsubscribePreferences();
+      cancelAnimationFrame(frameRequest); observer.disconnect(); panelObserver.disconnect(); unsubscribeFrame(); unsubscribePanels(); unsubscribePreferences(); unsubscribeInspection();
       panels.forEach(restorePanel); panels.clear();
       window.removeEventListener('pointermove', pointerMove); window.removeEventListener('pointerdown', pointerDown);
       window.removeEventListener('pointerup', pointerUp); window.removeEventListener('pointercancel', pointerReset);
       window.removeEventListener('pointerout', pointerOut); window.removeEventListener('blur', pointerReset);
       document.removeEventListener('visibilitychange', visibility); canvas.removeEventListener('webglcontextlost', contextLost);
+      scene.traverse(object => { if (object instanceof THREE.InstancedMesh) object.dispose(); });
       atmosphere.dispose(); geometries.forEach(value => value.dispose()); materials.forEach(value => value.dispose()); textures.forEach(value => value.dispose());
       environment.dispose(); scene.clear(); cssScene.clear(); renderer.dispose(); renderer.forceContextLoss();
       canvas.remove(); cssRenderer.domElement.remove();
