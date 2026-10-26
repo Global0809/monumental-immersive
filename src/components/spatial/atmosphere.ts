@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { portalPositions } from './cameraPath';
 import { createAtmosphereInput } from './atmosphereInput';
 
-/** One world-space point cloud. The soft halo lives inside each sprite, so
- * photographs and chrome never pass through a full-screen bloom filter. */
+/** One world-space point cloud. Compact, translucent motes retain their
+ * cursor response without additive bloom washing over the architecture. */
 export function createAtmosphere() {
   const count = 560;
   const input = createAtmosphereInput();
@@ -28,7 +28,7 @@ export function createAtmosphere() {
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('aTraits', new THREE.BufferAttribute(traits, 3));
   const material = new THREE.ShaderMaterial({
-    transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending,
+    transparent: true, depthWrite: false, depthTest: true, blending: THREE.NormalBlending,
     uniforms: {
       uTime: { value: 0 }, uHeight: { value: 700 }, uPixelRatio: { value: 1 }, uLight: { value: 1 },
       uPointer: { value: new THREE.Vector4() }, uVelocity: { value: new THREE.Vector2() },
@@ -92,8 +92,8 @@ export function createAtmosphere() {
         view.xy += (drift / metric) * max(depth, .5) / projection;
         view.z += sin(phase + uTime * .7) * influence * charge * .24;
         gl_Position = projectionMatrix * view;
-        gl_PointSize = clamp(aTraits.y * (1.25 + reaction * 1.8) * uHeight * projection.y / max(depth, .5),
-          3.0 * uPixelRatio, 64.0 * uPixelRatio);
+        gl_PointSize = clamp(aTraits.y * (1.0 + reaction * .7) * uHeight * projection.y / max(depth, .5),
+          2.0 * uPixelRatio, 36.0 * uPixelRatio);
         vDepth = smoothstep(.7, 2.0, depth) * (1.0 - smoothstep(29.0, 47.0, depth));
         vEnergy = .85 + .12 * sin(uTime * .45 + phase);
         vReaction = reaction;
@@ -109,16 +109,15 @@ export function createAtmosphere() {
         vec2 uv = (gl_PointCoord - .5) * 2.0;
         float r = length(uv);
         if (r > 1.0) discard;
-        float halo = exp(-r * r * 5.0) * (.26 + vReaction * .3);
-        float core = exp(-r * r * 105.0) * 1.25;
+        float halo = exp(-r * r * 12.0) * (.055 + vReaction * .055);
+        float core = exp(-r * r * 105.0) * .7;
         vec2 axial = vec2(dot(uv, vDirection), dot(uv, vec2(-vDirection.y, vDirection.x)));
-        float glint = exp(-axial.x * axial.x * 8.0 - axial.y * axial.y * 160.0) * vReaction * .48;
+        float glint = exp(-axial.x * axial.x * 14.0 - axial.y * axial.y * 160.0) * vReaction * .1;
         float alpha = (core + halo + glint) * (1.0 - smoothstep(.65, 1.0, r)) * vDepth * vEnergy * uLight;
-        vec3 chrome = vec3(.82, .88, .85);
+        vec3 chrome = vec3(.64, .69, .66);
         vec3 signal = vec3(1.0, .302, .196);
         vec3 color = mix(chrome, signal, max(step(.76, vTint), vReaction * .6));
-        color = mix(color, vec3(1.0, .96, .88), min(.85, core * .6));
-        gl_FragColor = vec4(color, alpha);
+        gl_FragColor = vec4(color, min(alpha, .48));
         #include <colorspace_fragment>
       }
     `,
@@ -133,7 +132,7 @@ export function createAtmosphere() {
       geometry.setDrawRange(0, quality === 'light' ? 140 : mobile ? 220 : quality === 'detail' ? count : 420);
       material.uniforms.uHeight.value = height * ratio;
       material.uniforms.uPixelRatio.value = ratio;
-      material.uniforms.uLight.value = .9 + light / 200;
+      material.uniforms.uLight.value = .6 + THREE.MathUtils.clamp(light, 0, 100) / 500;
     },
     update(time: number, dt = 1 / 60, reducedMotion = false) {
       if (reducedMotion) input.reset();
