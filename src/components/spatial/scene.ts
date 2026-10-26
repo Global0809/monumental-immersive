@@ -350,6 +350,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   let overhead = 0;
   const overheadPosition = new THREE.Vector3(0,26,4), overheadLook = new THREE.Vector3(0,0,-11);
   const updatePreferences = () => {
+    const previousQuality = preferences.quality;
     preferences = getSpatialPreferences();
     brushed.wireframe = preferences.cutaway;
     black.wireframe = preferences.cutaway;
@@ -358,7 +359,10 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     side.intensity = .65 + preferences.light * .025;
     signal.intensity = 7 + preferences.light * .18;
     renderer.toneMappingExposure = .7 + preferences.light * .0062;
-    resize(); requestFrame();
+    // Light, pinned doors and view changes do not resize the drawing buffer.
+    // Reallocating it on every slider input interrupts the rendered frame.
+    if (preferences.quality !== previousQuality) resize();
+    requestFrame();
   };
   const unsubscribePreferences = subscribeSpatialPreferences(updatePreferences);
   type Travel = {
@@ -581,7 +585,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   window.addEventListener('pointercancel', atmosphereReset, { passive: true, capture: true });
   window.addEventListener('pointerout', atmosphereOut, { passive: true });
   window.addEventListener('blur', atmosphereReset);
-  const observer = new ResizeObserver(resize); observer.observe(host); updatePreferences();
+  const observer = new ResizeObserver(resize); observer.observe(host); updatePreferences(); resize();
 
   return {
     setState(next) {
