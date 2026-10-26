@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 export default function Cursor({ disabled }: { disabled: boolean }) {
+  const position = useRef<HTMLDivElement>(null);
   const ring = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (disabled || !matchMedia("(pointer:fine)").matches) return;
@@ -9,16 +10,19 @@ export default function Cursor({ disabled }: { disabled: boolean }) {
       const dx = x - currentX, dy = y - currentY;
       currentX += dx * .42; currentY += dy * .42;
       if (ring.current) {
-        ring.current.style.transform = `translate3d(${currentX}px,${currentY}px,0)`;
+        // The press scale belongs to the inner ring, never this viewport translation.
+        if (position.current) position.current.style.transform = `translate3d(${currentX}px,${currentY}px,0)`;
         ring.current.style.setProperty('--velocity', String(Math.min(Math.hypot(dx,dy) / 80,.3)));
       }
       if (Math.abs(dx) + Math.abs(dy) > .15 && !document.hidden) frame = requestAnimationFrame(draw);
     };
     const move = (e: PointerEvent) => {
+      if (e.pointerType === 'touch' || !e.isPrimary) return;
       x = e.clientX;
       y = e.clientY;
       if (first) { currentX = x; currentY = y; first = false; }
-      const target = e.target as HTMLElement;
+      const target = e.target instanceof Element ? e.target : null;
+      if (!target) return;
       const interactive = target.closest("a,button,[data-cursor]");
       const native = target.closest(
         "input,select,textarea,video,dialog,[popover]:popover-open",
@@ -34,31 +38,44 @@ export default function Cursor({ disabled }: { disabled: boolean }) {
         frame = requestAnimationFrame(draw);
     };
     const leave = () => {
-      if (ring.current) ring.current.dataset.hidden = "true";
+      if (ring.current) {
+        ring.current.dataset.hidden = "true";
+        ring.current.dataset.pressed = 'false';
+      }
+      first = true;
       cancelAnimationFrame(frame); frame = 0;
     };
-    const down = () => { if (ring.current) ring.current.dataset.pressed = 'true'; };
+    const down = (e: PointerEvent) => {
+      if (e.pointerType === 'touch' || !e.isPrimary || e.button !== 0) return;
+      move(e);
+      if (ring.current) ring.current.dataset.pressed = 'true';
+    };
     const up = () => { if (ring.current) ring.current.dataset.pressed = 'false'; };
-    window.addEventListener("pointermove", move, { passive: true });
+    const visibility = () => { if (document.hidden) leave(); };
+    // Capture also observes scene drags that capture the pointer or stop bubbling.
+    window.addEventListener("pointermove", move, { passive: true, capture: true });
     document.addEventListener("pointerleave", leave);
-    document.addEventListener('pointerdown',down);
-    document.addEventListener('pointerup',up);
+    window.addEventListener('pointerdown',down,true);
+    window.addEventListener('pointerup',up,true);
+    window.addEventListener('pointercancel',leave,true);
+    window.addEventListener('lostpointercapture',up,true);
+    document.addEventListener('visibilitychange',visibility);
     window.addEventListener('blur',leave);
     return () => {
-      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointermove", move,true);
       document.removeEventListener("pointerleave", leave);
-      document.removeEventListener('pointerdown',down);
-      document.removeEventListener('pointerup',up);
+      window.removeEventListener('pointerdown',down,true);
+      window.removeEventListener('pointerup',up,true);
+      window.removeEventListener('pointercancel',leave,true);
+      window.removeEventListener('lostpointercapture',up,true);
+      document.removeEventListener('visibilitychange',visibility);
       window.removeEventListener('blur',leave);
       cancelAnimationFrame(frame);
     };
   }, [disabled]);
   return disabled ? null : (
-    <div
-      ref={ring}
-      className="cursor-ring"
-      aria-hidden="true"
-      data-hidden="true"
-    />
+    <div ref={position} className="cursor-position" aria-hidden="true">
+      <div ref={ring} className="cursor-ring" data-hidden="true" />
+    </div>
   );
 }
