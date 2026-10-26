@@ -43,7 +43,7 @@ test('atmosphere is deterministic, depth tested and bounded for device quality',
   assert.deepEqual(a.points.geometry.attributes.position.array, b.points.geometry.attributes.position.array);
   assert.equal(a.points.material.depthTest, true);
   assert.equal(a.points.material.depthWrite, false);
-  for (const [mobile, quality, expected] of [[false,'light',100],[true,'balanced',150],[false,'balanced',240],[false,'detail',320]] as const) {
+  for (const [mobile, quality, expected] of [[false,'light',140],[true,'balanced',220],[false,'balanced',420],[false,'detail',560]] as const) {
     a.configure(700, 1.5, mobile, quality, 55);
     assert.equal(a.points.geometry.drawRange.count, expected);
   }

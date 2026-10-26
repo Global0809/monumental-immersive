@@ -323,6 +323,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
 
   let state: SpatialSceneState = { entered: false, room: 'home', paused: false, reducedMotion: options.reducedMotion };
   let width = 1, height = 1, mobile = false;
+  let viewportLeft = 0, viewportTop = 0;
   let frameRequest = 0, ready = false, lastTime = 0, ambientTime = 0;
   let entryProgress = 0, entryFrom = 0, entryTarget = 0, entryStart = 0;
   let focus: string | null = null, hover: string | null = null;
@@ -378,6 +379,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     if (!disposed && !contextUnavailable && !frameRequest && !document.hidden && !state.paused) frameRequest = requestAnimationFrame(draw);
   }
   function resize() {
+    const bounds = host.getBoundingClientRect(); viewportLeft = bounds.left; viewportTop = bounds.top;
     width = Math.max(1, host.clientWidth); height = Math.max(1, host.clientHeight); mobile = width < 700;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, qualityRatio(preferences.quality, mobile)));
     renderer.setSize(width, height, false);
@@ -470,7 +472,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       screen.group.scale.setScalar(nextScale);
       if (Math.abs(nextScale - wantedScale) > .0005) screenMoving = true;
     });
-    atmosphere.update(ambientTime);
+    atmosphere.update(ambientTime, dt, state.reducedMotion);
     renderer.render(scene, camera);
     if (options.onProject) {
       const positions = screens.map(screen => {
@@ -526,7 +528,37 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
     requestFrame();
   }
   function pointerLeave() { pointerX = pointerY = 0; hover = null; requestFrame(); }
-  function visibility() { lastTime = 0; cadence.reset(); if (document.hidden) { cancelAnimationFrame(frameRequest); frameRequest = 0; } else requestFrame(); }
+  // Observe the whole viewport, including room pages above the canvas. These
+  // passive listeners never capture a pointer or alter native interactions.
+  function atmosphereMove(event: PointerEvent) {
+    if (!event.isPrimary || state.paused || state.reducedMotion || travel) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('video, input, textarea, select, [contenteditable="true"], [role="dialog"], [data-atmosphere-protected]')) {
+      atmosphere.input.leave(); return;
+    }
+    atmosphere.input.move((event.clientX - viewportLeft) / width * 2 - 1,
+      1 - (event.clientY - viewportTop) / height * 2, event.timeStamp, event.pointerType === 'touch');
+    requestFrame();
+  }
+  function atmosphereDown(event: PointerEvent) {
+    if (event.button !== 0 || !event.isPrimary || state.paused || state.reducedMotion || travel) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('a, button, input, textarea, select, label, video, [contenteditable="true"], [role="dialog"], [role="slider"], [data-atmosphere-protected]')) return;
+    atmosphereMove(event); atmosphere.input.press();
+    // Touch gets a compact ripple without turning a scroll gesture into a hold.
+    if (event.pointerType === 'touch') atmosphere.input.release();
+  }
+  function atmosphereUp(event: PointerEvent) {
+    if (!event.isPrimary) return;
+    atmosphere.input.release();
+    if (event.pointerType === 'touch') atmosphere.input.leave();
+  }
+  function atmosphereReset() { atmosphere.input.reset(); requestFrame(); }
+  function atmosphereOut(event: PointerEvent) { if (!event.relatedTarget) { atmosphere.input.leave(); requestFrame(); } }
+  function visibility() {
+    lastTime = 0; cadence.reset(); atmosphere.input.reset();
+    if (document.hidden) { cancelAnimationFrame(frameRequest); frameRequest = 0; } else requestFrame();
+  }
   function contextLost(event: Event) {
     event.preventDefault();
     // A queued navigation must remain usable even if its visual path fails.
@@ -543,6 +575,12 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   canvas.addEventListener('pointerleave', pointerLeave);
   canvas.addEventListener('webglcontextlost', contextLost);
   document.addEventListener('visibilitychange', visibility);
+  window.addEventListener('pointermove', atmosphereMove, { passive: true, capture: true });
+  window.addEventListener('pointerdown', atmosphereDown, { passive: true, capture: true });
+  window.addEventListener('pointerup', atmosphereUp, { passive: true, capture: true });
+  window.addEventListener('pointercancel', atmosphereReset, { passive: true, capture: true });
+  window.addEventListener('pointerout', atmosphereOut, { passive: true });
+  window.addEventListener('blur', atmosphereReset);
   const observer = new ResizeObserver(resize); observer.observe(host); updatePreferences();
 
   return {
@@ -551,6 +589,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       const roomChanged = state.room !== next.room;
       const entryChanged = state.entered !== next.entered;
       if (roomChanged || entryChanged || next.paused) cancelTravel();
+      if (roomChanged || entryChanged || next.paused || next.reducedMotion) atmosphere.input.reset();
       if (entryChanged) {
         entryFrom = entryProgress; entryTarget = next.entered ? 1 : 0; entryStart = performance.now();
         if (next.reducedMotion || !ready) entryProgress = entryTarget;
@@ -581,6 +620,7 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       // rendered camera. The endpoint always faces the front of the screen.
       if (travel) travel.done = null;
       const destination = doorwayPose(screens.indexOf(selected), mobile);
+      atmosphere.input.reset();
       travel = { start: performance.now(), from: camera.position.clone(), targetFrom: currentTarget.clone(),
         to: destination.position, targetTo: destination.target, room: id,
         curve: doorwayFlight(camera.position, destination.position, screens.indexOf(selected)), done: onComplete, settled: false };
@@ -595,6 +635,12 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
       canvas.removeEventListener('pointerup', pointerUp); canvas.removeEventListener('pointercancel', pointerUp);
       canvas.removeEventListener('pointerleave', pointerLeave); canvas.removeEventListener('webglcontextlost', contextLost);
       document.removeEventListener('visibilitychange', visibility);
+      window.removeEventListener('pointermove', atmosphereMove, true);
+      window.removeEventListener('pointerdown', atmosphereDown, true);
+      window.removeEventListener('pointerup', atmosphereUp, true);
+      window.removeEventListener('pointercancel', atmosphereReset, true);
+      window.removeEventListener('pointerout', atmosphereOut);
+      window.removeEventListener('blur', atmosphereReset);
       geometries.forEach(value => value.dispose()); materials.forEach(value => value.dispose()); textures.forEach(value => value.dispose());
       atmosphere.dispose(); environment.dispose(); scene.clear(); renderer.dispose(); renderer.forceContextLoss(); canvas.remove();
     },
