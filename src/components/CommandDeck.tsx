@@ -54,7 +54,7 @@ export default function CommandDeck({ navigation }: { navigation: { name: string
 
   useEffect(() => {
     function show() {
-      if (document.querySelector('dialog[open]') || !dialog.current) return;
+      if (document.querySelector('dialog:modal') || !dialog.current) return;
       returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       setQuery(''); setActive(0); setOpen(true); dialog.current.showModal(); input.current?.focus(); playSound('open');
     }

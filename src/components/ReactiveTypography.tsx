@@ -173,7 +173,7 @@ export default function ReactiveTypography({ path, reducedMotion, paused }: {
       if (blocked || document.hidden || !fine.matches || document.documentElement.dataset.spatialPassage || !getSelection()?.isCollapsed) { reset(); return; }
       if (geometryDirty) measureWords();
       let word = directWord();
-      const hasDialog = document.querySelector('dialog[open],[popover]:popover-open');
+      const hasDialog = document.querySelector('dialog:modal,[popover]:popover-open');
       // Only the top layer receives type feedback while a menu/dialog is open.
       if (hasDialog && word && !hasDialog.contains(word.owner)) word = null;
       if (!word && !hasDialog) word = words.find(item => available(item.owner) && pointerX >= item.rect.left - 4 && pointerX <= item.rect.right + 4 && pointerY >= item.rect.top - 4 && pointerY <= item.rect.bottom + 4) || null;

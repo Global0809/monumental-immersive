@@ -108,7 +108,7 @@ export default function GlobalNavigation({ path, sound, soundUnavailable }: {
       if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     }} onClose={() => {
-      if (!document.querySelector('dialog[open]')) trigger.current?.focus({ preventScroll: true });
+      if (!document.querySelector('dialog:modal')) trigger.current?.focus({ preventScroll: true });
     }}>
       <div className="index-header"><h2 id="index-title">Find your way.</h2><button className="directory-close" onClick={close} aria-label="Close Index"><span>Close</span><X size={23}/></button></div>
       <div className="directory-groups">

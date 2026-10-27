@@ -196,7 +196,7 @@ export default function App() {
     previousPath.current = route.path;
     // Keep filter/query changes local; a new page starts keyboard reading in main.
     const frame = requestAnimationFrame(() => {
-      if (!document.querySelector('dialog[open]')) main.current?.focus({ preventScroll: true });
+      if (!document.querySelector('dialog:modal')) main.current?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
   }, [route.path]);

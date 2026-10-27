@@ -47,7 +47,7 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
     field.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0); geometryChanged(); schedule();
   }
-  function allowed(element: Element | null, covered = Boolean(document.querySelector('dialog[open],[popover]:popover-open'))) {
+  function allowed(element: Element | null, covered = Boolean(document.querySelector('dialog:modal,[popover]:popover-open'))) {
     return fine && !!element?.closest('main') && !element.closest(quietSelector) && !covered;
   }
   function move(event: PointerEvent) {
@@ -163,7 +163,7 @@ export function mountStructuralReveal(canvas: HTMLCanvasElement, reducedMotion: 
     // caps caused visible gaps; actual elapsed time still drives the motion.
     const dt = last ? Math.min(.05, (now - last) / 1000) : 1 / 60;
     last = now; time += dt;
-    const forbidden = !!document.querySelector('dialog[open],[popover]:popover-open');
+    const forbidden = !!document.querySelector('dialog:modal,[popover]:popover-open');
     if (keyboard) {
       if (pointerTarget !== document.activeElement || !pointerTarget?.isConnected || !pointerTarget.matches(':focus-visible') || !allowed(pointerTarget, forbidden)) {
         keyboard = false; pointerTarget = null; input.active = false;

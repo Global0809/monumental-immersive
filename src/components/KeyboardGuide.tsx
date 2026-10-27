@@ -11,7 +11,7 @@ export default function KeyboardGuide({ spatial = false }: { spatial?: boolean }
   const returnFocus=useRef<HTMLElement|null>(null);
   const mac=navigator.platform.toLowerCase().includes('mac');
   useEffect(()=>{
-    const show=()=>{if(document.querySelector('dialog[open]') || !dialog.current)return;returnFocus.current=document.activeElement instanceof HTMLElement?document.activeElement:null;dialog.current.showModal();playSound('open');};
+    const show=()=>{if(document.querySelector('dialog:modal') || !dialog.current)return;returnFocus.current=document.activeElement instanceof HTMLElement?document.activeElement:null;dialog.current.showModal();playSound('open');};
     const key=(event:KeyboardEvent)=>{if(event.key!=='?' || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || (event.target as Element).closest('input,textarea,select,[contenteditable="true"]'))return;event.preventDefault();show();};
     window.addEventListener('monumental:guide-open',show);window.addEventListener('keydown',key);
     return()=>{window.removeEventListener('monumental:guide-open',show);window.removeEventListener('keydown',key);};
