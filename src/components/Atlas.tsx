@@ -422,6 +422,8 @@ export default function Atlas({
         time - lastInteraction > 6000
       )
         globe.rotation.y += delta * 0.006;
+      // DOM pins and WebGL must project from the same camera frame during zoom.
+      camera.updateMatrixWorld(true);
       updateLabels();
       xray.update(!motionRef.current);
       renderer.render(scene, camera);
@@ -441,26 +443,39 @@ export default function Atlas({
         frame = window.requestAnimationFrame(draw);
       }
     };
+    let resizeFrame = 0;
     const resize = () => {
+      resizeFrame = 0;
+      if (disposed) return;
       const bounds = element.getBoundingClientRect();
       const panel = zoomPanel?.getBoundingClientRect();
       if (panel) zoomPanelBounds = { left: panel.left - bounds.left, top: panel.top - bounds.top, bottom: panel.bottom - bounds.top };
-      width = Math.max(1, bounds.width);
-      height = Math.max(1, bounds.height);
+      const nextWidth = Math.max(1, bounds.width);
+      const nextHeight = Math.max(1, bounds.height);
+      const sizeChanged = Math.abs(nextWidth - width) > .5 || Math.abs(nextHeight - height) > .5;
+      const currentZoom = (baseDistance - camera.position.z) / .3;
+      width = nextWidth;
+      height = nextHeight;
       const viewport = window.visualViewport;
       const viewportLeft = viewport?.offsetLeft ?? 0;
       const viewportWidth = viewport?.width ?? document.documentElement.clientWidth;
       clipLeft = Math.max(0, viewportLeft - bounds.left);
       clipRight = Math.min(width, viewportLeft + viewportWidth - bounds.left);
-      renderer.setSize(width, height);
-      camera.aspect = width / height;
-      baseDistance = width / height < 0.95 ? 3.45 / (width / height) : 3.45;
-      camera.position.z = baseDistance - targetZoom * .3;
-      setZoomFactor(baseDistance / (baseDistance - targetZoom * .3));
-      camera.updateProjectionMatrix();
+      // Mobile browser chrome and visual-viewport panning can report scroll and
+      // resize without changing this scene. Do not clear its buffer or snap an
+      // in-flight zoom to its endpoint for those notifications.
+      if (sizeChanged) {
+        renderer.setSize(width, height);
+        camera.aspect = width / height;
+        baseDistance = width / height < 0.95 ? 3.45 / (width / height) : 3.45;
+        camera.position.z = baseDistance - currentZoom * .3;
+        setZoomFactor(baseDistance / (baseDistance - targetZoom * .3));
+        camera.updateProjectionMatrix();
+      }
       requestDraw();
     };
-    const resizeObserver = new ResizeObserver(resize);
+    const scheduleResize = () => { if (!resizeFrame) resizeFrame = requestAnimationFrame(resize); };
+    const resizeObserver = new ResizeObserver(scheduleResize);
     resizeObserver.observe(element);
     if (zoomPanel) resizeObserver.observe(zoomPanel);
     const labelObserver = new ResizeObserver(entries => {
@@ -477,9 +492,9 @@ export default function Atlas({
       const text = marker.querySelector('.cultural-atlas__label');
       if (text) labelObserver.observe(text);
     });
-    window.addEventListener('resize', resize);
-    window.visualViewport?.addEventListener('resize', resize);
-    window.visualViewport?.addEventListener('scroll', resize);
+    window.addEventListener('resize', scheduleResize);
+    window.visualViewport?.addEventListener('resize', scheduleResize);
+    window.visualViewport?.addEventListener('scroll', scheduleResize);
     const observer = new IntersectionObserver(
       ([entry]) => {
         visible = entry.isIntersecting;
@@ -659,12 +674,13 @@ export default function Atlas({
       xray.dispose();
       abort.abort();
       cancelAnimationFrame(frame);
+      cancelAnimationFrame(resizeFrame);
       observer.disconnect();
       resizeObserver.disconnect();
       labelObserver.disconnect();
-      window.removeEventListener('resize', resize);
-      window.visualViewport?.removeEventListener('resize', resize);
-      window.visualViewport?.removeEventListener('scroll', resize);
+      window.removeEventListener('resize', scheduleResize);
+      window.visualViewport?.removeEventListener('resize', scheduleResize);
+      window.visualViewport?.removeEventListener('scroll', scheduleResize);
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener('monumental:playback', playback);
       canvas.removeEventListener("pointerdown", pointerDown);

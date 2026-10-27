@@ -16,6 +16,8 @@
   max-height: 660px;
   width: 100%;
   overflow: hidden;
+  /* Clipping is visual; this canvas and its pins are not a scroll container. */
+  overflow: clip;
 }
 .cultural-atlas__viewport canvas {
   position: absolute;

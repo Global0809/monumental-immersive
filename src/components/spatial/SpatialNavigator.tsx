@@ -49,7 +49,16 @@ export default function SpatialNavigator({ path, reducedMotion, paused, controll
     const navigate = (destination: string, params: Record<string, string | undefined> = {}) => {
       const settings = current.current;
       const plan = spatialPassagePlan(settings.path, destination, settings.reducedMotion);
-      if (!plan.changed) { if (pending.current) { cancel(); return true; } return false; }
+      if (!plan.changed) {
+        if (pending.current) {
+          cancel();
+          // A newer choice can return to this room with different query state.
+          // Consuming the intent must also commit its destination parameters.
+          commitRoute(destination, params);
+          return true;
+        }
+        return false;
+      }
       if (settings.paused) return false;
       cancel();
       // Preserve the cover-to-story shared element; it already owns this move.

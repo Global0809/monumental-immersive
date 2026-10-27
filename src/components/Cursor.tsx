@@ -32,7 +32,9 @@ export default function Cursor({ disabled }: { disabled: boolean }) {
         ring.current.dataset.hidden = native ? "true" : "false";
         const label = interactive?.getAttribute('data-cursor') || (target.closest('canvas,.culture-sculpture-stage,.cultural-atlas__viewport') ? 'TURN' : '');
         ring.current.dataset.label = label ? 'true' : 'false';
-        ring.current.textContent = label;
+        // An unchanged text write still emits childList mutations. Shared text
+        // effects observe this root, so repeated writes would rescan every move.
+        if (ring.current.textContent !== label) ring.current.textContent = label;
       }
       if (!frame)
         frame = requestAnimationFrame(draw);

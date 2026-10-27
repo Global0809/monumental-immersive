@@ -29,10 +29,17 @@ export function useRoute() {
       scrollPositions.set(previous, window.scrollY);
       if (scrollPositions.size > 120) scrollPositions.delete(scrollPositions.keys().next().value!);
       const next = location.hash;
-      const position = routeScrollPosition(previous, next, window.scrollY, scrollPositions.get(next), intendedHash === next);
+      const intentional = intendedHash === next;
+      const samePage = previous.split('?')[0] === next.split('?')[0];
+      const position = routeScrollPosition(previous, next, window.scrollY, scrollPositions.get(next), intentional);
       intendedHash = null;
       previous = next;
       setRoute(readRoute());
+      // Query controls keep ownership of the current scroll. Even a scrollTo
+      // the same offset cancels native smooth scrolling started by that control
+      // (for example, following a World connection back to its destination).
+      // Browser Back/Forward still restores the saved reading position below.
+      if (intentional && samePage) return;
       const restore = () => {
         window.scrollTo({ top: position, behavior: 'instant' });
         if (position <= Math.max(0, document.documentElement.scrollHeight - innerHeight)) cancelRestore();
