@@ -35,7 +35,7 @@ The primary checkout has `backup/pre-editorial-redesign-2026-10-27` at `d15a2c66
 
 Automated results are stored in ignored `test-results/`; screenshot review is in ignored `output/playwright/`. Reproducible browser scripts are tracked under `tests/browser/`.
 
-- `npm test`: **136 passed**, zero failed.
+- `npm test`: **146 passed**, zero failed.
 - Updated `verify-ui.mjs`: **97 checks passed** against the local production build and again against the published GitHub Pages site, covering keyboard Index, search/filters, real film playback and resume, saves, journey editing, 19 destination routes, mobile layouts and reduced motion. No uncaught application exceptions.
 - `verify-moments.mjs`: **9 checks passed**. A moment saved at 12 seconds resumed at exactly 12.000 seconds. Note editing, reload persistence, transcript seek, remove/Undo and 320px layout were exercised.
 - `verify-full-playback.mjs`: **8 checks passed** over 25 minutes of actual 1x playback, without seeking or synthesized completion. Big Buck Bunny and Sintel both reached their native ended events; the journey advanced after its countdown, saved both completion states and stopped at the final film. There were no application or media-element errors. Chrome reported 1/14,315 and 11/21,313 dropped video frames respectively. Twenty-one external range-request failures recovered without failing playback; these are retained in the diagnostic report rather than described as a clean network run.
@@ -45,6 +45,7 @@ Automated results are stored in ignored `test-results/`; screenshot review is in
 - `verify-editorial-resilience.mjs`: **47 checks passed**, including unavailable WebGL, rapid normal-motion route interruption, browser Back with destination queries, 360×800, 844×390 and 720×450 layouts. The station panel moved less than one pixel after native scrolling settled. Two visual findings outside those assertions were corrected: landscape entrance copy now uses two columns, and the Time Machine introduction retains its spacing when its line break is hidden.
 - `verify-collection-scale.mjs`: **17 checks passed** with a 33-piece isolated fixture and then 35 pieces after saving two complete films through the UI. All pieces remain selectable beyond the 24-mesh window; filters, reset and reload preserve the collection. Full films are labeled Complete film in the sculpture details.
 - A live GitHub Pages playback check exposed a lost subdirectory prefix during source synchronization. The fix is shared across both checkouts: `services/assets.ts` resolves catalogue media, captions and credits exactly once. Dedicated regression tests cover root hosting, Pages prefixes, already-prefixed URLs and remote sources. Future syncs no longer depend on divergent per-host versions of the catalogue files.
+- A final main-host test found that its static MP4 responses lack byte-range support, leaving Chrome with a zero-length seekable range. `services/seekableMedia.ts` now prepares a bounded Blob only for the selected local preview on such hosts. Remote films and range-capable hosts retain ordinary streaming; cancellation and URL release follow the player lifecycle. Ten unit cases and `verify-non-range-media.mjs` cover size limits, failure, cancellation, film seeking/resume and motion-frame inspection.
 
 ## Measured optimization
 

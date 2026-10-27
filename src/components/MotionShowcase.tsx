@@ -7,6 +7,7 @@ import { Pause } from '@phosphor-icons/react/dist/csr/Pause';
 import { Play } from '@phosphor-icons/react/dist/csr/Play';
 import { playSound } from '../services/audio';
 import { motionMediaTransition, motionMediaLabels, motionMediaCanSeek } from '../services/motionMedia';
+import { prepareSeekableMedia } from '../services/seekableMedia';
 import './motion-showcase.css';
 const films = [
  ['01-living-atlas','The living atlas','A world of culture, connected.','/world'],
@@ -77,20 +78,40 @@ function MotionGallery({ reducedMotion }: { reducedMotion: boolean }) {
     if (!element || !requested) return;
     const epoch = ++generation.current;
     let alive = true;
+    const abort = new AbortController();
+    let lease: Awaited<ReturnType<typeof prepareSeekableMedia>> | undefined;
     if (!element.canPlayType('video/mp4; codecs="avc1.64001f"')) {
       dispatch('unsupported');
       setMessage('This browser cannot decode this preview. The poster and concept description remain available.');
       return;
     }
     dispatch('request');
-    void element.play().catch((error: unknown) => {
+    // Only the requested clip owns a prepared source. Range-capable hosts stay
+    // streamed; the shared helper bounds the local Blob fallback on other hosts.
+    void (async () => {
+      const prepared = await prepareSeekableMedia(asset(film[0] + '.mp4'), abort.signal);
+      if (!alive || epoch !== generation.current || media.current !== element) { prepared.release(); return; }
+      lease = prepared;
+      element.src = prepared.src;
+      element.load();
+      const bounds = stage.current?.getBoundingClientRect();
+      // Preparing a source may outlast the visitor's attention or another film
+      // opening. Do not restart a preview that visibility handling already paused.
+      if (document.hidden || document.querySelector('.ms-player-dialog[open]') || !bounds || bounds.bottom <= 0 || bounds.top >= innerHeight) return;
+      await element.play();
+    })().catch((error: unknown) => {
       if (!alive || epoch !== generation.current || media.current !== element) return;
       const name = error instanceof Error ? error.name : '';
       if (name === 'AbortError') return;
       if (name === 'NotAllowedError') { dispatch('loaded'); setMessage('Your browser paused automatic playback. Press Play to continue.'); }
       else { dispatch('failed'); setMessage('The preview could not be played. Retry the film, or explore its concept below.'); }
     });
-    return () => { alive = false; generation.current += 1; element.pause(); };
+    return () => {
+      alive = false; generation.current += 1; abort.abort();
+      // Detach the native decoder before revoking a Blob it may still be using.
+      element.pause(); element.removeAttribute('src'); element.load();
+      lease?.release();
+    };
   }, [requested, attempt, selected]);
 
   useEffect(() => {
@@ -134,7 +155,7 @@ function MotionGallery({ reducedMotion }: { reducedMotion: boolean }) {
     <div className="motion-layout"><div className="motion-screen">
       <div ref={stage} className={`motion-stage ${failed ? 'has-error' : ''}`} data-media-state={state}>
         <img className="motion-poster" src={asset(film[0] + '.jpg')} alt=""/>
-        {requested && <video key={`${film[0]}-${attempt}`} ref={media} src={asset(film[0] + '.mp4')} muted loop playsInline preload="metadata" aria-label={`${film[1]} motion concept`}
+        {requested && <video key={`${film[0]}-${attempt}`} ref={media} muted loop playsInline preload="metadata" aria-label={`${film[1]} motion concept`}
           className={duration > 0 && !failed ? 'is-decoded' : ''}
           onLoadedMetadata={event => { if (event.currentTarget === media.current) setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0); }}
           onLoadedData={event => { if (event.currentTarget === media.current) dispatch('loaded'); }}

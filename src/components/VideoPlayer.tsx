@@ -19,6 +19,7 @@ import { setPlaybackActive } from "../services/audio";
 import { requestPlayback, resolveEntitlement } from "../services/membership";
 import { href } from '../services/router';
 import { isLocalMediaSource, playableQueueAfter } from '../services/mediaPreview';
+import { prepareSeekableMedia } from '../services/seekableMedia';
 import { SaveButton, filmFormat } from './FilmCard';
 import PlayerCompanion from "./PlayerCompanion";
 import "./player.css";
@@ -245,6 +246,8 @@ export function VideoPlayer({
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    let releaseSource = () => {};
     const selectedVideo = videoRef.current;
     setSource(undefined);
     setState("loading");
@@ -256,11 +259,13 @@ export function VideoPlayer({
     setMomentLink('');
     setPaused(true);
     void requestPlayback(selectedVideo)
-      .then((url) => {
+      .then((url) => prepareSeekableMedia(url, controller.signal))
+      .then((prepared) => {
+        releaseSource = prepared.release;
         if (!cancelled) {
           setSourceVideoId(selectedVideo.id);
-          setSource(url);
-        }
+          setSource(prepared.src);
+        } else prepared.release();
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
@@ -274,6 +279,8 @@ export function VideoPlayer({
       });
     return () => {
       cancelled = true;
+      controller.abort();
+      releaseSource();
     };
   }, [video.id, attempt]);
 
