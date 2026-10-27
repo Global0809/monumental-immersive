@@ -105,8 +105,11 @@ export function buildJourney(
     }))
     .sort((a, b) => b.score - a.score);
   const chosen: Video[] = [];
+  // "Starting in" is a promise about the first stop, not just a ranking hint.
+  const opening = candidates.find(({ v }) => v.places.includes(place) && v.duration <= remaining)?.v;
+  if (opening) { chosen.push(opening); remaining -= opening.duration; }
   for (const { v } of candidates) {
-    if (v.duration <= remaining && chosen.length < 5) {
+    if (v.id !== opening?.id && v.duration <= remaining && chosen.length < 5) {
       chosen.push(v);
       remaining -= v.duration;
     }

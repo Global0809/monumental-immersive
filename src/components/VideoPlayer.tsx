@@ -11,13 +11,15 @@ import { Sparkle } from '@phosphor-icons/react/dist/csr/Sparkle';
 import { ShareNetwork } from '@phosphor-icons/react/dist/csr/ShareNetwork';
 import { WarningCircle } from '@phosphor-icons/react/dist/csr/WarningCircle';
 import { X } from '@phosphor-icons/react/dist/csr/X';
+import { SpeakerHigh } from '@phosphor-icons/react/dist/csr/SpeakerHigh';
+import { SpeakerSlash } from '@phosphor-icons/react/dist/csr/SpeakerSlash';
 import { videos, type Video } from "../data/catalogue";
 import { getViewer, saveProgress, useViewer, usePersistentStorage } from "../services/viewer";
 import { setPlaybackActive } from "../services/audio";
 import { requestPlayback, resolveEntitlement } from "../services/membership";
 import { href } from '../services/router';
 import { isLocalMediaSource, playableQueueAfter } from '../services/mediaPreview';
-import { SaveButton } from './FilmCard';
+import { SaveButton, filmFormat } from './FilmCard';
 import PlayerCompanion from "./PlayerCompanion";
 import "./player.css";
 
@@ -78,6 +80,8 @@ export function VideoPlayer({
   const [state, setState] = useState<PlaybackState>("loading");
   const [error, setError] = useState("");
   const [paused, setPaused] = useState(true);
+  const [volume, setVolume] = useState(1);
+  const [muted, setMuted] = useState(false);
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
   const [speed, setSpeed] = useState(1);
@@ -86,6 +90,8 @@ export function VideoPlayer({
   const [attempt, setAttempt] = useState(0);
   const [pipSupported, setPipSupported] = useState(false);
   const [fullscreenSupported, setFullscreenSupported] = useState(false);
+  const [nativeControls, setNativeControls] = useState(false);
+  const [captionIndex, setCaptionIndex] = useState(-1);
   const viewer = useViewer();
   const persistentStorage = usePersistentStorage();
   const [cinemaGlow, setCinemaGlow] = useState(true);
@@ -205,9 +211,37 @@ export function VideoPlayer({
       document.body.style.overflow = previousOverflow;
       document.body.classList.remove("monumental-player-active");
       setPlaybackActive(false);
-      focusBefore?.focus();
+      focusBefore?.focus({ preventScroll: true });
     };
   }, []);
+
+  // The normal transport lives outside the stage. Fullscreen owns its native
+  // transport; listen to actual presentation changes, including iOS video mode.
+  useEffect(() => {
+    const element = media.current as (HTMLVideoElement & { webkitDisplayingFullscreen?: boolean }) | null;
+    if (!element) return;
+    let wasFullscreen = false;
+    const presentation = (event?: Event) => {
+      const active = event?.type === 'webkitbeginfullscreen' || (event?.type !== 'webkitendfullscreen' && (document.fullscreenElement === stage.current || document.fullscreenElement === element || Boolean(element.webkitDisplayingFullscreen)));
+      setNativeControls(active);
+      if (wasFullscreen && !active) stage.current?.focus({ preventScroll: true });
+      wasFullscreen = active;
+    };
+    const trackSelection = () => setCaptionIndex(Array.from(element.textTracks).findIndex(track => track.mode === 'showing'));
+    document.addEventListener('fullscreenchange', presentation);
+    element.addEventListener('webkitbeginfullscreen', presentation);
+    element.addEventListener('webkitendfullscreen', presentation);
+    element.textTracks.addEventListener('change', trackSelection);
+    element.addEventListener('loadedmetadata', trackSelection);
+    presentation(); trackSelection();
+    return () => {
+      document.removeEventListener('fullscreenchange', presentation);
+      element.removeEventListener('webkitbeginfullscreen', presentation);
+      element.removeEventListener('webkitendfullscreen', presentation);
+      element.textTracks.removeEventListener('change', trackSelection);
+      element.removeEventListener('loadedmetadata', trackSelection);
+    };
+  }, [video.id, attempt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -344,17 +378,27 @@ export function VideoPlayer({
       if (document.fullscreenElement) await document.exitFullscreen();
       else if (stage.current?.requestFullscreen)
         await stage.current.requestFullscreen();
-      else
+      else {
+        setNativeControls(true);
         (
           media.current as HTMLVideoElement & {
             webkitEnterFullscreen?: () => void;
           }
         )?.webkitEnterFullscreen?.();
+      }
     } catch {
+      setNativeControls(false);
       setNotice(
         "Fullscreen is unavailable in this browser. You can continue watching here.",
       );
     }
+  }
+
+  function selectCaption(index: number) {
+    const tracks = media.current?.textTracks;
+    if (!tracks) return;
+    Array.from(tracks).forEach((track, i) => { track.mode = i === index ? 'showing' : 'disabled'; });
+    setCaptionIndex(index);
   }
 
   async function pictureInPicture() {
@@ -452,6 +496,10 @@ export function VideoPlayer({
       aria-labelledby={titleId}
       onCancel={(event) => {
         event.preventDefault();
+        if (nativeControls) {
+          if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+          return;
+        }
         onCloseRef.current();
       }}
       onKeyDown={keyDown}
@@ -461,11 +509,9 @@ export function VideoPlayer({
     >
       <div className="ms-player-shell">
         <header className="ms-player-header">
-          <span className="ms-player-wordmark">
-            MONUMENTAL <span>STREAMS</span>
-          </span>
+          <span className="ms-player-current-title" id={titleId}>{video.title}</span>
           <span className="ms-player-preview-label">
-            {entitlement.preview ? "Development preview" : "Preview collection"}
+            {entitlement.preview ? "Development preview" : filmFormat(video)}
           </span>
           <button
             ref={closeButton}
@@ -488,17 +534,20 @@ export function VideoPlayer({
             ref={media}
             src={sourceVideoId === video.id ? source : undefined}
             poster={video.poster}
-            controls
+            controls={nativeControls}
+            tabIndex={nativeControls ? 0 : -1}
             playsInline
             preload="metadata"
             autoPlay
             aria-label={video.title}
+            onClick={() => { if (!nativeControls) { stage.current?.focus({ preventScroll: true }); void togglePlayback(); } }}
             onLoadedMetadata={loaded}
             onDurationChange={() => {
               const value = media.current?.duration;
               if (value && Number.isFinite(value)) setDuration(value);
             }}
             onTimeUpdate={() => setPosition(media.current?.currentTime || 0)}
+            onVolumeChange={event => { setMuted(event.currentTarget.muted); setVolume(event.currentTarget.volume); }}
             onSeeking={(event) => {
               // Native controls, the scrubber and transcript links can all leave
               // an ended film paused at an earlier frame. Retire its end screen
@@ -645,11 +694,15 @@ export function VideoPlayer({
               {formatPlaybackTime(position)}{" "}
               <span>/ {formatPlaybackTime(duration)}</span>
             </span>
+            <button type="button" className="ms-player-icon-button" aria-label={muted || volume === 0 ? 'Unmute video' : 'Mute video'} aria-pressed={muted || volume === 0} onClick={() => { if (media.current) { media.current.muted = !media.current.muted; if (media.current.volume === 0) media.current.volume = 1; } }}>{muted || volume === 0 ? <SpeakerSlash size={20}/> : <SpeakerHigh size={20}/>}</button>
+            <input className="ms-player-volume" type="range" min="0" max="1" step="0.05" value={muted ? 0 : volume} aria-label="Video volume" aria-valuetext={`${Math.round((muted ? 0 : volume) * 100)} percent`} onChange={event => { if (media.current) { media.current.volume = Number(event.target.value); media.current.muted = false; } }}/>
           </div>
           <div className="ms-player-options">
             <SaveButton video={video} small/>
             <button className="ms-player-icon-button" aria-label="Copy link to this moment" title="Copy link to this moment" onClick={() => void shareMoment()} disabled={!duration}><ShareNetwork size={19}/></button>
             {isLocalMediaSource(video.src) && <button disabled={reducedMotion} className="ms-player-icon-button ms-player-glow-toggle" aria-label="Cinema glow" aria-pressed={cinemaGlow} title="Cinema glow" onClick={() => setCinemaGlow(v => !v)}><Sparkle size={20}/></button>}
+            {captions.length === 1 && <button type="button" className="ms-player-icon-button ms-player-captions" aria-label={captionIndex >= 0 ? 'Hide captions' : 'Show captions'} aria-pressed={captionIndex >= 0} title={`${captions[0].label || 'English'} captions`} disabled={!source || state === 'error'} onClick={() => selectCaption(captionIndex >= 0 ? -1 : 0)}><span aria-hidden="true">CC</span></button>}
+            {captions.length > 1 && <label className="ms-player-speed">Captions<select aria-label="Captions" value={captionIndex} onChange={event => selectCaption(Number(event.target.value))} disabled={!source || state === 'error'}><option value={-1}>Off</option>{captions.map((track, index) => <option key={track.src} value={index}>{track.label || track.srclang || track.srcLang || `Track ${index + 1}`}</option>)}</select></label>}
             <label className="ms-player-speed">
               Speed
               <select
@@ -694,7 +747,7 @@ export function VideoPlayer({
             )}
           </div>
         </div>
-        {queue.length > 0 && <section className="ms-journey-queue" aria-label="Journey queue"><div className="ms-queue-heading"><span><small>YOUR JOURNEY / {Math.max(1,queueIndex + 1)} OF {queue.length}</small><strong>{queueName || 'Your cultural journey'}</strong></span><label>Auto-continue<button role="switch" aria-label="Auto-continue journey" aria-checked={autoContinue} onClick={() => setAutoContinue(v => !v)}><i/></button></label></div><div className="ms-queue-stops">{queue.map((item,i) => <button key={item.id} aria-label={`Journey stop ${i + 1}: ${item.title}`} aria-current={item.id === video.id ? 'step' : undefined} onClick={() => { if (item.id !== video.id) onNext?.(item.id); }}><img src={item.poster} alt=""/><span><small>{String(i+1).padStart(2,'0')} / {item.id === video.id ? 'NOW PLAYING' : viewer.history[item.id]?.completed ? 'WATCHED' : item.category}</small><strong>{item.title}</strong></span>{item.id === video.id ? <span className={`ms-queue-meter ${paused ? 'is-paused' : ''}`} aria-hidden="true"><i/><i/><i/></span> : <Play size={16}/>}</button>)}</div></section>}
+
         {notice && (
           <div className="ms-player-notice" role="status">
             {notice}
@@ -723,6 +776,9 @@ export function VideoPlayer({
             </button>
           </div>
         )}
+        <details className="ms-player-extras">
+          <summary>Film companion & credits <span>Notes, chapters and related stories</span></summary>
+        {queue.length > 0 && <section className="ms-journey-queue" aria-label="Journey queue"><div className="ms-queue-heading"><span><small>YOUR JOURNEY / {Math.max(1,queueIndex + 1)} OF {queue.length}</small><strong>{queueName || 'Your cultural journey'}</strong></span><label>Auto-continue<button role="switch" aria-label="Auto-continue journey" aria-checked={autoContinue} onClick={() => setAutoContinue(v => !v)}><i/></button></label></div><div className="ms-queue-stops">{queue.map((item,i) => <button key={item.id} aria-label={`Journey stop ${i + 1}: ${item.title}`} aria-current={item.id === video.id ? 'step' : undefined} onClick={() => { if (item.id !== video.id) onNext?.(item.id); }}><img src={item.poster} alt=""/><span><small>{String(i+1).padStart(2,'0')} / {item.id === video.id ? 'NOW PLAYING' : viewer.history[item.id]?.completed ? 'WATCHED' : item.category}</small><strong>{item.title}</strong></span>{item.id === video.id ? <span className={`ms-queue-meter ${paused ? 'is-paused' : ''}`} aria-hidden="true"><i/><i/><i/></span> : <Play size={16}/>}</button>)}</div></section>}
         <div className="ms-player-details">
           <div>
             <p className="ms-player-eyebrow">
@@ -731,7 +787,7 @@ export function VideoPlayer({
                 ? `${formatPlaybackTime(duration)} runtime`
                 : "Preview film"}
             </p>
-            <h1 id={titleId}>{video.title}</h1>
+            <h1>{video.title}</h1>
             <p className="ms-player-description">{video.description}</p>
             <p className="ms-player-credit">
               {typeof video.credit === "string"
@@ -769,6 +825,7 @@ export function VideoPlayer({
             </div>
           </section>
         )}
+        </details>
       </div>
     </dialog>
   );

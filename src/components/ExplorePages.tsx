@@ -1,4 +1,3 @@
-import { assetUrl as asset } from '../services/assets';
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type RefObject, type PointerEvent } from "react";
 import { ArrowDown } from '@phosphor-icons/react/dist/csr/ArrowDown';
 import { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft';
@@ -24,6 +23,7 @@ import { createJourney, MAX_SAVED_JOURNEYS, togglePlace, toggleSaved, useViewer 
 import { playSound, type SoundType } from "../services/audio";
 import { notify } from "../services/feedback";
 import "./explore.css";
+import "./world-editorial.css";
 import { selectDestination } from "../services/exploration";
 import { resolveDragAxis, type DragAxis } from "../services/exploreInteraction";
 
@@ -38,6 +38,7 @@ function channelOf(video: Video) {
   if (["Art & Design", "Documentary", "Food", "Culture"].includes(video.category)) return "Culture";
   return video.category;
 }
+function asset(url: string) { return url.startsWith("/") ? `${import.meta.env.BASE_URL}${url.slice(1)}` : url; }
 function updateRoute(path: string, params: URLSearchParams, changes: Record<string, string>, sound: SoundType = "select") {
   const next = Object.fromEntries(params.entries());
   Object.entries(changes).forEach(([key, value]) => { if (value) next[key] = value; else delete next[key]; });
@@ -45,6 +46,7 @@ function updateRoute(path: string, params: URLSearchParams, changes: Record<stri
   playSound(sound);
 }
 function coordinates(lat: number, lon: number) { return `${Math.abs(lat).toFixed(2)}° ${lat >= 0 ? "N" : "S"} / ${Math.abs(lon).toFixed(2)}° ${lon >= 0 ? "E" : "W"}`; }
+function totalRuntime(seconds: number) { const rounded = Math.round(seconds); return rounded < 60 ? `${rounded} sec` : `${Math.floor(rounded / 60)} min ${rounded % 60} sec`; }
 function useArrival(scope: RefObject<HTMLDivElement | null>, key: string, reduced: boolean) {
   useEffect(() => {
     if (!scope.current || reduced) return;
@@ -92,6 +94,10 @@ function StoryCards({ items, onWatch, empty, onReset, resetLabel = "Explore all 
 export function WorldPage({ params, reducedMotion, onWatch, onPlayJourney }: ExploreProps) {
   const selected = places.find(place => place.id === params.get("place")) || places[0];
   const [cityRequest, setCityRequest] = useState(0);
+  const [cityEntering, setCityEntering] = useState(false);
+  const [threadOpen, setThreadOpen] = useState(false);
+  const [threadLoaded, setThreadLoaded] = useState(false);
+  const cityTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => selectDestination(selected.id), [selected.id]);
   const category = channels.includes(params.get("category") || "") ? params.get("category")! : "All";
   const viewer = useViewer();
@@ -100,51 +106,68 @@ export function WorldPage({ params, reducedMotion, onWatch, onPlayJourney }: Exp
   const connections = findConnections(selected.id);
   const linksVisible = params.get("links") !== "off";
   const available = videos.filter(video => video.places.includes(selected.id) && video.status === "available");
+  const featured = available[0];
+  const featuredUsesPlacePhoto = Boolean(featured && places.some(place => place.image === featured.poster));
   useArrival(root, selected.id, reducedMotion);
   const items = videos.filter(video => video.places.includes(selected.id) && (category === "All" || channelOf(video) === category));
   const selectPlace = (place: string) => updateRoute("/world", params, { place }, "destination");
+  useEffect(() => {
+    setCityEntering(false);
+    return () => clearTimeout(cityTimer.current);
+  }, [selected.id]);
+  const enterCity = () => {
+    clearTimeout(cityTimer.current);
+    if (reducedMotion) { setCityRequest(value => value + 1); return; }
+    setCityEntering(true);
+    cityTimer.current = setTimeout(() => {
+      setCityEntering(false);
+      setCityRequest(value => value + 1);
+    }, 500);
+  };
   return <div ref={root} className={`ex-page ex-world ${reducedMotion ? "ex-reduced" : ""}`}>
-    <header className="ex-page-label"><span><GlobeHemisphereWest size={17} /> THE WORLD / 01</span><span>DISCOVER A DIFFERENT PERSPECTIVE</span></header>
+    <header className="ex-page-label"><span><GlobeHemisphereWest size={17} /> World</span><span>{places.length} destinations. A different perspective in every one.</span></header>
     <div className="ex-world-room">
       <section className="ex-orbit-stage" aria-label="Explore the cultural globe">
-        <h1 className="ex-world-title">NO<br /><span>BORDERS.</span></h1>
-        <div className="ex-globe"><Suspense fallback={<div className="ex-atlas-loading"><span /><p>Bringing the world into focus</p></div>}><Atlas selected={selected.id} onSelect={selectPlace} reducedMotion={reducedMotion} connections={connections.map(connection => connection.place.id)} showConnections={linksVisible} /></Suspense></div>
-        <div className="ex-orbit-caption"><span className="ex-signal-dot" /><span>A world connected through culture.<br />Rotate the globe. Find your next story.</span></div>
-        <span className="ex-orbit-cross ex-orbit-cross--one" aria-hidden="true">+</span><span className="ex-orbit-cross ex-orbit-cross--two" aria-hidden="true">+</span>
+        <div className="ex-world-heading"><h1 className="ex-world-title">NO BORDERS.</h1><p>Explore places through<br className="world-desktop-break"/> the stories they hold.</p></div>
+        <div className="ex-globe"><Suspense fallback={<div className="ex-atlas-loading"><span /><p>Bringing the world into focus</p></div>}><Atlas selected={selected.id} onSelect={selectPlace} reducedMotion={reducedMotion} connections={connections.map(connection => connection.place.id)} showConnections={linksVisible} approaching={cityEntering} /></Suspense></div>
+        <div className="ex-orbit-caption"><span className="ex-signal-dot" /><span>{cityEntering ? "Miami. From planet to place." : "Choose a point. Follow its stories."}</span></div>
       </section>
       <aside className="ex-location" aria-label={`${selected.name} destination`}>
-        <div className="ex-location-top"><span>YOUR COORDINATES</span><button data-sound-owned aria-label={`${viewer.savedPlaces.includes(selected.id) ? "Unsave" : "Save"} ${selected.name}`} aria-pressed={viewer.savedPlaces.includes(selected.id)} onClick={() => { const added = togglePlace(selected.id); playSound(added ? "save" : "remove"); }}><BookmarkSimple size={22} weight={viewer.savedPlaces.includes(selected.id) ? "fill" : "regular"} /></button></div>
-        <div className="ex-location-name ex-reactive" key={selected.id}><span>{selected.country}</span><h2>{selected.name}</h2></div>
-        <div className="ex-coordinates ex-reactive">{coordinates(selected.lat, selected.lon)}<ArrowUpRight size={17} /></div>
-        <div className="ex-location-photo ex-reactive"><img key={selected.image} src={asset(selected.image)} alt={`Destination photograph of ${selected.name}`} /><span>{selected.id === "miami" ? "THE OPENING GATEWAY" : "A DIFFERENT POINT OF VIEW"}</span></div>
+        <div className="ex-location-top"><span>{selected.country}</span><button data-sound-owned aria-label={`${viewer.savedPlaces.includes(selected.id) ? "Unsave" : "Save"} ${selected.name}`} aria-pressed={viewer.savedPlaces.includes(selected.id)} onClick={() => { const added = togglePlace(selected.id); playSound(added ? "save" : "remove"); notify(added ? `${selected.name} saved to My World.` : `${selected.name} removed from saved places.`); }}><BookmarkSimple size={20} weight={viewer.savedPlaces.includes(selected.id) ? "fill" : "regular"} /></button></div>
+        <div className="ex-location-name ex-reactive" key={selected.id}><h2>{selected.name}</h2></div>
+        <div className="ex-location-photo ex-reactive"><img key={selected.image} src={asset(selected.image)} alt={`Destination photograph of ${selected.name}`} /><span>Destination photograph</span></div>
         <p className="ex-location-tagline">{selected.tagline}</p>
-        <button className="ex-location-explore" onClick={() => section.current?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" })}>Explore {selected.name}<ArrowDown size={21} /></button>
-        <div className="ex-location-inventory ex-reactive"><span><strong>{String(available.length).padStart(2, "0")}</strong> playable stories</span><span><strong>{durationLabel(available.reduce((sum, video) => sum + video.duration, 0))}</strong> to discover</span></div>
-        {selected.id === "miami" && <button className="button button-outline city-entry-link" data-sound="destination" onClick={() => { setCityRequest(value => value + 1); document.getElementById("city-experience")?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" }); }}>Step inside Miami <ArrowUpRight size={18}/></button>}
+        <div className="ex-location-inventory"><span><strong>{available.length}</strong> {available.length === 1 ? "available story" : "available stories"}</span><span><strong>{totalRuntime(available.reduce((sum, video) => sum + video.duration, 0))}</strong> total</span></div>
+        <button className="ex-location-explore" onClick={() => section.current?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" })}>Explore {selected.name}<ArrowDown size={20} /></button>
+        {featured && <button className="world-quick-watch" onClick={() => onWatch(featured)}><Play weight="fill" size={16}/><span>Watch a story <small>{featured.title} · {durationLabel(featured.duration)}</small></span><ArrowUpRight size={18}/></button>}
+        {selected.id === "miami" && <button className="city-entry-link" data-sound="destination" aria-busy={cityEntering} onClick={enterCity}>Step inside Miami <ArrowUpRight size={17}/></button>}
       </aside>
     </div>
-    <div className="ex-world-tools"><span><Path size={18} /> CULTURE IS A CONNECTION.</span><div><button data-sound-owned aria-pressed={linksVisible} onClick={() => updateRoute("/world", params, { links: linksVisible ? "off" : "" })}><span className={linksVisible ? "ex-toggle-light is-on" : "ex-toggle-light"} />Cultural connections {linksVisible ? "on" : "off"}</button><button data-sound-owned onClick={() => { const options = places.filter(place => place.id !== selected.id); selectPlace(options[Math.floor(Math.random() * options.length)].id); }}><Shuffle size={17} />Take a different turn</button></div></div>
-    <nav className="ex-destinations" aria-label="Choose a destination" data-sound-owned>{places.map((place, index) => <button key={place.id} onClick={() => selectPlace(place.id)} aria-current={selected.id === place.id ? "location" : undefined}><span>{String(index + 1).padStart(2, "0")}</span>{place.name}<ArrowUpRight size={18} /></button>)}</nav>
+    <div className="ex-world-tools"><span>{coordinates(selected.lat, selected.lon)}</span><div><button data-sound-owned aria-pressed={linksVisible} onClick={() => updateRoute("/world", params, { links: linksVisible ? "off" : "" })}><span className={linksVisible ? "ex-toggle-light is-on" : "ex-toggle-light"} />Connections {linksVisible ? "on" : "off"}</button><button data-sound-owned onClick={() => { const options = places.filter(place => place.id !== selected.id); selectPlace(options[Math.floor(Math.random() * options.length)].id); }}><Shuffle size={17} />Surprise me</button></div></div>
+    {featured && <section className="world-featured" ref={section} aria-label={`Featured story from ${selected.name}`}>
+      <div className="world-featured-media"><img src={asset(featured.poster)} alt={`${featuredUsesPlacePhoto ? 'Destination photograph used as the cover' : 'Cover artwork'} for ${featured.title}`} loading="lazy"/><button onClick={() => onWatch(featured)} aria-label={`Watch ${featured.title}`}><Play weight="fill" size={26}/></button><span>{featured.tags.includes("full film") ? "Guest film" : "Preview study"} · {durationLabel(featured.duration)}</span></div>
+      <div className="world-featured-copy"><p className="world-featured-context">Start with a story from {selected.name}.</p><h2>{featured.title}</h2><p>{featured.description}</p><div className="world-featured-actions"><button className="button button-primary" onClick={() => onWatch(featured)}><Play weight="fill" size={17}/>Watch this story</button><a href={href(`/film/${featured.id}`)}>Read the context <ArrowUpRight size={18}/></a></div><span className="world-content-note">{featured.tags.includes("full film") ? "An available guest film. Credits accompany the film." : featuredUsesPlacePhoto ? "A destination photograph introduces the place. The film is an original motion study, not documentary footage." : "An original motion study. The cover is designed artwork, not documentary footage."}</span></div>
+    </section>}
     <Suspense fallback={null}><CityExperience openRequest={cityRequest} placeId={selected.id} reducedMotion={reducedMotion} onWatch={onWatch}/></Suspense>
-    <Suspense fallback={null}><DestinationBridge placeId={selected.id} onWatch={onWatch} onQueue={onPlayJourney}/></Suspense>
-    {connections.length > 0 && <section className="ex-connections" aria-label={`Cultural connections from ${selected.name}`}><div className="ex-connection-intro"><span className="ex-kicker">FOLLOW THE THREAD</span><h2>{selected.name}<br /><span>is a beginning.</span></h2><p>These lines connect shared themes and collections. Choose a place to see its perspective.</p></div><div className="ex-connection-links">{connections.map((connection, index) => <button className="ex-connection-link ex-reactive" key={connection.place.id} data-sound-owned onClick={() => { selectPlace(connection.place.id); root.current?.scrollIntoView({ block: "start", behavior: reducedMotion ? "instant" : "smooth" }); }}><img src={asset(connection.place.image)} alt="" loading="lazy" /><span className="ex-connection-number">0{index + 1}</span><span className="ex-connection-copy"><small>{connection.reason}</small><strong>{connection.place.name}</strong><span>{connection.films} playable {connection.films === 1 ? "story" : "stories"}</span></span><ArrowUpRight size={23} /></button>)}</div></section>}
-    <section className="ex-results" ref={section}>
-      <div className="ex-section-heading"><div><span className="ex-kicker">STORIES WITH A SENSE OF PLACE</span><h2>Inside {selected.name}<span>({String(items.length).padStart(2, "0")})</span></h2></div><a href={href("/time-machine", { place: selected.id, category: category === "All" ? undefined : category })}>Travel through time <ArrowUpRight size={19} /></a></div>
+    <section className="ex-results" ref={featured ? undefined : section}>
+      <div className="ex-section-heading"><div><h2>Inside {selected.name}<span>({String(items.length).padStart(2, "0")})</span></h2></div><a href={href("/time-machine", { place: selected.id, category: category === "All" ? undefined : category })}>Explore through time <ArrowUpRight size={19} /></a></div>
       <p className="ex-place-description">{selected.description}</p>
       <ChannelFilter value={category} onChange={value => updateRoute("/world", params, { category: value === "All" ? "" : value })} />
-      <StoryCards items={items} onWatch={onWatch} empty={`There are no ${category.toLowerCase()} stories in this ${selected.name} collection yet. The next chapter is still being made.`} onReset={() => updateRoute("/world", params, { category: "" })} />
+      <StoryCards items={items} onWatch={onWatch} empty={`No stories match ${category === 'All' ? 'this destination' : `the ${category} filter`} in the ${selected.name} collection yet. Explore another category.`} onReset={() => updateRoute("/world", params, { category: "" })} />
       <div className="ex-footnote"><Waveform size={19} /><p>Films are preview selections. Destination photographs introduce the place; they are not frames from the films. <a href={href("/credits")}>Sources & credits <ArrowUpRight size={13} /></a></p></div>
     </section>
+    {connections.length > 0 && <section className="ex-connections" aria-label={`Cultural connections from ${selected.name}`}><div className="ex-connection-intro"><h2>Follow the thread.</h2><p>A shared theme, a collection, another perspective. See why these places connect.</p><a className="world-journey-link" href={href('/journey', { place: selected.id })}>Build a journey <ArrowUpRight size={18}/></a></div><div className="ex-connection-links">{connections.map((connection) => <button className="ex-connection-link" key={connection.place.id} data-sound-owned onClick={() => { selectPlace(connection.place.id); root.current?.scrollIntoView({ block: "start", behavior: reducedMotion ? "instant" : "smooth" }); }}><img src={asset(connection.place.image)} alt="" loading="lazy" /><span className="ex-connection-copy"><small>{connection.reason}</small><strong>{connection.place.name}</strong><span>{connection.films} available {connection.films === 1 ? "story" : "stories"}</span></span><ArrowUpRight size={23} /></button>)}</div></section>}
+    <details className="world-thread-tools" open={threadOpen} onToggle={event => { setThreadOpen(event.currentTarget.open); if (event.currentTarget.open) setThreadLoaded(true); }}><summary><Path size={22}/><span>Make your own connection<small>Compare two destinations or browse the story orbit.</small></span><Plus size={21}/></summary>{threadLoaded && <Suspense fallback={<p className="world-thread-loading">Preparing the connections…</p>}><DestinationBridge placeId={selected.id} onWatch={onWatch} onQueue={onPlayJourney}/></Suspense>}</details>
   </div>;
 }
 
 const eras: Record<string, { title: string; place: string; image: string; shorthand: string }> = {
-  "1930s": { title: "THE SHAPE OF TOMORROW", place: "MIAMI GATEWAY", image: "/media/miami.jpg", shorthand: "Design / 01" },
-  "1970s": { title: "A NEW FREQUENCY", place: "NEW YORK", image: "/media/new-york.jpg", shorthand: "Music / 02" },
-  "1990s": { title: "UNDERGROUND SIGNALS", place: "LONDON", image: "/media/london.jpg", shorthand: "Culture / 03" },
+  "1930s": { title: "THE SHAPE OF TOMORROW", place: "MIAMI GATEWAY", image: "/media/miami.webp", shorthand: "Design / 01" },
+  "1970s": { title: "A NEW FREQUENCY", place: "NEW YORK", image: "/media/new-york.webp", shorthand: "Music / 02" },
+  "1990s": { title: "UNDERGROUND SIGNALS", place: "LONDON", image: "/media/london.webp", shorthand: "Culture / 03" },
   "2000s": { title: "CINEMA OPENS UP", place: "OPEN CINEMA", image: "/media/big-buck-bunny.jpg", shorthand: "Movies / 04" },
   "2010s": { title: "INDEPENDENT WORLDS", place: "OPEN CINEMA", image: "/media/sintel.jpg", shorthand: "Movies / 05" },
-  "now": { title: "THE NEXT CHAPTER", place: "EVERYWHERE", image: "/media/rio.jpg", shorthand: "Culture / 06" },
+  "now": { title: "THE NEXT CHAPTER", place: "EVERYWHERE", image: "/media/rio.webp", shorthand: "Culture / 06" },
 };
 
 function EraComparison({ current, comparison, category, place, onChange, onClose, onWatch }: { current: string; comparison: string; category: string; place?: string; onChange: (id: string) => void; onClose: () => void; onWatch: ExploreProps["onWatch"] }) {
@@ -159,6 +182,7 @@ function EraComparison({ current, comparison, category, place, onChange, onClose
 }
 
 export function TimeMachinePage({ params, reducedMotion, onWatch, onPlayJourney }: ExploreProps) {
+  const [capsuleToolsLoaded, setCapsuleToolsLoaded] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const fan = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; pointer: number; axis: DragAxis; moved: boolean } | null>(null);
@@ -196,10 +220,10 @@ export function TimeMachinePage({ params, reducedMotion, onWatch, onPlayJourney 
     if (!cancel && gesture.axis === 'horizontal' && Math.abs(delta) > 45) selectPeriod(periods[Math.max(0, Math.min(periods.length - 1, index + (delta < 0 ? 1 : -1)))].id);
   };
   return <div ref={root} className={`ex-page ex-time ${reducedMotion ? "ex-reduced" : ""}`}>
-    <header className="ex-page-label"><span>THE TIME MACHINE / 02</span><a href={href("/world", { place: place?.id, category: category === "All" ? undefined : category })}>SPACE IS ONLY HALF THE STORY <ArrowUpRight size={16} /></a></header>
+    <header className="ex-page-label"><span>Time Machine</span><a href={href("/world", { place: place?.id, category: category === "All" ? undefined : category })}>Explore a place <ArrowUpRight size={16} /></a></header>
     <section className="ex-time-room" aria-label="Explore cultural eras">
-      <div className="ex-time-heading"><h1>GOOD STORIES<br />DON’T EXPIRE.</h1><p>Rewind the culture.<br />Discover what shaped the now.</p></div>
-      <div className="ex-era-toolbar"><div className="ex-view-switch" role="group" aria-label="Era presentation" data-sound-owned><button aria-pressed={!contactSheet} onClick={() => updateRoute("/time-machine", params, { view: "" })}><Stack size={16} /> Film strip</button><button aria-pressed={contactSheet} onClick={() => updateRoute("/time-machine", params, { view: "contact" })}><SquaresFour size={16} /> Contact sheet</button></div><span>{contactSheet ? "SIX OPEN DOORS. CHOOSE YOUR MOMENT." : "DRAG THE FILMS / USE ARROW KEYS"}</span></div>
+      <div className="ex-time-heading"><h1>GOOD STORIES<br />DON’T EXPIRE.</h1><p>Explore the period. <br />Understand the context.</p></div>
+      <div className="ex-era-toolbar"><div className="ex-view-switch" role="group" aria-label="Era presentation" data-sound-owned><button aria-pressed={!contactSheet} onClick={() => updateRoute("/time-machine", params, { view: "" })}><Stack size={16} /> Film strip</button><button aria-pressed={contactSheet} onClick={() => updateRoute("/time-machine", params, { view: "contact" })}><SquaresFour size={16} /> Contact sheet</button></div><span><strong>{period.label}</strong> · {playable.length} available {playable.length === 1 ? 'story' : 'stories'}<small>{contactSheet ? 'Choose an era below' : 'Drag sideways or use the arrow keys'}</small></span></div>
       <div className={`ex-era-room ${contactSheet ? "ex-era-room--contact" : ""}`} role="group" aria-label="Era explorer. Drag horizontally or use left and right arrow keys to select an era." tabIndex={0} data-sound-owned
         onPointerDown={event => { if (event.button === 0 && !contactSheet && !drag.current) { drag.current = { x: event.clientX, y: event.clientY, pointer: event.pointerId, axis: 'pending', moved: false }; dragClick.current = false; } }} onPointerMove={moveScrub} onPointerLeave={event => { if (drag.current && !drag.current.moved) finishScrub(event, true); }} onPointerUp={event => finishScrub(event)} onPointerCancel={event => finishScrub(event, true)}
         onClickCapture={event => { if (dragClick.current && event.detail !== 0) { event.preventDefault(); event.stopPropagation(); dragClick.current = false; } }}
@@ -217,9 +241,8 @@ export function TimeMachinePage({ params, reducedMotion, onWatch, onPlayJourney 
       </div>
       <div className="ex-time-controls" data-sound-owned><button disabled={index === 0} onClick={() => selectPeriod(periods[index - 1].id)} aria-label="Previous era"><ArrowLeft size={22} /></button><div className="ex-time-rail"><label htmlFor="era-selector">DRAG TO TRAVEL <span>{String(index + 1).padStart(2, "0")} / {String(periods.length).padStart(2, "0")}</span></label><input id="era-selector" type="range" min="0" max={periods.length - 1} step="1" value={index} aria-valuetext={period.label} onChange={event => selectPeriod(periods[Number(event.target.value)].id)} /><div className="ex-time-ticks" aria-hidden="true">{periods.map(era => <span key={era.id} className={period.id === era.id ? "active" : ""}>{era.label}</span>)}</div></div><button disabled={index === periods.length - 1} onClick={() => selectPeriod(periods[index + 1].id)} aria-label="Next era"><ArrowRight size={22} /></button></div>
     </section>
-    <Suspense fallback={null}><TimeCapsules periodId={period.id} onWatch={onWatch} onQueue={onPlayJourney}/></Suspense>
     <section className="ex-results ex-era-results">
-      <div className="ex-era-introduction ex-reactive"><div><span className="ex-kicker">{period.id === "now" ? "CONTEMPORARY CULTURE" : `AN OPEN WINDOW TO THE ${period.label.toUpperCase()}`}</span><h2>{current.title}</h2></div><p>{period.description}</p></div>
+      <div className="ex-era-introduction ex-reactive"><div><h2>{current.title}</h2><span className="ex-period-context">{period.label} · {['1930s', '1970s', '1990s'].includes(period.id) ? 'Contemporary studies exploring an earlier period' : period.id === 'now' ? 'Contemporary culture' : 'Films grouped by original release era'}</span></div><p>{period.description}</p></div>
       <div className="ex-chapter-actions" data-sound-owned><span>{durationLabel(playable.reduce((sum, video) => sum + video.duration, 0))} OF PLAYABLE CULTURE</span><div><button disabled={!playable.length || capsuleSaved} onClick={() => { const created = createJourney(capsuleName, playable.map(video => video.id)); if (!created) { notify(`You have ${MAX_SAVED_JOURNEYS} saved journeys. Remove one in My World, then save again.`); return; } playSound("save"); }}>{capsuleSaved ? <Check size={17} /> : <BookmarkSimple size={17} />}{capsuleSaved ? "Time capsule saved" : "Save a time capsule"}</button><button aria-expanded={Boolean(comparePeriod)} onClick={() => updateRoute("/time-machine", params, { compare: comparePeriod ? "" : periods[(index + 1) % periods.length].id })}><ArrowsLeftRight size={18} />{comparePeriod ? "Close comparison" : "Compare another era"}</button></div></div>
       {comparePeriod && <EraComparison current={period.id} comparison={comparePeriod.id} category={category} place={place?.id} onChange={value => updateRoute("/time-machine", params, { compare: value }, "era")} onClose={() => updateRoute("/time-machine", params, { compare: "" })} onWatch={onWatch} />}
       <div className="ex-time-filters"><ChannelFilter value={category} onChange={value => updateRoute("/time-machine", params, { category: value === "All" ? "" : value })} /><label className="ex-place-filter">DESTINATION<select aria-label="Filter eras by destination" value={place?.id || ""} onChange={event => updateRoute("/time-machine", params, { place: event.target.value })}><option value="">Everywhere</option>{places.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label></div>
@@ -227,5 +250,6 @@ export function TimeMachinePage({ params, reducedMotion, onWatch, onPlayJourney 
       <StoryCards items={items} onWatch={onWatch} empty={`This combination has no stories yet. Explore another era, or open the whole ${period.label} collection.`} resetLabel="Clear filters" onReset={() => updateRoute("/time-machine", params, { category: "", place: "" })} />
       <div className="ex-footnote"><span className="ex-footnote-star" aria-hidden="true">✳</span><p>Time Machine explores cultural context and release eras. Newly created studies are clearly identified; selecting a decade never turns contemporary video into historical footage.</p></div>
     </section>
+    <details className="world-thread-tools time-thread-tools" onToggle={event => { if (event.currentTarget.open) setCapsuleToolsLoaded(true); }}><summary><Stack size={22}/><span>Open a capsule. Make an era relay.<small>Inspect a story’s two dates or connect a sequence of eras.</small></span><Plus size={21}/></summary>{capsuleToolsLoaded && <Suspense fallback={<p className="world-thread-loading">Preparing the time capsules…</p>}><TimeCapsules periodId={period.id} onWatch={onWatch} onQueue={onPlayJourney}/></Suspense>}</details>
   </div>;
 }

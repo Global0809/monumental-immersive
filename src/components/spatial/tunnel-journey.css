@@ -109,3 +109,54 @@ html[data-motion=reduced] .tunnel-material-reflection{display:none}
 html[data-motion=reduced] .tunnel-stop-list i,html[data-motion=reduced] .tunnel-stop-list button::after{transform:none!important;transition:none!important}
 html[data-motion=reduced] .tunnel-stop-list button:not([aria-current=step])::after{display:none}
 html[data-motion=reduced] .tunnel-destination-preview{transform:translateX(-50%)!important;transition:none!important}
+/* Account for the reading distance of the CSS3D exhibits. */
+.tunnel-panel-copy p{font-size:18px;line-height:1.6}
+.tunnel-panel-top{font-size:15px}
+.tunnel-panel-top button{font-size:12px;min-height:44px}
+.tunnel-enter-room{font-size:16px}
+.tunnel-story-copy small{font-size:12px;letter-spacing:.025em}
+.tunnel-story-copy>span{font-size:14px}
+.tunnel-panel-foot{font-size:11px;letter-spacing:.06em}
+.tunnel-browse{font-size:13px;min-height:44px}
+@media(max-width:979px),(max-height:659px){
+ .tunnel-panel-copy p{font-size:16px;line-height:1.65}
+ .tunnel-panel-top{font-size:12px}
+ .tunnel-panel-top button{font-size:11px}
+ .tunnel-enter-room{font-size:14px;min-height:48px}
+ .tunnel-story-copy small{font-size:11px}
+ .tunnel-story-copy>span{font-size:12px}
+ .tunnel-panel-foot{font-size:10px}
+}
+.tunnel-mobile-station{display:none}
+.tunnel-stop-list button{flex-shrink:0}
+@media(min-width:600px) and (max-height:540px){
+ .tunnel-journey[data-compact=true] .tunnel-hero-checkpoint,.tunnel-journey[data-compact=true] .tunnel-hero{min-height:calc(100svh - 68px)}
+ .tunnel-journey[data-compact=true] .tunnel-hero{padding:28px 5vw 92px}
+ .tunnel-hero-copy{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px 32px;width:100%;max-width:none}
+ .tunnel-hero h1{grid-column:1;grid-row:1/4;font-size:56px;line-height:.88;margin:0}
+ .tunnel-hero-copy>p{grid-column:2;font-size:14px;line-height:1.5;margin:0;max-width:32ch}
+ .tunnel-entry-button{grid-column:2;min-width:0;min-height:48px;padding:13px 16px;font-size:11px}
+ .tunnel-browse{grid-column:2;margin:0;min-height:44px;padding:0}
+ .tunnel-hero-caption,.tunnel-hero-bottom{display:none}
+}
+@media(max-width:760px){
+ .tunnel-stop-list{display:none}
+ .tunnel-mobile-station{display:block;flex:1;min-width:0;min-height:48px;border:0;border-bottom:1px solid #efeee930;background:#080909;color:#efeee9;padding:10px 8px;font:500 14px/1.4 'DM Sans Variable',sans-serif;pointer-events:auto}
+ .tunnel-step-buttons{flex:none;gap:0}
+ .tunnel-step-buttons button{width:44px;height:48px}
+ .tunnel-wayfinder{height:68px;gap:14px}
+ .tunnel-journey[data-compact=true] .tunnel-hero-checkpoint,.tunnel-journey[data-compact=true] .tunnel-hero{min-height:calc(100svh - 68px)}
+ .tunnel-journey[data-compact=true] .tunnel-hero{padding-top:92px;isolation:isolate}
+ .tunnel-hero::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,#080909e8 0%,#080909a8 39%,#08090938 75%,transparent),linear-gradient(0deg,#08090980,transparent 40%)}
+ .tunnel-hero-bottom{bottom:98px}
+}
+@media(min-width:600px) and (max-width:760px) and (max-height:540px){
+ .tunnel-journey[data-compact=true] .tunnel-hero{padding-top:28px}
+ .tunnel-hero-copy{max-width:none}
+ .tunnel-hero h1{font-size:50px;margin:0}
+ .tunnel-hero-copy>p{font-size:13px}
+}
+@media(min-width:600px) and (max-height:540px){
+ .tunnel-journey[data-compact=true] .tunnel-hero{isolation:isolate}
+ .tunnel-hero::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,#08090940,#08090950 35%,#080909cc 65%,#080909a0)}
+}

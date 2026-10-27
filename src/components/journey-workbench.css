@@ -8,3 +8,26 @@
 @media(max-width:760px){.journey-stop{display:grid;grid-template-columns:26px 66px minmax(0,1fr);gap:13px 10px}.journey-stop-number{grid-column:1;grid-row:1}.journey-stop-picture{grid-column:2;grid-row:1;width:66px}.journey-stop-info{grid-column:3;grid-row:1;min-width:0}.journey-stop-info>a{font-size:25px}.journey-stop-info small{font-size:9px}.journey-stop-info>span{font-size:10px}.journey-reorder{grid-column:2/4;grid-row:2;margin-left:0}.journey-remove{grid-column:3;grid-row:2;justify-self:end;margin:0}.journey-stop-picture img{height:100%;object-fit:cover}}
 .journey-draft-status{display:flex;align-items:center;justify-content:space-between;gap:24px;margin:20px 0 30px;padding:17px 0;border-block:1px solid var(--line)}.journey-draft-status p{font-size:12px;line-height:1.6;max-width:650px}.journey-draft-status p span{display:block;color:var(--muted);font-size:11px;margin-top:3px}.journey-draft-status>.text-link{flex-shrink:0;min-height:44px;font-size:12px}.journey-reorder button,.journey-remove{width:44px;height:44px}.journey-stop-info small{font-size:11px}.journey-stop-info>span,.journey-edit-bar>span,.journey-edit-bar label{font-size:12px}.journey-copy-save{min-height:44px;font-size:12px}.journey-page[data-motion=reduced] .journey-duration-track>i{transition:none}
 @media(max-width:760px){.journey-draft-status{align-items:flex-start;flex-direction:column;gap:10px}.journey-stop-info small{font-size:10px;line-height:1.5}.journey-stop-info>span{font-size:11px}.journey-departure .journey-copy-save{flex:1;min-width:150px}}
+/* The itinerary is a working edit, with one clear sequence and optional pacing. */
+.journey-page .page-title-row{align-items:center;margin-bottom:36px}
+.journey-page .page-title-row h1{font-size:clamp(56px,7vw,100px);line-height:.94}
+.journey-page .page-title-row p{font-size:16px;line-height:1.65;max-width:48ch;margin-top:20px}
+.journey-page .journey-compass{width:100px;height:100px;opacity:.45}
+.journey-builder{scroll-margin-top:calc(var(--header) + 24px)}
+.journey-builder-note p{font-size:13px;line-height:1.65}
+.journey-manifest-heading{align-items:center;margin:40px 0 24px}
+.journey-manifest-heading h2{font-size:clamp(32px,3.8vw,52px);line-height:1.05;scroll-margin-top:calc(var(--header) + 28px)}
+.journey-manifest-heading p{font-size:14px;line-height:1.6;margin-top:12px;color:var(--muted)}
+.journey-manifest-heading>div:last-child{width:230px}.journey-manifest-heading small{font-size:12px}
+.journey-pacing{margin:0 0 24px;border-block:1px solid var(--line)}
+.journey-pacing>summary{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:58px;font-size:14px;cursor:pointer;list-style:none}
+.journey-pacing>summary::-webkit-details-marker{display:none}.journey-pacing>summary svg{transition:transform .2s}.journey-pacing[open]>summary svg{transform:rotate(45deg)}
+.journey-pacing>.expansion-panel{margin:0;padding:24px 0 28px;border-top:1px solid var(--line)}
+.journey-pacing .expansion-panel h3{font-size:28px;line-height:1.1}.journey-pacing .expansion-note{font-size:12px}
+.journey-stops{position:relative}.journey-stop-number{position:relative;color:var(--muted);font-size:32px}
+.journey-stop:not(:last-child)::after{content:'';position:absolute;top:calc(50% + 20px);bottom:calc(-50% + 20px);left:22px;width:1px;background:var(--accent);opacity:.45;pointer-events:none}
+.journey-stop-info>p.journey-stop-connection{font-size:12px;line-height:1.55;color:var(--muted);margin:3px 0 0;max-width:60ch}
+.journey-stop-info>p.journey-stop-connection::before{content:'';display:inline-block;width:13px;height:1px;background:var(--accent);margin:0 8px 4px 0}
+.journey-departure{padding-top:5px}.journey-departure>span{font-size:12px}
+@media(max-width:760px){.journey-page .page-title-row h1{font-size:clamp(52px,12vw,74px)}.journey-page .journey-compass{display:none}.journey-page .page-title-row p{font-size:15px}.journey-builder-note p{font-size:13px}.journey-manifest-heading>div:last-child{width:100%}.journey-manifest-heading h2{font-size:36px}.journey-stop:not(:last-child)::after{left:12px;top:52px;bottom:-26px}.journey-stop-info>p.journey-stop-connection{font-size:12px}.journey-pacing>summary{font-size:13px}.journey-reorder,.journey-remove{position:relative;z-index:1}.journey-departure>.button{font-size:12px;min-height:48px}}
+@media(prefers-reduced-motion:reduce){.journey-pacing>summary svg{transition:none}}

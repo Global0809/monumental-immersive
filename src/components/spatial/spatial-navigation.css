@@ -1,30 +1,6 @@
-/* Persistent wayfinding belongs to the architecture, outside moving content. */
-.spatial-wayfinding{position:absolute;top:calc(var(--header) + 18px);inset-inline:var(--spatial-room-gutter,5vw);max-width:1480px;margin-inline:auto;z-index:8;display:flex;align-items:center;gap:24px;height:44px;padding-left:14px;background:#080909eb;color:var(--text);font-size:12px}
-.spatial-return{display:flex;align-items:center;gap:10px;min-height:44px;color:var(--muted)}
-.spatial-return:hover{color:var(--text)}
-.spatial-current{display:flex;align-items:center;gap:10px;padding-left:24px;border-left:1px solid var(--line);min-width:0}
-.spatial-current span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.spatial-current i{width:6px;height:6px;background:var(--accent);border-radius:50%;flex:none}
-.spatial-adjacent{display:flex;gap:10px;margin-left:auto;flex:none}
-.spatial-adjacent a{min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;gap:14px;border:1px solid #efeee92a;background:#080909e8;padding:0 13px}
-.spatial-adjacent a:hover{border-color:var(--accent);color:var(--accent)}
-.spatial-dock{position:fixed;z-index:32;bottom:max(16px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);display:flex;gap:4px;padding:7px;background:#111212f5;box-shadow:0 12px 32px #0008;max-width:calc(100% - 32px);width:max-content}
-.spatial-dock a{position:relative;min-height:54px;min-width:86px;padding:10px 17px;display:flex;align-items:center;gap:9px;font-size:12px;color:#c0c1bb;transition:color .18s,background .18s}
-.spatial-dock a:hover{background:#efeee90a;color:#efeee9}
-.spatial-dock a[aria-current]{color:var(--accent);background:#ff4d3210}
-.spatial-dock a i{position:absolute;height:2px;bottom:0;inset-inline:17px;background:var(--accent);transform:scaleX(0);transition:transform .25s}
-.spatial-dock a[aria-current] i,.spatial-dock a[data-pending=true] i{transform:scaleX(1)}
-.spatial-dock a[data-pending=true]{color:#efeee9;background:#efeee90d}
-.spatial-dock a svg{flex:none}
-.spatial-dock a:focus-visible,.spatial-wayfinding a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.monumental-spatial main{padding-bottom:100px}
-.monumental-spatial .site-footer{padding-bottom:130px}
-.monumental-spatial .back-to-top{bottom:104px}
-.monumental-spatial[data-spatial-room=atrium] .spatial-home-content[data-travelling=true]{opacity:1;transform:none}
-.monumental-spatial .spatial-world[data-home=false] .spatial-world-vignette{background:rgba(8,9,9,.66);transition:background .2s}
-html[data-spatial-passage=departing] .monumental-spatial .spatial-world .spatial-world-vignette{background:rgba(8,9,9,.16)}
-html[data-spatial-passage] .spatial-wayfinding,html[data-spatial-passage] .spatial-home-utility,html[data-spatial-passage] .site-footer,html[data-spatial-passage] .spatial-world-labels{visibility:hidden}
-.spatial-passage{position:fixed;z-index:9;inset:var(--header) 0 100px;pointer-events:none;opacity:0;visibility:hidden;display:grid;place-items:center;overflow:hidden}
+/* Navigation remains in the shared header. This layer owns only the brief
+   route handoff; Passage station navigation stays inside that experience. */
+.spatial-passage{position:fixed;z-index:9;inset:var(--header) 0 0;pointer-events:none;opacity:0;visibility:hidden;display:grid;place-items:center;overflow:hidden}
 .spatial-passage[data-active=true]{visibility:visible}
 .spatial-passage-frames{position:absolute;inset:8% 12%;perspective:800px}
 .spatial-passage-frames i{position:absolute;inset:0;border:1px solid #efeee93b;box-shadow:inset 0 0 0 1px #08090966;transform:translateZ(0)}
@@ -40,12 +16,7 @@ html[data-spatial-passage] .spatial-wayfinding,html[data-spatial-passage] .spati
 .spatial-passage[data-cross-room=false] .spatial-passage-frames{display:none}
 html[data-spatial-passage=arriving] .spatial-passage{pointer-events:none}
 html[data-spatial-passage=arriving] .spatial-passage button{pointer-events:none}
-@media(max-width:1000px){.spatial-dock{gap:2px}.spatial-dock a{flex-direction:column;min-width:76px;gap:6px;padding:9px 12px;font-size:10px}.spatial-wayfinding{gap:16px}.spatial-current{padding-left:16px}.spatial-adjacent a span{max-width:120px}}
-@media(max-width:620px){
- .spatial-wayfinding{top:calc(var(--header) + 8px);gap:12px;font-size:11px}.spatial-return span{display:none}.spatial-return{justify-content:center;min-width:36px}.spatial-current{padding-left:12px;flex:1}.spatial-adjacent{gap:5px}.spatial-adjacent a{padding:0;min-width:38px;min-height:44px}.spatial-adjacent a span{display:none}
- .spatial-dock{bottom:0;left:0;right:0;width:100%;max-width:none;transform:none;padding:6px 6px calc(7px + env(safe-area-inset-bottom));gap:0;justify-content:space-between;background:#111212;box-shadow:0 -8px 25px #0005}
- .spatial-dock a{padding:8px 2px;min-width:0;flex:1;font-size:9px;gap:7px;min-height:56px}.spatial-dock a svg{width:19px;height:19px}.spatial-dock a i{inset-inline:10px}.spatial-dock a:first-child{flex:.9}.spatial-dock a:nth-child(3){flex:1.2}.spatial-dock a span{white-space:nowrap}
- .spatial-passage{bottom:80px}.spatial-passage-frames{inset:18% 5%}.spatial-passage-caption{padding:22px 18px}.spatial-passage-caption strong{font-size:44px}.spatial-passage-origin{font-size:11px}
-}
-@media(prefers-reduced-motion:reduce){.spatial-dock a,.spatial-dock a i,.spatial-world-vignette{transition:none}}
-html[data-motion=reduced] .spatial-dock a,html[data-motion=reduced] .spatial-dock a i{transition:none}
+
+.monumental-spatial[data-spatial-room=atrium] .spatial-home-content[data-travelling=true]{opacity:1;transform:none}
+html[data-spatial-passage] .spatial-home-utility,html[data-spatial-passage] .site-footer,html[data-spatial-passage] .spatial-world-labels{visibility:hidden}
+@media(max-width:620px){.spatial-passage-frames{inset:18% 5%}.spatial-passage-caption{padding:22px 18px}.spatial-passage-caption strong{font-size:44px}.spatial-passage-origin{font-size:11px}}

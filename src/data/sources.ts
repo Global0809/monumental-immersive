@@ -1,4 +1,3 @@
-import { assetUrl } from '../services/assets';
 export const photoCredits = [
   {
     id: "london",
@@ -7,7 +6,7 @@ export const photoCredits = [
     license: "CC BY-SA 3.0",
     licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0",
     url: "https://commons.wikimedia.org/wiki/File:London_Skyline_(125508655).jpeg",
-    path: assetUrl("/media/london.jpg"),
+    path: "/media/london.webp",
   },
   {
     id: "miami",
@@ -16,7 +15,7 @@ export const photoCredits = [
     license: "CC0",
     licenseUrl: "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
     url: "https://commons.wikimedia.org/wiki/File:Miami,_Florida,_Skyline_4.jpg",
-    path: assetUrl("/media/miami.jpg"),
+    path: "/media/miami.webp",
   },
   {
     id: "new-york",
@@ -25,7 +24,7 @@ export const photoCredits = [
     license: "CC BY-SA 4.0",
     licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0",
     url: "https://commons.wikimedia.org/wiki/File:View_of_Empire_State_Building_from_Rockefeller_Center_New_York_City_dllu_(cropped).jpg",
-    path: assetUrl("/media/new-york.jpg"),
+    path: "/media/new-york.webp",
   },
   {
     id: "rio",
@@ -34,7 +33,7 @@ export const photoCredits = [
     license: "CC BY-SA 3.0",
     licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0",
     url: "https://commons.wikimedia.org/wiki/File:Cidade_Maravilhosa.jpg",
-    path: assetUrl("/media/rio.jpg"),
+    path: "/media/rio.webp",
   },
   {
     id: "puerto-rico",
@@ -43,7 +42,7 @@ export const photoCredits = [
     license: "CC BY-SA 3.0",
     licenseUrl: "https://creativecommons.org/licenses/by-sa/3.0",
     url: "https://commons.wikimedia.org/wiki/File:2013_Old_San_Juan_01.JPG",
-    path: assetUrl("/media/puerto-rico.jpg"),
+    path: "/media/puerto-rico.webp",
   },
   {
     id: "tokyo",
@@ -52,6 +51,6 @@ export const photoCredits = [
     license: "CC BY-SA 3.0",
     licenseUrl: "http://creativecommons.org/licenses/by-sa/3.0/",
     url: "https://commons.wikimedia.org/wiki/File:Skyscrapers_of_Shinjuku_2009_January.jpg",
-    path: assetUrl("/media/tokyo.jpg"),
+    path: "/media/tokyo.webp",
   },
 ];

@@ -10,9 +10,16 @@
     />
     <title>Monumental — Culture without borders.</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      html,body{margin:0;background:#080909;color:#efeee9}
+      .boot-shell{min-height:100svh;display:grid;place-content:center;gap:18px;padding:24px;box-sizing:border-box;font:16px/1.6 system-ui,sans-serif;text-align:center}
+      .boot-shell svg{margin:auto;width:52px;height:52px;fill:none;stroke:#efeee9;stroke-width:2}
+      .boot-shell p{margin:0;color:#b6b8b3}.boot-shell a{color:#ff4d32}
+      .boot-shell button{font:inherit;min-height:44px;padding:10px 22px;background:#ff4d32;color:#080909;border:0;cursor:pointer}
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="boot-shell" role="status"><svg viewBox="0 0 52 52" aria-hidden="true"><path d="M8 43V9l18 22L44 9v34M8 9l18 34L44 9"/></svg><p>Opening Monumental…</p><noscript>This experience needs JavaScript to show films and interactive places. Enable JavaScript, then refresh.</noscript></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

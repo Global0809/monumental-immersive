@@ -10,7 +10,11 @@ $env:BASE_URL = 'http://127.0.0.1:5174'
 node tests/browser/verify-catalogue-interactions.mjs
 ```
 
-`verify-ui` covers navigation, categories, search, saves, journeys, local playback and narrow layouts. `verify-moments` covers transcripts and saved timestamps. `verify-catalogue-interactions` covers composition input, search debounce, filter reset, Back and sorting. The root `npm test` command validates catalogue/media data, transcript parsing, moments and sound preference persistence.
+`verify-ui` covers the current editorial header and grouped Index, keyboard focus wrapping and Escape, the Sound Studio popover, catalogue query/filter/reset/layout/sort controls, real local playback and resume, persistent saves, journey reorder/save/edit, all Index destinations, mobile filters and navigation, and site/OS reduced-motion preferences. It uses fresh isolated browser contexts without seeding user state, waits for observable UI/media conditions rather than fixed sleeps, and derives catalogue size from the rendered collection. The desktop viewport is 1280×720 and the mobile layout viewport is 390×844. Screenshots and a JSON report (including failures and uncaught application errors) are written to `test-results/ui/`. This is functional and layout regression coverage, not a frame-rate or visual-quality certification. Set `PLAYWRIGHT_CHANNEL` to select another installed Chromium channel if needed.
+
+`verify-moments` covers transcripts and saved timestamps. `verify-catalogue-interactions` covers composition input, search debounce, filter reset, Back and sorting. The root `npm test` command validates catalogue/media data, transcript parsing, moments and sound preference persistence.
+
+The UI suite begins with normal motion, then keeps the verified reduced-motion preference on for the route matrix and mobile layout checks. Those checks establish reachability and document width; they do not certify every 3D interaction or touch-device performance. Use the performance and scene-specific checks below for those concerns.
 
 `verify-recovery.mjs` targets the Vite development server because it blocks named source modules to simulate lazy-loading failures. It also tests blocked storage, recovery focus, shortcuts and transition cleanup. Read its environment options before running.
 

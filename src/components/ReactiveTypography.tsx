@@ -3,7 +3,7 @@ import gsap from 'gsap';
 import { typePressure, typeWordAt } from '../services/typeMotion';
 import './reactive-typography.css';
 
-const headings = 'h1,h2,h3,h4,h5,h6,.spatial-room-caption';
+const headings = 'h1,h2,[data-text-motion="display"]';
 const copy = 'p,li,dt,dd,blockquote,figcaption,label,small';
 const controls = 'a,button,summary';
 const excluded = '.ms-player-dialog,.player-companion,.spatial-passage,.page-loading,.notice-region,input,textarea,select,[contenteditable],svg,[aria-live],[role="status"],[data-text-motion="off"]';
@@ -55,12 +55,14 @@ export default function ReactiveTypography({ path, reducedMotion, paused }: {
       if (!available(el) || entered.has(el)) return;
       if (document.documentElement.dataset.spatialPassage) return;
       entered.add(el);
-      const display = el.matches(headings);
-      const animation = el.animate(display ? [
-        { translate: '0 9px', rotate: '1 0 0 12deg', opacity: .72 },
-        { translate: '0 0', rotate: '1 0 0 0deg', opacity: 1 },
-      ] : [{ opacity: .86 }, { opacity: 1 }], {
-        duration: el.matches('h1') ? 680 : display ? 450 : 280,
+      // Reading text stays still. One arrival belongs to the page title; section
+      // headings retain local pointer feedback without staging every paragraph.
+      if (!el.matches('h1')) return;
+      const animation = el.animate([
+        { translate: '0 8px', opacity: .85 },
+        { translate: '0 0', opacity: 1 },
+      ], {
+        duration: 480,
         easing: 'cubic-bezier(.16,1,.3,1)',
       });
       animations.set(el, animation);
@@ -81,7 +83,7 @@ export default function ReactiveTypography({ path, reducedMotion, paused }: {
         intersection.unobserve(el); visible.delete(el); animations.get(el)?.cancel();
         animations.delete(el); registered.delete(el);
       }
-      root.querySelectorAll<HTMLElement>(`${headings},${copy}`).forEach(el => {
+      root.querySelectorAll<HTMLElement>(headings).forEach(el => {
         if (registered.has(el) || el.closest(excluded) || !el.textContent?.trim()) return;
         // Animate a prose block once, rather than also animating its nested labels.
         if (!el.matches(headings) && el.parentElement?.closest(`${headings},${copy}`)) return;

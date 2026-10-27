@@ -11,10 +11,11 @@ const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 /** Approach, hold for reading, then pass the physical station. Fully reversible. */
 export function tunnelChapterZ(index: number, progress: number) {
   const z = tunnelStationZ(index), p = clamp(progress);
-  if (p < .38) return lerp(z + 25, z + 12.8, p / .38);
-  if (p < .74) return lerp(z + 12.8, z + 12.2, (p - .38) / .36);
-  if (index === TUNNEL_STATION_IDS.length - 1) return z + 12.2;
-  return lerp(z + 12.2, tunnelStationZ(index + 1) + 25, (p - .74) / .26);
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+  if (p < .38) return lerp(z + 25, z + 12.8, smooth(p / .38));
+  // A real reading plateau: the camera does not creep while the visitor reads.
+  if (p < .74 || index === TUNNEL_STATION_IDS.length - 1) return z + 12.8;
+  return lerp(z + 12.8, tunnelStationZ(index + 1) + 25, smooth((p - .74) / .26));
 }
 
 export type TunnelFrame = { z: number; progress: number; active: number; compact: boolean };

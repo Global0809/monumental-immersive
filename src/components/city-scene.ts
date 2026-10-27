@@ -13,7 +13,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   let renderer: THREE.WebGLRenderer;
   try { renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'low-power' }); }
   catch { options.onUnavailable(); return { select() {}, dispose() {} }; }
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.65));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, window.innerWidth < 700 ? 1.25 : 1.5));
   renderer.setClearColor(0x090a0a); renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
   host.appendChild(renderer.domElement);
@@ -32,8 +32,8 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   const chrome = new THREE.MeshStandardMaterial({ color: 0xb6beb8, metalness: .95, roughness: .25 });
   const pale = new THREE.MeshStandardMaterial({ color: 0xc3c9c0, metalness: .7, roughness: .37 });
   const black = new THREE.MeshStandardMaterial({ color: 0x161c18, metalness: .68, roughness: .43 });
-  const red = new THREE.MeshStandardMaterial({ color: 0xe93e27, metalness: .42, roughness: .3, emissive: 0x4c0800 });
-  const signal = new THREE.MeshBasicMaterial({ color: 0xff5137 });
+  const red = new THREE.MeshStandardMaterial({ color: 0xff4d32, metalness: .42, roughness: .38, emissive: 0x260500 });
+  const signal = new THREE.MeshBasicMaterial({ color: 0xff4d32 });
   const glass = new THREE.MeshStandardMaterial({ color: 0x18332f, metalness: .8, roughness: .23 });
   const lineMaterial = new THREE.LineBasicMaterial({ color: 0x56605a, transparent: true, opacity: .38 });
   const miniature = new THREE.Group(); scene.add(miniature);
@@ -150,7 +150,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
     tween?.kill();
     const values = { x: anchor.x, y: anchor.y, z: anchor.z, radius, azimuth: index === 1 ? .27 : .47, elevation: index === 1 ? .32 : .54 };
     if (options.reducedMotion || immediate) Object.assign(cameraState, values);
-    else tween = gsap.to(cameraState, { ...values, duration: 1.15, ease: 'power3.inOut', overwrite: true, onUpdate: invalidate });
+    else tween = gsap.to(cameraState, { ...values, duration: .9, ease: 'power3.inOut', overwrite: true, onUpdate: invalidate });
     invalidate();
   }
   let drag: { id: number; x: number; y: number; azimuth: number; moved: boolean; axis: DragAxis } | null = null;

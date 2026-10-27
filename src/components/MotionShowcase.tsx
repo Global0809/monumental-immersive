@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import gsap from 'gsap';
+import { useEffect, useReducer, useRef, useState } from 'react';
+import { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft';
+import { ArrowRight } from '@phosphor-icons/react/dist/csr/ArrowRight';
+import { ArrowUpRight } from '@phosphor-icons/react/dist/csr/ArrowUpRight';
+import { ArrowCounterClockwise } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise';
+import { Pause } from '@phosphor-icons/react/dist/csr/Pause';
+import { Play } from '@phosphor-icons/react/dist/csr/Play';
 import { playSound } from '../services/audio';
+import { motionMediaTransition, motionMediaLabels, motionMediaCanSeek } from '../services/motionMedia';
 import './motion-showcase.css';
 const films = [
  ['01-living-atlas','The living atlas','A world of culture, connected.','/world'],
@@ -23,51 +29,135 @@ const films = [
  ['18-take-me-somewhere','Take me somewhere','Turn your available time into a journey.','/journey'],
 ];
 const selections: Record<string,number[]> = { '/':[8,0,1,16,17], '/world':[0,5,14,2], '/time-machine':[1,5], '/search':[13,3,6], '/premium':[4], '/my-world':[7,12], '/settings':[10,11,9], '/journey':[17,2], '/live':[2,0] };
-const asset = (name:string) => `${import.meta.env.BASE_URL}motion/${name}`;
-export default function MotionShowcase({ path, reducedMotion }: { path:string; reducedMotion:boolean }) {
- const selectedFilms = path === '/motion' ? films : (selections[path] || (path.includes('wavemakers') ? [16] : path.startsWith('/film/') ? [15,3] : path.startsWith('/category/') ? [6,3] : [])).map(i=>films[i]);
- const [selected,setSelected]=useState(0); const [paused,setPaused]=useState(reducedMotion); const [visible,setVisible]=useState(false); const [blocked,setBlocked]=useState(false); const [active,setActive]=useState(false); const [failed,setFailed]=useState(false); const [needsPlay,setNeedsPlay]=useState(false);
- const [elapsed,setElapsed]=useState(0);const [duration,setDuration]=useState(0);
- const host=useRef<HTMLElement>(null);const stage=useRef<HTMLDivElement>(null);const media=useRef<HTMLVideoElement>(null);const progress=useRef<HTMLSpanElement>(null);const playAttempt=useRef(0);
- const film=selectedFilms[selected] || selectedFilms[0];
- const filmId=film?.[0];
- const requestPlayback=useCallback((v:HTMLVideoElement)=>{
-  const attempt=++playAttempt.current;
-  v.muted=true;v.defaultMuted=true;
-  if(!v.getAttribute('src'))v.src=asset(filmId+'.mp4');
-  void v.play().catch((error:unknown)=>{
-   // An old clip or an offscreen pause can abort play; neither is a user pause.
-   if(attempt!==playAttempt.current || media.current!==v || !v.isConnected)return;
-   const name=error instanceof Error?error.name:'';
-   if(name==='AbortError')return;
-   if(name==='NotSupportedError')setFailed(true);
-   else setNeedsPlay(true);
-  });
- },[filmId]);
- useEffect(()=>{if(reducedMotion)setPaused(true);},[reducedMotion]);
- useEffect(()=>{const el=stage.current;if(!el)return;const observer=new IntersectionObserver(([entry])=>setVisible(entry.isIntersecting && entry.intersectionRatio>=.1),{threshold:[0,.1]});observer.observe(el);const visibility=()=>setBlocked(document.hidden || Boolean(document.querySelector('.ms-player-dialog[open]')));const playback=(e:Event)=>setBlocked(document.hidden || (e as CustomEvent).detail.active);document.addEventListener('visibilitychange',visibility);window.addEventListener('monumental:playback',playback);visibility();return()=>{observer.disconnect();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('monumental:playback',playback);};},[]);
- useEffect(()=>{setFailed(false);setNeedsPlay(false);setActive(false);setElapsed(0);setDuration(0);if(progress.current)progress.current.style.transform='scaleX(0)';},[filmId]);
- useEffect(()=>{
-  const v=media.current;if(!v||!filmId)return;
-  if(visible&&!paused&&!blocked&&!failed&&!needsPlay)requestPlayback(v);
-  else v.pause();
-  return()=>{++playAttempt.current;v.pause();if(!v.isConnected){v.removeAttribute('src');v.load();}};
- },[visible,paused,blocked,failed,needsPlay,filmId,requestPlayback]);
- useEffect(()=>{if(reducedMotion||!visible)return;const ctx=gsap.context(()=>gsap.fromTo('.motion-caption',{y:12,opacity:.2},{y:0,opacity:1,duration:.45,ease:'power3.out'}),host);return()=>ctx.revert();},[selected,reducedMotion,visible]);
- const Heading = path === "/motion" ? "h1" : "h2";
- if(!film)return null;
- function startPreview(){
-  const v=media.current;
-  setPaused(false);setNeedsPlay(false);setFailed(false);
-  if(v&&!blocked){if(failed){v.removeAttribute('src');v.load();}requestPlayback(v);}
- }
- function choose(index:number){const next=(index+selectedFilms.length)%selectedFilms.length;if(next===selected)return;setPaused(value=>reducedMotion||value);setNeedsPlay(false);setFailed(false);setSelected(next);playSound('select');}
- function inspectFrame(value:number){const v=media.current;if(!v||!duration)return;const time=Math.max(0,Math.min(duration,value));v.pause();setPaused(true);v.currentTime=time;setElapsed(time);if(progress.current)progress.current.style.transform=`scaleX(${time/duration})`;}
- const showPlay=paused||needsPlay||failed;
- return <section ref={host} className={'motion-showcase page-section'+(path==='/motion'?' motion-showcase--full':'')} aria-label="Experience in motion">
- {path==='/motion'&&<button className="button button-primary" onClick={()=>document.getElementById('material-lab')?.scrollIntoView({behavior:reducedMotion?'instant':'smooth'})}>Try the working sculpture ↘</button>}<header className="motion-heading"><div><span className="eyebrow">MONUMENTAL / IN MOTION</span><Heading>{path==='/motion'?'A WORLD OF':'SEE WHAT'}<br/><em>{path==='/motion'?'POSSIBILITIES.':'MOVES US.'}</em></Heading></div><p>Explore the ideas behind the experience.<br/>Motion concepts. Real possibilities.</p>{path!=='/motion'&&<a href="#/motion" className="text-link">Explore all 18 films ↗</a>}</header>
- <div className="motion-layout"><div className="motion-screen"><div ref={stage} className="motion-stage" data-cursor="WATCH"><video ref={media} key={film[0]} poster={asset(film[0]+'.jpg')} muted loop playsInline preload="none" aria-label={film[1]+' motion concept'} onPlaying={e=>{if(e.currentTarget===media.current){setActive(true);setNeedsPlay(false);}}} onPause={e=>{if(e.currentTarget===media.current)setActive(false);}} onWaiting={()=>setActive(false)} onError={e=>{if(e.currentTarget===media.current){setFailed(true);setActive(false);}}} onLoadedMetadata={e=>setDuration(Number.isFinite(e.currentTarget.duration)?e.currentTarget.duration:0)} onTimeUpdate={e=>{const v=e.currentTarget;setElapsed(v.currentTime);if(progress.current&&v.duration)progress.current.style.transform=`scaleX(${v.currentTime/v.duration})`;}}/><div className="motion-status"><i className={active?'is-playing':''}/>{active?'IN MOTION':failed?'PREVIEW UNAVAILABLE':showPlay?'PRESS PLAY':blocked||!visible?'PREVIEW READY':'LOADING MOTION'}<span>08 SEC / LOOP</span></div>{showPlay&&!blocked&&(!duration||elapsed===0||failed||needsPlay)&&<button className="motion-stage-play" data-sound-owned aria-label={(failed?'Retry ':'Play ')+film[1]+' preview'} onClick={()=>{startPreview();playSound('select');}}><span aria-hidden="true">{failed?'↻':'▶'}</span><strong>{failed?'Retry preview':'Play preview'}</strong><small>{reducedMotion?'Motion is optional · Play this film':'8-second motion loop'}</small></button>}<div className="motion-progress"><span ref={progress}/></div></div>
- <div className="motion-caption"><div><span className="motion-number">{String(selected+1).padStart(2,'0')} / {String(selectedFilms.length).padStart(2,'0')}</span><h3>{film[1]}</h3><p>{film[2]}</p></div><a className="text-link" href={'#'+film[3]}>Explore this idea ↗</a></div>
- <label className="motion-scrubber"><span>Inspect a frame</span><input type="range" min="0" max={duration||8} step="0.05" value={Math.min(elapsed,duration||8)} disabled={!duration||failed} aria-label={`Inspect ${film[1]} preview frame`} aria-valuetext={`${elapsed.toFixed(1)} seconds of ${duration.toFixed(1)} seconds`} onChange={event=>inspectFrame(Number(event.target.value))}/><output>{elapsed.toFixed(1)} / {(duration||8).toFixed(1)}s</output></label><div className="motion-controls" data-sound-owned>{selectedFilms.length>1&&<button onClick={()=>choose(selected-1)} aria-label="Previous motion film">←</button>}<button className="motion-play" aria-label={failed?'Retry motion preview':showPlay?'Play motion preview':'Pause motion preview'} aria-pressed={!showPlay} onClick={()=>{if(showPlay)startPreview();else setPaused(true);playSound('select');}}>{failed?'↻ Retry loop':showPlay?'▶ Play loop':'Ⅱ Pause loop'}</button>{selectedFilms.length>1&&<button onClick={()=>choose(selected+1)} aria-label="Next motion film">→</button>}<span>{failed?'Preview unavailable. Try Play again.':'Concept film · Silent preview'}</span></div></div>
- {selectedFilms.length>1&&<div className="motion-index" role="group" aria-label="Choose a motion film. Use arrow keys to browse." onKeyDown={event=>{const buttons=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button"));const focused=buttons.indexOf(event.target as HTMLButtonElement);if(focused<0)return;const next=event.key==="ArrowDown"||event.key==="ArrowRight"?focused+1:event.key==="ArrowUp"||event.key==="ArrowLeft"?focused-1:event.key==="Home"?0:event.key==="End"?buttons.length-1:null;if(next===null)return;event.preventDefault();const index=Math.max(0,Math.min(buttons.length-1,next));choose(index);buttons[index]?.focus();}}>{selectedFilms.map((f,i)=><button key={f[0]} aria-pressed={selected===i} onClick={()=>choose(i)} data-sound-owned><span>{String(i+1).padStart(2,'0')}</span><img src={asset(f[0]+'.jpg')} loading="lazy" alt=""/><strong>{f[1]}</strong><span aria-hidden="true">↗</span></button>)}</div>}</div><p className="motion-note">Visual concepts supplied for this preview. Some scenes illustrate future experiences; available features are accessible through “Explore this idea”.</p></section>;
+
+
+const asset = (name: string) => `${import.meta.env.BASE_URL}motion/${name}`;
+const conceptIndex = () => Math.max(0, films.findIndex(film => film[0] === new URLSearchParams(location.hash.split('?')[1] || '').get('concept')));
+
+export default function MotionShowcase({ path, reducedMotion }: { path: string; reducedMotion: boolean }) {
+  if (path === '/motion') return <MotionGallery reducedMotion={reducedMotion}/>;
+  const ids = selections[path] || (path.includes('wavemakers') ? [16] : path.startsWith('/film/') ? [15, 3] : path.startsWith('/category/') ? [6, 3] : []);
+  if (!ids.length) return null;
+  const film = films[ids[0]];
+  return <section className="motion-context page-section" aria-label="Related motion concept">
+    <a className="motion-context-image" href={`#/motion?concept=${film[0]}`} aria-label={`View ${film[1]} motion concept`}><img src={asset(film[0] + '.jpg')} alt="" loading="lazy"/><Play size={24} weight="fill"/></a>
+    <div><h2>{film[1]}</h2><p>{film[2]} A motion concept from the creative laboratory.</p></div>
+    <a className="text-link" href={`#/motion?concept=${film[0]}`}>Watch the concept <ArrowUpRight size={18}/></a>
+  </section>;
+}
+
+function MotionGallery({ reducedMotion }: { reducedMotion: boolean }) {
+  const [selected, setSelected] = useState(conceptIndex);
+  const [state, dispatch] = useReducer(motionMediaTransition, 'idle');
+  const [requested, setRequested] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [message, setMessage] = useState('');
+  const stage = useRef<HTMLDivElement>(null);
+  const media = useRef<HTMLVideoElement>(null);
+  const generation = useRef(0);
+  const film = films[selected];
+  const failed = state === 'failed' || state === 'unsupported';
+  const canSeek = motionMediaCanSeek(state, duration);
+
+  useEffect(() => {
+    const sync = () => setSelected(conceptIndex());
+    window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
+  }, []);
+
+  useEffect(() => {
+    generation.current += 1;
+    setRequested(false); setElapsed(0); setDuration(0); setMessage(''); dispatch('reset');
+  }, [selected]);
+
+  useEffect(() => {
+    const element = media.current;
+    if (!element || !requested) return;
+    const epoch = ++generation.current;
+    let alive = true;
+    if (!element.canPlayType('video/mp4; codecs="avc1.64001f"')) {
+      dispatch('unsupported');
+      setMessage('This browser cannot decode this preview. The poster and concept description remain available.');
+      return;
+    }
+    dispatch('request');
+    void element.play().catch((error: unknown) => {
+      if (!alive || epoch !== generation.current || media.current !== element) return;
+      const name = error instanceof Error ? error.name : '';
+      if (name === 'AbortError') return;
+      if (name === 'NotAllowedError') { dispatch('loaded'); setMessage('Your browser paused automatic playback. Press Play to continue.'); }
+      else { dispatch('failed'); setMessage('The preview could not be played. Retry the film, or explore its concept below.'); }
+    });
+    return () => { alive = false; generation.current += 1; element.pause(); };
+  }, [requested, attempt, selected]);
+
+  useEffect(() => {
+    const element = stage.current;
+    if (!element) return;
+    const pause = () => media.current?.pause();
+    const observer = new IntersectionObserver(([entry]) => { if (!entry?.isIntersecting) pause(); }, { threshold: 0 });
+    observer.observe(element);
+    const visibility = () => { if (document.hidden) pause(); };
+    const playback = (event: Event) => { if ((event as CustomEvent).detail?.active) pause(); };
+    document.addEventListener('visibilitychange', visibility);
+    window.addEventListener('monumental:playback', playback);
+    return () => { observer.disconnect(); document.removeEventListener('visibilitychange', visibility); window.removeEventListener('monumental:playback', playback); };
+  }, []);
+  useEffect(() => { if (reducedMotion) media.current?.pause(); }, [reducedMotion]);
+
+  function start() {
+    setMessage('');
+    if (!requested || failed) { setRequested(true); setAttempt(value => value + 1); return; }
+    const element = media.current;
+    if (element) void element.play().catch((error: unknown) => {
+      if (media.current !== element || (error instanceof Error && error.name === 'AbortError')) return;
+      dispatch('failed'); setMessage('The preview could not be played. Please retry.');
+    });
+  }
+  function choose(index: number) {
+    const next = (index + films.length) % films.length;
+    if (next === selected) return;
+    media.current?.pause();
+    setRequested(false); dispatch('reset'); setSelected(next); playSound('select');
+    const url = new URL(location.href); url.hash = `/motion?concept=${films[next][0]}`;
+    history.replaceState(history.state, '', url);
+  }
+  function inspectFrame(time: number) {
+    if (!media.current || !canSeek) return;
+    media.current.pause(); media.current.currentTime = time; setElapsed(time);
+  }
+  const toggleLabel = failed ? 'Retry preview' : state === 'playing' ? 'Pause preview' : 'Play preview';
+  return <section className="motion-showcase motion-showcase--full page-section" aria-label="Experience in motion">
+    <header className="motion-heading"><div><h1>Ideas in motion.</h1><p>{films.length} short visual treatments. An open sketchbook for the Monumental experience.</p></div><button className="text-link" onClick={() => document.getElementById('material-lab')?.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth' })}>Try the working sculpture <ArrowRight size={18}/></button></header>
+    <div className="motion-layout"><div className="motion-screen">
+      <div ref={stage} className={`motion-stage ${failed ? 'has-error' : ''}`} data-media-state={state}>
+        <img className="motion-poster" src={asset(film[0] + '.jpg')} alt=""/>
+        {requested && <video key={`${film[0]}-${attempt}`} ref={media} src={asset(film[0] + '.mp4')} muted loop playsInline preload="metadata" aria-label={`${film[1]} motion concept`}
+          className={duration > 0 && !failed ? 'is-decoded' : ''}
+          onLoadedMetadata={event => { if (event.currentTarget === media.current) setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0); }}
+          onLoadedData={event => { if (event.currentTarget === media.current) dispatch('loaded'); }}
+          onPlaying={event => { if (event.currentTarget !== media.current) return; dispatch('play'); setMessage(''); }} onPause={event => { if (event.currentTarget === media.current) dispatch('pause'); }} onWaiting={event => { if (event.currentTarget === media.current) dispatch('waiting'); }} onEnded={event => { if (event.currentTarget === media.current) dispatch('ended'); }}
+          onError={event => { if (event.currentTarget !== media.current) return; const code = event.currentTarget.error?.code; if (code === 1) return; dispatch('failed'); setMessage(code === 2 ? 'This preview could not load over your connection. Retry when you are ready.' : 'This preview could not be loaded or decoded. Retry, or explore the idea below.'); }}
+          onTimeUpdate={event => { if (event.currentTarget === media.current) setElapsed(event.currentTarget.currentTime); }}/>}
+        <div className="motion-status"><i className={state === 'playing' ? 'is-playing' : ''}/><span>{motionMediaLabels[state]}</span><span>Silent concept film</span></div>
+        {(state === 'idle' || failed) && <div className="motion-stage-invitation"><button className="motion-stage-play" aria-label={`${failed ? 'Retry' : 'Play'} ${film[1]} preview`} onClick={start}>{failed ? <ArrowCounterClockwise size={24}/> : <Play size={24} weight="fill"/>}<span>{failed ? 'Retry preview' : 'Play concept'}</span></button>{failed && <p role="status">{message}</p>}</div>}
+        {state === 'loading' && <div className="motion-loading" role="status">Preparing preview…</div>}
+        {canSeek && <div className="motion-progress" aria-hidden="true"><span style={{ transform: `scaleX(${elapsed / duration})` }}/></div>}
+      </div>
+      <div className="motion-caption"><div><h2>{film[1]}</h2><p>{film[2]}</p></div><a className="text-link" href={'#' + film[3]}>Explore the idea <ArrowUpRight size={18}/></a></div>
+      <div className="motion-controls">
+        <button onClick={() => choose(selected - 1)} aria-label="Previous motion film"><ArrowLeft size={19}/></button>
+        <button className="motion-play" onClick={() => { if (state === 'playing') media.current?.pause(); else start(); }} aria-label={toggleLabel}>{state === 'playing' ? <Pause size={16} weight="fill"/> : failed ? <ArrowCounterClockwise size={16}/> : <Play size={16} weight="fill"/>}<span>{toggleLabel}</span></button>
+        <button onClick={() => choose(selected + 1)} aria-label="Next motion film"><ArrowRight size={19}/></button>
+        <label className="motion-scrubber"><span className="sr-only">Inspect a frame</span><input type="range" min="0" max={duration || 1} step="0.05" value={Math.min(elapsed, duration || 1)} disabled={!canSeek} aria-label={`Inspect ${film[1]} preview frame`} aria-valuetext={canSeek ? `${elapsed.toFixed(1)} seconds of ${duration.toFixed(1)} seconds` : 'Preview not loaded'} onChange={event => inspectFrame(Number(event.target.value))}/><output>{canSeek ? `${elapsed.toFixed(1)} / ${duration.toFixed(1)}s` : '— / —'}</output></label>
+      </div>
+      {message && !failed && <p className="motion-note" role="status">{message}</p>}
+    </div>
+    <div className="motion-index" role="group" aria-label="Choose a motion film" onKeyDown={event => { const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button')); const index = buttons.indexOf(event.target as HTMLButtonElement); if (index < 0) return; const next = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? index + 1 : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? index - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : null; if (next === null) return; event.preventDefault(); const bounded = Math.max(0, Math.min(buttons.length - 1, next)); choose(bounded); buttons[bounded]?.focus(); }}>
+      {films.map((item, index) => <button key={item[0]} aria-pressed={selected === index} onClick={() => choose(index)}><span>{String(index + 1).padStart(2, '0')}</span><img src={asset(item[0] + '.jpg')} loading="lazy" alt=""/><strong>{item[1]}</strong>{selected === index && <Play size={13} weight="fill"/>}</button>)}
+    </div></div>
+    <p className="motion-note">These supplied concept films explore visual directions, including experiences still in development. They are distinct from the working experiments below.</p>
+  </section>;
 }

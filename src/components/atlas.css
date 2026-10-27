@@ -370,3 +370,36 @@
   .cultural-atlas .cultural-atlas__zoom button{width:44px;min-width:44px;height:44px;min-height:44px}
   .ex-globe .cultural-atlas .cultural-atlas__controls button{width:44px;min-width:44px;height:44px;min-height:44px}
 }
+
+/* Geographic pins never move to solve label collisions. Their text is placed
+   independently by the shared projection pass, with the selected place first. */
+.cultural-atlas .cultural-atlas__label {
+  transform: translateY(calc(-50% + var(--atlas-label-shift, 0px)));
+  background: #080909df;
+  font-size: 11px;
+  padding: 5px 7px;
+  text-shadow: none;
+  transition: opacity .15s;
+}
+.cultural-atlas .cultural-atlas__label small { font-size: 9px; letter-spacing: .05em; }
+.cultural-atlas .cultural-atlas__marker.is-selected .cultural-atlas__label { font-size: 15px; padding: 7px 9px; }
+.cultural-atlas .cultural-atlas__marker[data-label-collapsed=true]:not(:focus-visible):not(:hover) .cultural-atlas__label { opacity: 0; pointer-events: none; }
+.cultural-atlas .cultural-atlas__marker.is-selected .cultural-atlas__pin { box-shadow: 0 0 0 5px #ff4d3225; }
+.cultural-atlas .cultural-atlas__controls button { width: 40px; min-width: 40px; height: 44px; min-height: 44px; color: #b6b8b3; }
+.cultural-atlas .cultural-atlas__hint { font-size: 10px; color: #a9aaa6; letter-spacing: .03em; margin-right: 6px; }
+.cultural-atlas .cultural-atlas__destinations { font-size: 12px; }
+.cultural-atlas .cultural-atlas__destinations summary { min-height: 44px; }
+.cultural-atlas .cultural-atlas__destination-list { top: 44px; width: 230px; border-color: #ffffff30; border-radius: 0; padding: 8px; }
+.cultural-atlas .cultural-atlas__destination-list button { min-height: 44px; border-radius: 0; }
+.cultural-atlas .cultural-atlas__zoom { top: 50%; right: 0; transform: translateY(-50%); border: 0; backdrop-filter: none; background: #080909e8; }
+.cultural-atlas .cultural-atlas__zoom > span { font-size: 10px; }
+.cultural-atlas.is-approaching .cultural-atlas__marker:not(.is-selected),
+.cultural-atlas.is-approaching .cultural-atlas__zoom { opacity: 0; pointer-events: none; }
+.cultural-atlas__marker, .cultural-atlas__zoom { transition: opacity .25s; }
+@media(max-width:700px) {
+  .cultural-atlas .cultural-atlas__controls button { width: 44px; min-width: 44px; }
+  .cultural-atlas .cultural-atlas__hint { display: none; }
+  .cultural-atlas .cultural-atlas__zoom { right: 0; padding: 0; }
+  .cultural-atlas .cultural-atlas__zoom button { width: 40px; min-width: 40px; height: 44px; }
+  .cultural-atlas .cultural-atlas__destinations { min-width: 120px; }
+}

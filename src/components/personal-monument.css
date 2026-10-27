@@ -81,3 +81,13 @@
 @media(prefers-reduced-motion:reduce){.personal-monument__scene canvas,.personal-monument__piece,.personal-monument__toolbar button{transition:none}}
 .personal-monument__remove{margin-top:16px;padding-top:15px;border-top:1px solid var(--line);min-height:44px;font-size:12px;color:var(--muted)}.personal-monument__remove:hover{color:var(--text)}.personal-monument__toolbar button{width:44px;height:44px}.personal-monument__map-heading button{font-size:12px;min-height:44px}.personal-monument__toolbar p{font-size:11px;line-height:1.6}.personal-monument__storage{font-size:11px;line-height:1.7}
 @media(max-width:650px){.personal-monument__toolbar{padding-inline:0;gap:12px;flex-wrap:wrap}.personal-monument__toolbar p{font-size:11px;max-width:230px}.personal-monument__toolbar button{width:44px;height:44px}.personal-monument__map-heading>div{gap:15px}}
+/* Collection controls remain legible beside the sculpture. */
+.personal-monument__intro p,.personal-monument__detail>p{font-size:15px;line-height:1.65}
+.personal-monument__legend,.personal-monument__film-meta,.personal-monument__selected-title>span,.personal-monument__related>span,.personal-monument__arrangement legend,.personal-monument__arrangement>label,.personal-monument__storage,.personal-monument__reset-message{font-size:12px}
+.personal-monument__piece small,.personal-monument__journey small{font-size:11px}
+.personal-monument__piece strong,.personal-monument__related>a,.personal-monument__journey{font-size:14px}
+.personal-monument__arrangement fieldset button,.personal-monument__arrangement>button,.personal-monument__detail .button{font-size:13px;min-height:44px}
+.personal-monument__journey button{width:44px;height:44px}
+.personal-monument__journey li{padding-right:50px}
+.personal-monument__arrangement input{min-height:44px}
+.personal-monument__motion-note{font-size:12px;line-height:1.6}

@@ -42,7 +42,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   let state: SpatialSceneState = { entered: false, room: 'atrium', paused: false, reducedMotion: options.reducedMotion };
   let frame = getTunnelFrame(), preferences = getSpatialPreferences(), inspection = getTunnelInspection();
   let width = 1, height = 1, compact = false, ratio = 1;
-  let frameRequest = 0, lastTime = 0, elapsed = 0, innerScroll = 0, focus: string | null = null;
+  let frameRequest = 0, lastTime = 0, elapsed = 0, focus: string | null = null;
   let pointerX = 0, pointerY = 0, currentX = 0, currentY = 0, rotation = 0;
   let travel: Travel | null = null;
   let previousCameraZ = frame.z, travelSpeed = 0;
@@ -96,6 +96,8 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   const chrome = material(new THREE.MeshStandardMaterial({ color: 0xdce0dc, metalness: .99, roughness: .18 }));
   const satin = material(new THREE.MeshStandardMaterial({ color: 0x515a55, metalness: .94, roughness: .32 }));
   const graphite = material(new THREE.MeshStandardMaterial({ color: 0x121513, metalness: .72, roughness: .4 }));
+  const mineral = material(new THREE.MeshStandardMaterial({ color: 0x101311, metalness: .16, roughness: .82, envMapIntensity: .3 }));
+  const architecturalSatin = material(new THREE.MeshStandardMaterial({ color: 0x252c28, metalness: .58, roughness: .58, envMapIntensity: .3 }));
   const floorSurface = material(new THREE.MeshBasicMaterial({ color: 0x090b0a, toneMapped: false }));
   const signal = material(new THREE.MeshBasicMaterial({ color: RED, toneMapped: false }));
   const packetSurface = material(new THREE.MeshBasicMaterial({ color: 0xb76b56, transparent: true, opacity: .65, depthWrite: false, toneMapped: false }));
@@ -110,11 +112,11 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   // A bounded instanced shell is substantially cheaper than a room-sized collection
   // of independent rings. The small twists create depth without a rotating viewport.
   const architecture = new THREE.Group(); scene.add(architecture);
-  const ribShape = geometry(new THREE.TorusGeometry(8.35, .058, 6, 72));
-  const ribs: THREE.InstancedMesh<THREE.TorusGeometry, THREE.Material> = new THREE.InstancedMesh(ribShape, satin, 78);
+  const ribShape = geometry(new THREE.TorusGeometry(8.35, .07, 6, 64));
+  const ribs: THREE.InstancedMesh<THREE.TorusGeometry, THREE.Material> = new THREE.InstancedMesh(ribShape, mineral, 27);
   const ribMatrix = new THREE.Object3D();
-  for (let i = 0; i < 78; i++) {
-    ribMatrix.position.set(Math.sin(i * .17) * .2, 0, 16 - i * 3.15);
+  for (let i = 0; i < 27; i++) {
+    ribMatrix.position.set(Math.sin(i * .17) * .2, 0, 16 - i * 9.45);
     ribMatrix.rotation.set(0, 0, i * .025);
     ribMatrix.scale.set(1, .81 + Math.sin(i * .21) * .025, 1);
     ribMatrix.updateMatrix(); ribs.setMatrixAt(i, ribMatrix.matrix);
@@ -129,7 +131,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   const structuralShape = geometry(new THREE.ExtrudeGeometry(ribProfile, {
     depth: .32, bevelEnabled: true, bevelSegments: 1, steps: 1, bevelSize: .032, bevelThickness: .035, curveSegments: 20,
   }));
-  const structuralRibs = new THREE.InstancedMesh(structuralShape, chrome, 26 * 3);
+  const structuralRibs = new THREE.InstancedMesh(structuralShape, architecturalSatin, 26 * 3);
   const ribColor = new THREE.Color();
   for (let i = 0; i < 26; i++) for (let side = 0; side < 3; side++) {
     ribMatrix.position.set(Math.sin(i * .43) * .18, 0, 13 - i * 9.45);
@@ -139,7 +141,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
     structuralRibs.setColorAt(i * 3 + side, ribColor.setHex((i + side) % 4 === 0 ? 0x474d49 : 0xc5cbc6));
   }
   structuralRibs.instanceMatrix.needsUpdate = true; architecture.add(structuralRibs);
-  const struts = new THREE.InstancedMesh(boxShape, graphite, 26 * 4);
+  const struts = new THREE.InstancedMesh(boxShape, mineral, 26 * 4);
   for (let i = 0; i < 26; i++) for (let j = 0; j < 4; j++) {
     const a = j / 4 * Math.PI * 2 + Math.PI / 4;
     ribMatrix.position.set(Math.cos(a) * 7.7, Math.sin(a) * 6.1, 13 - i * 9.45);
@@ -147,16 +149,27 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
     ribMatrix.scale.set(.36, .18, 1.1); ribMatrix.updateMatrix(); struts.setMatrixAt(i * 4 + j, ribMatrix.matrix);
   }
   struts.instanceMatrix.needsUpdate = true; architecture.add(struts);
+  // Deep, matte coffers give the passage mass. Exhibits sit in open bays;
+  // the repeated thin rings no longer carry the entire architectural silhouette.
+  const vault = new THREE.InstancedMesh(boxShape, mineral, 26 * 3);
+  for (let bay = 0; bay < 26; bay++) for (let face = 0; face < 3; face++) {
+    const angle = face * Math.PI * 2 / 3 + Math.PI / 2;
+    ribMatrix.position.set(Math.cos(angle) * 8.62, Math.sin(angle) * 6.8, 9 - bay * 9.45);
+    ribMatrix.rotation.set(0, 0, angle - Math.PI / 2);
+    ribMatrix.scale.set(5.2, .38, 7.1); ribMatrix.updateMatrix();
+    vault.setMatrixAt(bay * 3 + face, ribMatrix.matrix);
+  }
+  vault.instanceMatrix.needsUpdate = true; architecture.add(vault);
   const railCurves: THREE.CatmullRomCurve3[] = [];
-  for (let rail = 0; rail < 8; rail++) {
+  for (let rail = 0; rail < 4; rail++) {
     const points: THREE.Vector3[] = [];
     for (let step = 0; step < 64; step++) {
-      const a = rail / 8 * Math.PI * 2 + step * .0135 + Math.sin(step * .075) * .1;
+      const a = rail / 4 * Math.PI * 2 + Math.PI / 4 + Math.sin(step * .075) * .04;
       points.push(new THREE.Vector3(Math.cos(a) * 8.2, Math.sin(a) * 6.55, 18 - step * 4));
     }
     const curve = new THREE.CatmullRomCurve3(points);
     railCurves.push(curve);
-    mesh(geometry(new THREE.TubeGeometry(curve, 128, rail % 4 === 1 ? .023 : .038, 4, false)), rail % 4 === 1 ? signal : satin, architecture);
+    mesh(geometry(new THREE.TubeGeometry(curve, 96, rail === 1 ? .016 : .026, 4, false)), rail === 1 ? signal : graphite, architecture);
   }
   // The floor has a few long inlays, never a dense wire grid behind the copy.
   const floor = mesh(geometry(new THREE.PlaneGeometry(18, 270)), floorSurface, architecture);
@@ -165,7 +178,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   box(architecture, [.023, .012, 260], [-.12, -5.63, -108], signal);
   box(architecture, [.023, .012, 260], [.12, -5.63, -108], signal);
   const seamPoints: number[] = [];
-  for (let i = 0; i < 50; i++) seamPoints.push(-7.3, -5.625, 18 - i * 5.1, 7.3, -5.625, 18 - i * 5.1);
+  for (let i = 0; i < 26; i++) seamPoints.push(-7.3, -5.625, 18 - i * 9.45, 7.3, -5.625, 18 - i * 9.45);
   const seamShape = geometry(new THREE.BufferGeometry()); seamShape.setAttribute('position', new THREE.Float32BufferAttribute(seamPoints, 3));
   architecture.add(new THREE.LineSegments(seamShape, seams));
 
@@ -182,7 +195,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   const gateSignalShape = geometry(new THREE.TorusGeometry(7.92, .018, 5, 16, .19));
   const gates = TUNNEL_STATION_IDS.map((_, index) => {
     const root = new THREE.Group(); root.position.z = tunnelStationZ(index) + 5; root.scale.y = .81; scene.add(root);
-    const leaves = new THREE.InstancedMesh(gateShape, chrome, 6);
+    const leaves = new THREE.InstancedMesh(gateShape, architecturalSatin, 6);
     const mechanisms = new THREE.InstancedMesh(boxShape, graphite, 12);
     const markings = new THREE.InstancedMesh(gateSignalShape, signal, 6);
     for (const part of [leaves, mechanisms, markings]) { part.instanceMatrix.setUsage(THREE.DynamicDrawUsage); part.frustumCulled = false; root.add(part); }
@@ -219,16 +232,16 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
 
   // Quiet solid signal packets follow existing rails, never additive sprites.
   // Absolute camera travel drives their phase, including reverse scrolling.
-  const packets = new THREE.InstancedMesh(boxShape, packetSurface, 16); packets.frustumCulled = false;
+  const packets = new THREE.InstancedMesh(boxShape, packetSurface, 8); packets.frustumCulled = false;
   packets.instanceMatrix.setUsage(THREE.DynamicDrawUsage); architecture.add(packets);
   const packetPosition = new THREE.Vector3(), packetTangent = new THREE.Vector3(), packetAxis = new THREE.Vector3(0, 0, 1);
   const packetMatrix = new THREE.Object3D();
   function updatePackets() {
     packets.visible = !state.reducedMotion && !compact && !preferences.cutaway;
     if (!packets.visible) return;
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 8; i++) {
       const rail = i % railCurves.length;
-      const t = THREE.MathUtils.euclideanModulo(Math.floor(i / 8) * .5 + rail * .071 + (12 - camera.position.z) / 252 * .7, 1);
+      const t = THREE.MathUtils.euclideanModulo(Math.floor(i / 4) * .5 + rail * .071 + (12 - camera.position.z) / 252 * .7, 1);
       railCurves[rail].getPointAt(t, packetPosition); railCurves[rail].getTangentAt(t, packetTangent);
       const distance = camera.position.z - packetPosition.z;
       packetMatrix.position.copy(packetPosition); packetMatrix.quaternion.setFromUnitVectors(packetAxis, packetTangent);
@@ -506,12 +519,13 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
   }
   function updatePreferences() {
     const previous = preferences; preferences = getSpatialPreferences();
-    ribs.material = preferences.cutaway ? ivory : satin;
+    ribs.material = preferences.cutaway ? ivory : mineral;
     structuralRibs.visible = !preferences.cutaway;
     struts.visible = !preferences.cutaway;
+    vault.visible = !preferences.cutaway;
     floor.visible = !preferences.cutaway;
-    key.intensity = 1.9 + preferences.light * .022;
-    scene.environmentIntensity = .5 + preferences.light * .006;
+    key.intensity = 1.35 + preferences.light * .016;
+    scene.environmentIntensity = .45 + preferences.light * .004;
     if (previous.quality !== preferences.quality) { adaptiveReduction = 0; resize(); }
     atmosphere.configure(height, ratio, compact, preferences.quality, preferences.light);
     requestFrame();
@@ -526,14 +540,16 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
     if (disposed || unavailable || state.paused || document.hidden) return;
     if (!cadence.ready(time)) { requestFrame(); return; }
     const rawDt = lastTime ? time - lastTime : 16.7, dt = Math.min(rawDt / 1000, .05); lastTime = time;
-    if (!state.reducedMotion && !inspection.expanded) elapsed += dt;
+    const isPassage = state.room === 'atrium';
+    if (isPassage && !state.reducedMotion && !inspection.expanded) elapsed += dt;
     if (rawDt < 90) { performanceAverage = lerp(performanceAverage, rawDt, .025); performanceSamples++; }
     if (performanceSamples > 170 && performanceAverage > 24 && adaptiveReduction < .3) {
       adaptiveReduction += .15; performanceSamples = 0; performanceAverage = 16.7; resize();
     }
     const ease = 1 - Math.exp(-dt * 7);
-    currentX = lerp(currentX, state.reducedMotion || compact || travel || inspection.expanded ? 0 : pointerX, ease);
-    currentY = lerp(currentY, state.reducedMotion || compact || travel || inspection.expanded ? 0 : pointerY, ease);
+    const reading = frame.active >= 0 && frame.progress >= .38 && frame.progress <= .74;
+    currentX = lerp(currentX, !isPassage || reading || state.reducedMotion || compact || travel || inspection.expanded ? 0 : pointerX, ease);
+    currentY = lerp(currentY, !isPassage || reading || state.reducedMotion || compact || travel || inspection.expanded ? 0 : pointerY, ease);
     let complete: (() => void) | null = null;
     if (travel) {
       const progress = clamp((time - travel.start) / travel.duration);
@@ -542,7 +558,7 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
     } else {
       // Direct assignment is intentional. Scroll reversal and restored positions
       // stay exactly aligned with the DOM checkpoint, with no second damped track.
-      camera.position.z = state.room === 'atrium' ? frame.z : roomZ(state.room) - innerScroll * 1.1;
+      camera.position.z = isPassage ? frame.z : roomZ(state.room);
       camera.position.x = currentX * (state.room === 'atrium' ? .13 : .06) + rotation * .2;
       camera.position.y = currentY * .08;
     }
@@ -595,17 +611,19 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
       }
     }
     atmosphere.points.position.set(0, -2.5, camera.position.z - 12);
-    atmosphere.points.visible = !state.reducedMotion;
-    if (!inspection.expanded) atmosphere.update(elapsed, dt, state.reducedMotion);
+    atmosphere.points.visible = isPassage && !state.reducedMotion;
+    if (isPassage && !inspection.expanded) atmosphere.update(elapsed, dt, state.reducedMotion);
     updatePanels(); renderer.render(scene, camera);
     if (!compact && !state.reducedMotion) cssRenderer.render(cssScene, camera);
     if (!ready) { ready = true; options.onProject?.([]); options.onReady(); }
     complete?.();
-    if (!state.reducedMotion || (travel && !travel.settled)) requestFrame();
+    // Editorial routes have their own globe / film / tools. Render their backdrop
+    // once and relinquish the GPU until a route transition actually needs it.
+    if ((isPassage && !state.reducedMotion) || (travel && !travel.settled)) requestFrame();
   }
 
   function pointerMove(event: PointerEvent) {
-    if (state.paused || state.reducedMotion || inspection.expanded || !event.isPrimary) return;
+    if (state.room !== 'atrium' || state.paused || state.reducedMotion || inspection.expanded || !event.isPrimary) return;
     pointerX = event.clientX / width * 2 - 1; pointerY = 1 - event.clientY / height * 2;
     const target = event.target instanceof Element ? event.target : null;
     if (!target?.closest('video,input,textarea,select,[contenteditable="true"],[role="dialog"],[data-atmosphere-protected]')) {
@@ -614,13 +632,13 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
     requestFrame();
   }
   function pointerDown(event: PointerEvent) {
-    if (event.button !== 0 || state.paused || state.reducedMotion || inspection.expanded || travel || !event.isPrimary) return;
+    if (state.room !== 'atrium' || event.button !== 0 || state.paused || state.reducedMotion || inspection.expanded || travel || !event.isPrimary) return;
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest('a,button,input,textarea,select,label,video,[role="dialog"],[role="slider"],[contenteditable="true"]')) return;
     pointerMove(event); atmosphere.input.press(); if (event.pointerType === 'touch') atmosphere.input.release();
   }
   function pointerUp(event: PointerEvent) { if (event.isPrimary) atmosphere.input.release(); }
-  function pointerReset() { pointerX = pointerY = 0; atmosphere.input.reset(); requestFrame(); }
+  function pointerReset() { pointerX = pointerY = 0; atmosphere.input.reset(); if (state.room === 'atrium') requestFrame(); }
   function pointerOut(event: PointerEvent) { if (!event.relatedTarget) pointerReset(); }
   function visibility() {
     lastTime = 0; cadence.reset(); atmosphere.input.reset();
@@ -669,14 +687,13 @@ export function createTunnelScene(host: HTMLElement, options: SpatialSceneOption
         if (travel) travel.done = null; travel = null; atmosphere.input.reset();
       }
       state = { ...next };
-      if (arrived || changed) innerScroll = 0;
       if (arrived && next.room === 'atrium') frame = { ...frame, z: 12, active: -1, progress: 0 };
       if (next.paused) { updatePanels(); cancelAnimationFrame(frameRequest); frameRequest = 0; }
       else { cadence.reset(); lastTime = 0; resize(); requestFrame(); }
       finishReduced?.();
     },
     setFocus(id) { focus = id; requestFrame(); },
-    setScroll(progress) { innerScroll = clamp(progress, 0, 1); requestFrame(); },
+    setScroll() { if (state.room === 'atrium') requestFrame(); },
     rotate(delta) { rotation = clamp(rotation + delta, -.8, .8); requestFrame(); },
     travelTo(id, done, duration = 1100) {
       if (disposed) return;

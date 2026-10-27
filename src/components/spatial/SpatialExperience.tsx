@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { go } from '../../services/router';
 import { playSound } from '../../services/audio';
 import {
@@ -17,12 +17,17 @@ export default function SpatialExperience({ path, reducedMotion, paused }: {
   const host = useRef<HTMLDivElement>(null);
   const labels = useRef<HTMLDivElement>(null);
   const controller = useRef<SpatialSceneController | null>(null);
+  // A direct link to a film or destination must not pay for the entire Passage.
+  // Once entered, keep one scene alive for return visits and camera handoffs.
+  const [sceneRequested, setSceneRequested] = useState(path === '/');
   const spatial = useSpatial();
   const room = spatialRoomForPath(path);
   const latest = useRef({ entered: spatial.entered || path !== '/', room, reducedMotion, paused });
   latest.current = { entered: spatial.entered || path !== '/', room, reducedMotion, paused };
+  useEffect(() => { if (path === '/') setSceneRequested(true); }, [path]);
 
   useEffect(() => {
+    if (!sceneRequested) return;
     let disposed = false;
     let frame = 0;
     let pageHeight = 1;
@@ -70,7 +75,7 @@ export default function SpatialExperience({ path, reducedMotion, paused }: {
       window.removeEventListener('monumental:spatial-rotate', rotate);
       controller.current?.destroy(); controller.current = null;
     };
-  }, []);
+  }, [sceneRequested]);
 
   useEffect(() => { if (path !== '/') enterSpatialWorld(); controller.current?.setState(latest.current); }, [path, reducedMotion, paused, spatial.entered]);
   useEffect(() => { controller.current?.setFocus(spatial.focus); }, [spatial.focus]);

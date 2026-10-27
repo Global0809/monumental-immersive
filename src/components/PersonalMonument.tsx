@@ -46,7 +46,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
   const [preferencesStored, setPreferencesStored] = useState(true);
   const [selectedKey, setSelectedKey] = useState('');
   const [filter, setFilter] = useState<'all' | Part['kind']>('all');
-  const [paused, setPaused] = useState(false);
+  const [paused, setPaused] = useState(true);
   const [entered, setEntered] = useState(false);
   const [ready, setReady] = useState(false);
   const [fallback, setFallback] = useState(false);
@@ -61,6 +61,10 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
   ], [viewer.savedPlaces, viewer.saved, viewer.journeys]);
   const visibleParts = filter === 'all' ? parts : parts.filter(part => part.kind === filter);
   const selected = visibleParts.find(part => part.key === selectedKey) || visibleParts[0];
+  // Large collections remain fully selectable without hundreds of overlapping
+  // meshes. Selecting any list item brings its stable group into the workshop.
+  const sculptureOffset = Math.floor(Math.max(0, parts.findIndex(part => part.key === selected?.key)) / 24) * 24;
+  const sculptureParts = useMemo(() => parts.slice(sculptureOffset, sculptureOffset + 24), [parts, sculptureOffset]);
   const selectedRef = useRef(selected?.key);
   selectedRef.current = selected?.key;
   const chooseRef = useRef<(key: string) => void>(() => {});
@@ -148,7 +152,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
         geometry.setIndex(indices); geometry.computeVertexNormals();
         return geometry;
       }
-      for (const [index, part] of parts.entries()) {
+      for (const [index, part] of sculptureParts.entries()) {
         const kindIndex = kindCounts[part.kind]++;
         let geometry: import('three').BufferGeometry;
         if (part.kind === 'place') geometry = new THREE.IcosahedronGeometry(.19, 2);
@@ -192,7 +196,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
         group.rotation.x += (targetX - group.rotation.x) * blend;
         group.rotation.y += (targetY - group.rotation.y) * blend;
         const spread = .65 + prefs.spacing / 100 * .75;
-        group.scale.setScalar(prefs.arrangement === 'unfolded' ? Math.min(1, 4.2 / (Math.ceil(parts.length / 4) * .65 * spread)) : 1);
+        group.scale.setScalar(prefs.arrangement === 'unfolded' ? Math.min(1, 4.2 / (Math.ceil(sculptureParts.length / 4) * .65 * spread)) : 1);
         let settling = Math.abs(targetY - group.rotation.y) + Math.abs(targetX - group.rotation.x) > .002;
         for (const { mesh, part, index, kindIndex } of meshes) {
           const count = Math.max(1, kindCounts[part.kind]);
@@ -200,7 +204,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
           const angle = kindIndex / count * Math.PI * 2 + .5;
           const selectedPart = part.key === selectedRef.current;
           if (prefs.arrangement === 'column') target.set(part.kind === 'place' ? Math.cos(angle) * 1.6 : 0, fraction * 2.5 * spread, part.kind === 'place' ? Math.sin(angle) * 1.2 : 0);
-          else if (prefs.arrangement === 'unfolded') target.set((index % 4 - 1.5) * .72 * spread, (Math.floor(index / 4) - (Math.ceil(parts.length / 4) - 1) / 2) * .65 * spread, part.kind === 'place' ? .2 : -.3);
+          else if (prefs.arrangement === 'unfolded') target.set((index % 4 - 1.5) * .72 * spread, (Math.floor(index / 4) - (Math.ceil(sculptureParts.length / 4) - 1) / 2) * .65 * spread, part.kind === 'place' ? .2 : -.3);
           else target.set(part.kind === 'place' ? Math.cos(angle) * 1.72 * spread : 0, part.kind === 'place' ? Math.sin(angle) * .95 * spread : fraction * 1.5 * spread, part.kind === 'place' ? Math.sin(angle * 2) * .65 : 0);
           if (selectedPart) target.z += .18;
           settling ||= mesh.position.distanceToSquared(target) > .0001;
@@ -273,10 +277,10 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
       };
     })().catch(() => { cleanup(); if (!disposed) setFallback(true); });
     return () => { disposed = true; cleanup(); };
-  }, [entered, parts]);
+  }, [entered, sculptureParts]);
 
   function reset() {
-    setPreferences(DEFAULTS); setPaused(false); actions.current?.reset();
+    setPreferences(DEFAULTS); setPaused(true); actions.current?.reset();
     setResetMessage('Arrangement reset. Your saved films, places and journeys are unchanged.');
     playSound('select');
   }
@@ -310,6 +314,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
             <div className="personal-monument__legend" aria-hidden="true"><span><i className="is-anchor"/>{counts.place} {counts.place === 1 ? 'anchor' : 'anchors'}</span><span><i className="is-segment"/>{counts.film} {counts.film === 1 ? 'segment' : 'segments'}</span><span><i className="is-thread"/>{counts.journey} {counts.journey === 1 ? 'thread' : 'threads'}</span></div>
           </div>
           <div className="personal-monument__toolbar"><p id={instructionsId}>Drag to rotate. Select a piece.<br/>Arrow keys rotate; Home resets the view. The list below selects every piece.</p><div><button aria-label="Rotate sculpture left" onClick={() => actions.current?.rotate(-.38)} disabled={fallback}><ArrowLeft size={17}/></button><button aria-label={paused || reducedMotion ? 'Start sculpture rotation' : 'Pause sculpture rotation'} aria-pressed={!paused && !reducedMotion} disabled={reducedMotion || fallback} onClick={() => setPaused(value => !value)}>{paused || reducedMotion ? <Play size={17}/> : <Pause size={17}/>}</button><button aria-label="Rotate sculpture right" onClick={() => actions.current?.rotate(.38)} disabled={fallback}><ArrowRight size={17}/></button></div></div>
+          {parts.length > 24 && <p className="personal-monument__motion-note">Showing pieces {sculptureOffset + 1}–{Math.min(parts.length, sculptureOffset + 24)} of {parts.length}. Select any piece in the list to bring its group into view.</p>}
           {reducedMotion && <p className="personal-monument__motion-note">Automatic rotation is off for reduced motion. Drag or use the arrow controls to inspect.</p>}
         </div>
         <div className="personal-monument__detail" id={detailId}>

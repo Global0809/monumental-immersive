@@ -71,6 +71,14 @@ test("journey never exceeds its actual time budget and uses free playable record
 test("a journey starts with its strongest metadata match", () => {
   assert.equal(buildJourney("Music", 15, "miami")[0].id, "miami-frequency");
 });
+test("a selected starting place leads even when its story is a different category", () => {
+  for (const place of places) {
+    const route = buildJourney("Music", 1, place.id);
+    const hasOpening = videos.some(video => video.places.includes(place.id) && video.status === 'available' && video.access === 'free' && video.src && video.duration <= 60);
+    if (hasOpening) assert.ok(route[0]?.places.includes(place.id), `${place.name} must be the first stop`);
+    assert.ok(route.reduce((total, video) => total + video.duration, 0) <= 60);
+  }
+});
 test("related viewing never recommends the same video or unavailable material", () => {
   const source = videos.find((v) => v.id === "miami-frequency")!;
   const related = relatedVideos(source);

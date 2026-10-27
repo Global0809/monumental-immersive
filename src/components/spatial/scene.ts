@@ -248,9 +248,9 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   const hitTargets: THREE.Mesh[] = [];
   const loader = new THREE.TextureLoader();
   const rasterPosters: Record<string, string> = {
-    world: '/media/miami.jpg', 'time-machine': '/motion/02-time-machine.jpg',
-    movies: '/media/sintel.jpg', music: '/media/puerto-rico.jpg',
-    culture: '/motion/06-deco-atlas.jpg', 'my-world': '/media/tokyo.jpg',
+    world: '/media/miami.webp', 'time-machine': '/motion/02-time-machine.jpg',
+    movies: '/media/sintel.jpg', music: '/media/puerto-rico.webp',
+    culture: '/motion/06-deco-atlas.jpg', 'my-world': '/media/tokyo.webp',
   };
   const screenWidth = 4.9, screenHeight = 3.18;
   const screenGeometry = ownGeometry(new THREE.PlaneGeometry(screenWidth, screenHeight));

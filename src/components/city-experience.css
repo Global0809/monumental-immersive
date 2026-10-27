@@ -6,3 +6,56 @@
 @media(prefers-reduced-motion:reduce){.city-location-list>button{transition:none}}
 
 .city-scene:focus-visible{outline:2px solid #ff4d32;outline-offset:-4px}
+
+/* A quiet optional change of scale, rather than a second page introduction. */
+.ex-world .city-experience { padding: 28px 0; border-block: 1px solid var(--line, #ffffff25); }
+.ex-world .city-intro { align-items: center; }
+.ex-world .city-intro h2 { font-size: clamp(30px, 3vw, 44px); line-height: 1.05; margin: 0 0 10px; text-transform: none; }
+.ex-world .city-intro p { font-size: 14px; line-height: 1.65; max-width: 54ch; }
+.ex-world .city-enter { min-height: 46px; font-size: 12px; }
+.city-workspace-header h3 { font-size: 38px; text-transform: none; }
+.city-workspace { scroll-margin-top: calc(var(--header, 82px) + 16px); }
+.city-workspace-header p { font-size: 13px; max-width: 60ch; }
+.city-story-location { font-size: 12px; color: var(--muted, #a9aaa6); }
+.city-story p { font-size: 14px; line-height: 1.65; color: #b6b8b3; }
+.city-story-meta { font-size: 12px; }
+.city-story-copy > .text-link { font-size: 12px; min-height: 44px; }
+.city-story-empty h4 { font-size: clamp(36px, 3.5vw, 50px); }
+.city-location-list strong { font-size: 14px; }
+.city-location-list small { font-size: 12px; color: #b6b8b3; }
+.city-location-list > button.is-selected { background: #202222; }
+.city-provenance { color: #a9aaa6; font-size: 12px; }
+.city-spatial-layout { grid-template-columns: minmax(0, 1.85fr) minmax(290px, 1fr); }
+.city-scene-corner { font-size: 10px; }
+.city-scene-help { font-size: 12px; }
+.city-scene-help span { font-size: 11px; color: #a9aaa6; }
+@media (max-width: 900px) {
+  .city-spatial-layout { grid-template-columns: minmax(0, 1.3fr) minmax(250px, 1fr); }
+  .city-scene { height: 560px; }
+}
+@media (min-width: 901px) and (max-height: 760px) {
+  .city-scene { height: 400px; }
+  .city-workspace-header { padding: 20px 24px 14px; }
+  .city-workspace-header h3 { font-size: 32px; }
+  .city-story-image { height: 110px; }
+  .city-story-copy { padding: 18px 20px; }
+  .city-story h4 { font-size: 32px; margin: 8px 0 12px; }
+  .city-story p { font-size: 12px; line-height: 1.65; }
+  .city-story-actions { margin: 14px 0 8px; }
+}
+@media (max-width: 680px) {
+  .ex-world .city-intro { display: block; }
+  .ex-world .city-intro h2 { font-size: 34px; }
+  .ex-world .city-enter { margin-top: 18px; font-size: 12px; }
+  .city-spatial-layout { display: flex; flex-direction: column; }
+  .city-scene { height: 330px; }
+  .city-workspace-header h3 { font-size: 30px; }
+  .city-workspace-header p { font-size: 12px; }
+  .city-workspace-header > .text-link { font-size: 12px; max-width: 80px; line-height: 1.4; gap: 6px; }
+  .city-workspace-header > .text-link svg { flex-shrink: 0; width: 15px; }
+  .city-story-image { height: 190px; }
+  .city-story-empty h4 { font-size: 38px; }
+  .city-story p { font-size: 14px; }
+  .city-provenance { font-size: 11px; }
+  .city-scene-corner > span { max-width: 130px; font-size: 9px; line-height: 1.5; }
+}

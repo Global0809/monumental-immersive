@@ -1,23 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import gsap from 'gsap';
-import { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft';
 import { ArrowRight } from '@phosphor-icons/react/dist/csr/ArrowRight';
-import { House } from '@phosphor-icons/react/dist/csr/House';
-import { GlobeHemisphereWest } from '@phosphor-icons/react/dist/csr/GlobeHemisphereWest';
-import { ClockCounterClockwise } from '@phosphor-icons/react/dist/csr/ClockCounterClockwise';
-import { FilmStrip } from '@phosphor-icons/react/dist/csr/FilmStrip';
-import { MusicNotes } from '@phosphor-icons/react/dist/csr/MusicNotes';
-import { Aperture } from '@phosphor-icons/react/dist/csr/Aperture';
-import { BookmarkSimple } from '@phosphor-icons/react/dist/csr/BookmarkSimple';
 import { commitRoute, href } from '../../services/router';
 import { playSound } from '../../services/audio';
-import { enterSpatialWorld, getSpatialState, setSpatialFocus, setSpatialTravelling, spatialPageLabel, spatialPortals, spatialRoomForPath, useSpatial } from '../../services/spatial';
+import { enterSpatialWorld, getSpatialState, setSpatialFocus, setSpatialTravelling, spatialPortals, spatialRoomForPath, useSpatial } from '../../services/spatial';
 import { spatialPassagePlan } from '../../services/spatialNavigation';
 import type { SpatialSceneController } from './scene';
+import { editorialPageLabel } from '../GlobalNavigation';
 import './spatial-navigation.css';
 
-const rooms = [{ id: 'atrium', route: '/', title: 'The Passage', icon: House },
-  ...spatialPortals.map((portal, index) => ({ ...portal, title: ['World', 'Time Machine', 'Cinema', 'Music', 'Culture', 'My World'][index], icon: [GlobeHemisphereWest, ClockCounterClockwise, FilmStrip, MusicNotes, Aperture, BookmarkSimple][index] }))];
 type Journey = { from: string; title: string; path: string; room: string; crossRoom: boolean };
 
 /** One owner for link intent, camera departure and DOM arrival. No duplicate
@@ -38,10 +29,6 @@ export default function SpatialNavigator({ path, reducedMotion, paused, controll
   const observer = useRef<MutationObserver | null>(null);
   const revision = useRef(0);
   const cancelRef = useRef(() => {});
-  const room = spatialRoomForPath(path);
-  const roomIndex = rooms.findIndex(item => item.id === room);
-  const next = rooms[(roomIndex + 1) % rooms.length];
-  const previous = rooms[(roomIndex + rooms.length - 1) % rooms.length];
 
   function clearMotion() {
     window.clearTimeout(timeout.current);
@@ -86,7 +73,7 @@ export default function SpatialNavigator({ path, reducedMotion, paused, controll
         commitRoute(destination, params);
       };
       pending.current = { hash: targetHash, commit };
-      setJourney({ from: spatialPageLabel(settings.path), title: destination === '/' ? 'The Passage' : spatialPageLabel(destination), path: destination, room: plan.room, crossRoom: plan.crossRoom });
+      setJourney({ from: editorialPageLabel(settings.path), title: destination === '/' ? 'The Passage' : editorialPageLabel(destination), path: destination, room: plan.room, crossRoom: plan.crossRoom });
       setSpatialTravelling(plan.room);
       document.documentElement.dataset.spatialPassage = 'departing';
       const main = document.getElementById('main');
@@ -168,14 +155,6 @@ export default function SpatialNavigator({ path, reducedMotion, paused, controll
   useEffect(() => { if (spatial.unavailable) pending.current?.commit(); }, [spatial.unavailable]);
 
   return <>
-    {path !== '/' && <nav className="spatial-wayfinding" aria-label="Your position in Monumental">
-      <a className="spatial-return" href={href('/')}><ArrowLeft size={18}/><span>The Passage</span></a>
-      <div className="spatial-current"><i aria-hidden="true"/><span>{spatialPageLabel(path)}</span></div>
-      <div className="spatial-adjacent"><a href={href(previous.route)} aria-label={`Previous room: ${previous.title}`} title={previous.title}><ArrowLeft size={18}/></a><a href={href(next.route)} aria-label={`Next room: ${next.title}`}><span>{next.title}</span><ArrowRight size={18}/></a></div>
-    </nav>}
-    {path !== '/' && <nav className="spatial-dock" aria-label="Room navigation">
-      {rooms.map(item => <a key={item.id} href={href(item.route)} aria-current={room === item.id ? 'location' : undefined} data-pending={journey?.room === item.id} data-cursor="GO"><item.icon size={21} weight={room === item.id ? 'fill' : 'regular'}/><span>{item.title}</span><i aria-hidden="true"/></a>)}
-    </nav>}
     <div className="spatial-passage" ref={passage} data-active={!!journey} data-cross-room={journey?.crossRoom} aria-hidden={!journey}>
       <div className="spatial-passage-frames" aria-hidden="true"><i/><i/><i/></div>
       <div className="spatial-passage-caption"><span className="spatial-passage-origin">{journey?.from}<ArrowRight size={15}/></span><strong role="status">{journey?.title}</strong><div className="spatial-passage-progress" aria-hidden="true"><i/></div><button onClick={() => pending.current?.commit()} tabIndex={journey ? 0 : -1}>Enter now <ArrowRight size={16}/></button></div>

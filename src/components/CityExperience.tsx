@@ -4,6 +4,7 @@ import { ArrowRight } from '@phosphor-icons/react/dist/csr/ArrowRight';
 import { ArrowUpRight } from '@phosphor-icons/react/dist/csr/ArrowUpRight';
 import { Play } from '@phosphor-icons/react/dist/csr/Play';
 import { Cube } from '@phosphor-icons/react/dist/csr/Cube';
+import { gsap } from 'gsap';
 import { videos, type Video } from '../data/catalogue';
 import { href } from '../services/router';
 import { durationLabel } from '../services/discovery';
@@ -29,6 +30,7 @@ export default function CityExperience({ placeId, reducedMotion, onWatch, openRe
   const [ready, setReady] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const canvasHost = useRef<HTMLDivElement>(null);
+  const workspace = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const markers = useRef<(HTMLButtonElement | null)[]>([]);
@@ -39,20 +41,30 @@ export default function CityExperience({ placeId, reducedMotion, onWatch, openRe
   const activeLocation = selected === null ? null : locations[selected];
   const film = activeLocation ? videos.find(video => video.id === activeLocation.videoId) : undefined;
 
+  useEffect(() => { setOpen(false); setSelected(null); }, [placeId]);
+
   useEffect(() => {
-    setOpen(false); setSelected(null);
     if (placeId !== 'miami') return;
-    const enter = () => { setOpen(true); setTimeout(() => heading.current?.focus({ preventScroll: true }), 0); };
+    let focusFrame = 0;
+    const enter = () => { setOpen(true); focusFrame = requestAnimationFrame(() => { workspace.current?.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'start' }); heading.current?.focus({ preventScroll: true }); }); };
     window.addEventListener('monumental:step-inside', enter);
-    return () => window.removeEventListener('monumental:step-inside', enter);
-  }, [placeId]);
+    return () => { window.removeEventListener('monumental:step-inside', enter); cancelAnimationFrame(focusFrame); };
+  }, [placeId, reducedMotion]);
+
+  useEffect(() => {
+    if (!open || !workspace.current || reducedMotion) return;
+    const context = gsap.context(() => {
+      gsap.fromTo('.city-spatial-layout', { y: 18, opacity: .45 }, { y: 0, opacity: 1, duration: .7, ease: 'power3.out', clearProps: 'transform,opacity' });
+    }, workspace);
+    return () => context.revert();
+  }, [open, reducedMotion]);
 
   useEffect(() => {
     if (placeId !== 'miami' || openRequest <= handledRequest.current) return;
     handledRequest.current = openRequest;
     setOpen(true);
     const frame = requestAnimationFrame(() => {
-      document.getElementById('city-experience')?.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'start' });
+      workspace.current?.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'start' });
       heading.current?.focus({ preventScroll: true });
     });
     return () => cancelAnimationFrame(frame);
@@ -99,11 +111,11 @@ export default function CityExperience({ placeId, reducedMotion, onWatch, openRe
 
   return <section id="city-experience" className={`city-experience ${open ? 'is-open' : ''}`} aria-labelledby="city-title" onKeyDown={event => { if (event.key === 'Escape' && open) { event.stopPropagation(); close(); } }}>
     <div className="city-intro">
-      <div><h2 id="city-title">A CITY.<br/><span>THREE WAYS IN.</span></h2><p>Leave the globe for a miniature Miami interpretation. Choose a place. Find the story inside it.</p></div>
-      <button data-sound-owned ref={trigger} className="button button-outline city-enter" aria-expanded={open} aria-controls="city-workspace" onClick={() => { if (open) close(); else { setOpen(true); playSound('destination'); requestAnimationFrame(() => heading.current?.focus({ preventScroll: true })); } }}><Cube size={22}/>{open ? 'Return to globe' : 'Step inside Miami'}<ArrowUpRight size={19}/></button>
+      <div><h2 id="city-title">Miami, a little closer.</h2><p>Three illustrated places. Three available stories. Step into the miniature or continue to the collection below.</p></div>
+      <button data-sound-owned ref={trigger} className="button button-outline city-enter" aria-expanded={open} aria-controls="city-workspace" onClick={() => { if (open) close(); else { setOpen(true); playSound('destination'); requestAnimationFrame(() => { workspace.current?.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'start' }); heading.current?.focus({ preventScroll: true }); }); } }}><Cube size={22}/>{open ? 'Return to globe' : 'Step inside Miami'}<ArrowUpRight size={19}/></button>
     </div>
-    {open && <div id="city-workspace" className="city-workspace">
-      <header className="city-workspace-header"><div><h3 ref={heading} tabIndex={-1}>MIAMI, AT HUMAN SCALE.</h3><p>Illustrated interpretation · Three conceptual places, not a map of real venues.</p></div><button data-sound-owned className="text-link" onClick={close}><ArrowLeft/>Back to globe</button></header>
+    {open && <div id="city-workspace" className="city-workspace" ref={workspace}>
+      <header className="city-workspace-header"><div><h3 ref={heading} tabIndex={-1}>At human scale.</h3><p>Illustrated Miami interpretation. Choose a red marker or one of the places below.</p></div><button data-sound-owned className="text-link" onClick={close}><ArrowLeft/>Back to globe</button></header>
       <nav className="city-breadcrumb" aria-label="Exploration scale"><button data-sound-owned onClick={close}>Planet</button><span aria-hidden="true">/</span><button data-sound-owned aria-current={selected === null ? 'step' : undefined} onClick={() => select(null)}>Miami</button>{activeLocation && <><span aria-hidden="true">/</span><span aria-current="step">{activeLocation.name}</span></>}{film && <><span aria-hidden="true">/</span><a href={href('/film/' + film.id)}>Story <ArrowUpRight size={12}/></a></>}</nav>
       <div className="city-spatial-layout">
         <div className={`city-scene ${unavailable ? 'is-unavailable' : ''}`} tabIndex={0} role="group" aria-label="Miami miniature. Left and right arrow keys select places. Home returns to the overview." onKeyDown={event => {
@@ -117,7 +129,7 @@ export default function CityExperience({ placeId, reducedMotion, onWatch, openRe
           {unavailable ? <p className="city-scene-fallback" role="status">The spatial view is unavailable on this device.<br/>Explore all three places using the list below.</p> : !ready ? <p className="city-scene-fallback" role="status">Building your miniature…</p> : <p className="city-scene-help">Drag to orbit · Select a red marker<br/><span>The same places are listed below.</span></p>}
         </div>
         <aside className="city-story" aria-live="polite">
-          {film && activeLocation ? <><div className="city-story-image"><img src={imageAsset(film.poster)} alt=""/><span>Original motion study</span></div><div className="city-story-copy"><span className="city-story-location">{activeLocation.kind}</span><h4>{film.title}</h4><p>{activeLocation.detail}</p><span className="city-story-meta">{durationLabel(film.duration)} · {film.category} · Free</span><div className="city-story-actions"><button className="button button-primary" onClick={() => onWatch(film)}><Play weight="fill"/>Play story</button><SaveButton video={film}/></div><a className="text-link" href={href('/film/' + film.id)}>Context & credits <ArrowUpRight/></a></div></> : <div className="city-story-empty"><Cube size={42} weight="thin"/><h4>THE WORLD<br/>GETS CLOSER.</h4><p>At this scale, culture begins with a place: a waterfront, a facade, a table.</p><p>Select a marker or a place below to discover its connected film.</p><button data-sound-owned className="text-link" onClick={() => select(0)}>Begin at the water <ArrowRight/></button></div>}
+          {film && activeLocation ? <><div className="city-story-image"><img src={imageAsset(film.poster)} alt={`Cover artwork for ${film.title}`}/><span>Original motion study</span></div><div className="city-story-copy"><span className="city-story-location">{activeLocation.kind}</span><h4>{film.title}</h4><p>{activeLocation.detail}</p><span className="city-story-meta">{durationLabel(film.duration)} · {film.category} · Free</span><div className="city-story-actions"><button className="button button-primary" onClick={() => onWatch(film)}><Play weight="fill"/>Play story</button><SaveButton video={film}/></div><a className="text-link" href={href('/film/' + film.id)}>Context & credits <ArrowUpRight/></a></div></> : <div className="city-story-empty"><Cube size={36} weight="thin"/><h4>A place.<br/>A point of view.</h4><p>A waterfront, an architectural facade, a shared table. Each opens a different story.</p><button data-sound-owned className="text-link" onClick={() => select(0)}>Begin at the water <ArrowRight/></button></div>}
         </aside>
       </div>
       <div className="city-location-list" role="group" aria-label="Explore Miami places">{locations.map((location, index) => <button data-sound-owned key={location.videoId} aria-pressed={selected === index} className={selected === index ? 'is-selected' : ''} onClick={() => select(index)}><span className="city-location-number">0{index + 1}</span><span><strong>{location.name}</strong><small>{location.kind}</small></span><ArrowUpRight size={20}/></button>)}</div>

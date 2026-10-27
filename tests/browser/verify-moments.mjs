@@ -16,8 +16,10 @@ try {
   const video=page.locator('.ms-player-dialog video');
   await video.waitFor();
   await page.waitForFunction(()=>document.querySelector('.ms-player-dialog video')?.readyState>=2);
-  await video.evaluate(film=>{film.pause();film.currentTime=12.2;});
+  if (await page.getByRole('button',{name:'Pause video',exact:true}).isVisible()) await page.getByRole('button',{name:'Pause video',exact:true}).click();
+  await page.getByRole('slider',{name:'Seek video',exact:true}).fill('12.2');
   await page.waitForFunction(()=>document.querySelector('.ms-player-clock')?.textContent.includes('0:12'));
+  await page.locator('.ms-player-extras>summary').click();
   await page.getByRole('button',{name:'Keep this moment',exact:true}).click();
   await page.getByRole('textbox',{name:'Moment note',exact:true}).fill('The crossing between music and place.');
   await page.getByRole('button',{name:'Keep moment',exact:true}).click();
@@ -52,8 +54,12 @@ try {
   await page.getByRole('button',{name:'Undo',exact:true}).click();
   await page.locator('.notebook-entry').waitFor();
   record('Moment note editing and removal with undo work');
+  await page.evaluate(()=>{window.__momentReturnSeek=[];document.addEventListener('seeking',event=>{if(event.target instanceof HTMLVideoElement&&event.target.closest('.ms-player-dialog'))window.__momentReturnSeek.push(event.target.currentTime);},{capture:true});});
   await page.getByRole('button',{name:'Watch Miami, in Frequency from 0:12',exact:true}).click();
   await page.waitForFunction(()=>{const v=document.querySelector('.ms-player-dialog video');return v?.readyState>=2&&v.currentTime>=12&&v.currentTime<15;});
+  const returnSeek = await page.evaluate(()=>window.__momentReturnSeek[0]);
+  assert.ok(Math.abs(returnSeek-12)<.2,`Expected saved 12-second timestamp, observed ${returnSeek}`);
+  console.log('RETURN_TO_MOMENT_SECONDS', returnSeek);
   record('Moment starts the film at its saved timestamp');
   await page.keyboard.press('Escape');
   await page.setViewportSize({width:320,height:760});
@@ -61,8 +67,13 @@ try {
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   await page.locator('.moment-notebook').screenshot({path:output+'/notebook-320.png'});
   await page.getByRole('button',{name:'Watch Miami, in Frequency from 0:12',exact:true}).click();
+  await page.locator('.ms-player-toolbar').screenshot({path:output+'/toolbar-320.png'});
+  await page.locator('.ms-player-extras>summary').click();
   await page.getByRole('button',{name:'Keep this moment',exact:true}).click();
   await page.getByRole('textbox',{name:'Moment note',exact:true}).fill('Mobile viewing');
+  const playerWidth = await page.locator('.ms-player-dialog').evaluate(el=>({client:el.clientWidth,scroll:el.scrollWidth,overflow:[...el.querySelectorAll('*')].map(child=>({tag:child.tagName,class:child.className,left:child.getBoundingClientRect().left,right:child.getBoundingClientRect().right,width:child.clientWidth,scroll:child.scrollWidth})).filter(child=>child.right>innerWidth+1||child.left< -1)}));
+  console.log('MOBILE_PLAYER_WIDTH', JSON.stringify(playerWidth));
+  await page.screenshot({path:output+'/player-320.png'});
   assert.ok(await page.locator('.ms-player-dialog').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
   await page.locator('.player-companion').screenshot({path:output+'/companion-320.png'});
   record('320px notebook and in-player editor remain contained and usable');

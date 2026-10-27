@@ -74,6 +74,16 @@ test('the final chapter holds its reading position instead of exiting into empty
   assert.ok(tunnelChapterZ(finalIndex - 1, 1) < tunnelChapterZ(finalIndex - 1, .74), 'earlier chapters still advance toward the next station');
 });
 
+test('reading intervals stay fixed and camera velocity settles at both ends', () => {
+  for (let index = 0; index < TUNNEL_STATION_IDS.length; index++) {
+    const anchor = tunnelReadingZ(index);
+    for (const p of [.38, .46, .58, .68, .74]) near(tunnelChapterZ(index, p), anchor, 'the reading surface does not drift');
+    const epsilon = .00001;
+    assert.ok(Math.abs(tunnelChapterZ(index, .38 - epsilon) - anchor) < epsilon, 'approach slows into the station');
+    assert.ok(Math.abs(tunnelChapterZ(index, .74 + epsilon) - anchor) < epsilon, 'departure accelerates away without a jerk');
+  }
+});
+
 test('out-of-range chapter progress clamps at its physical endpoints', () => {
   for (let index = 0; index < TUNNEL_STATION_IDS.length; index++) {
     for (const progress of [-Infinity, -100, -1, -.001]) {

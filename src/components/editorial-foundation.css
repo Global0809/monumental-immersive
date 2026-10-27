@@ -1,0 +1,223 @@
+/* One quiet interface around the spatial work. Content, then the mechanism. */
+:root {
+  --surface-secondary: #111212;
+  --surface-raised: #181a1a;
+  --text-secondary: #b6b8b3;
+  --surface-light: #e8e8e1;
+  --ink: #0b0c0b;
+  --border-subtle: #efeee925;
+  --header: 76px;
+  --editorial-gutter: clamp(22px, 4.5vw, 72px);
+}
+
+.site-header.editorial-header {
+  padding-inline: clamp(20px, 3.2vw, 58px);
+  gap: clamp(22px, 3vw, 52px);
+  background: var(--bg);
+  backdrop-filter: none;
+}
+.editorial-header .wordmark { flex: none; font-size: 30px; letter-spacing: -.025em; }
+.editorial-header .wordmark small { font-size: 7px; letter-spacing: .66em; }
+.primary-navigation { display: flex; align-self: stretch; align-items: stretch; gap: clamp(18px, 2.1vw, 36px); margin-inline: auto; }
+.primary-navigation a { position: relative; display: flex; align-items: center; font-size: 13px; font-weight: 500; color: var(--text-secondary); white-space: nowrap; transition: color .16s; }
+.primary-navigation a:hover, .primary-navigation a[aria-current] { color: var(--text); }
+.primary-navigation a i { position: absolute; height: 2px; inset-inline: 0; bottom: 0; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform .2s; }
+.primary-navigation a[aria-current] i { transform: scaleX(1); }
+.editorial-header .header-actions { margin-left: 0; gap: 5px; flex: none; }
+.editorial-header .header-actions .icon-button { width: 44px; height: 44px; min-width: 44px; border: 0; border-radius: 2px; }
+.editorial-header .sound-button { padding: 0; color: var(--text-secondary); }
+.editorial-header .sound-button[aria-pressed=true] { color: var(--accent); }
+.editorial-header .sound-button:hover { color: var(--bg); }
+.editorial-header .menu-button { width: auto; min-width: 76px; min-height: 44px; height: 44px; padding-left: 17px; margin-left: 9px; gap: 12px; font-size: 13px; letter-spacing: 0; text-transform: none; }
+.editorial-header .menu-button:hover { color: var(--accent); }
+
+/* A directory, not a wall of equally loud destinations. Native dialog owns
+   Escape, focus containment, and the top layer on every viewport. */
+.index-dialog.cultural-directory { padding: 0 var(--editorial-gutter); background: var(--bg); overscroll-behavior: contain; }
+.index-dialog.cultural-directory[open] { animation-duration: .2s; }
+.cultural-directory .index-header { position: sticky; top: 0; z-index: 2; min-height: 94px; padding: 24px 0; background: var(--bg); letter-spacing: 0; }
+.cultural-directory .index-header h2 { font-size: clamp(34px, 3.6vw, 52px); text-transform: none; line-height: 1; }
+.directory-close { display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 44px; min-width: 88px; padding: 0 3px 0 14px; color: var(--text); border: 0; background: none; font-size: 13px; }
+.directory-close:hover { color: var(--accent); }
+.directory-groups { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: clamp(32px, 6vw, 100px); padding: 32px 0 38px; }
+.directory-group { min-width: 0; }
+.directory-group h3 { font: 600 14px var(--body); color: var(--accent); line-height: 1.4; }
+.directory-group > p { font-size: 13px; color: var(--text-secondary); line-height: 1.6; max-width: 28ch; margin: 9px 0 24px; }
+.directory-primary { display: grid; }
+.directory-primary a { display: flex; justify-content: space-between; align-items: center; gap: 16px; min-height: 53px; padding: 8px 0; border-bottom: 1px solid var(--line); font: 500 clamp(30px, 3.2vw, 46px)/1.05 var(--display); transition: color .16s; }
+.directory-primary a svg { transition: transform .2s; }
+.directory-primary a:hover svg { transform: translate(3px, -3px); }
+.directory-primary a[aria-current], .directory-secondary a[aria-current], .directory-primary a:hover, .directory-secondary a:hover { color: var(--accent); }
+.directory-secondary { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; margin-top: 16px; }
+.directory-secondary a { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; font-size: 13px; line-height: 1.4; color: var(--text-secondary); }
+.directory-group:first-child .directory-secondary, .directory-group:last-child .directory-secondary { grid-template-columns: 1fr; }
+.directory-footer { border-top: 1px solid var(--line); display: flex; align-items: center; flex-wrap: wrap; gap: 24px; min-height: 82px; padding-block: 20px 26px; font-size: 12px; color: var(--text-secondary); }
+.directory-footer > span { display: flex; flex-wrap: wrap; gap: 8px; max-width: 50%; }
+.directory-footer strong { color: var(--text); font-weight: 500; }
+.directory-footer .text-link { min-height: 44px; margin-left: auto; }
+.directory-footer p { font-size: 12px; color: var(--text-secondary); }
+
+/* The shared header is sufficient on editorial routes. The Passage keeps its
+   own station rail. Higher specificity prevents late scene CSS restoring gaps. */
+html .monumental-spatial[data-spatial-room]:not([data-spatial-room="atrium"]) main { padding-top: var(--header); padding-bottom: 0; }
+html .monumental-spatial[data-spatial-room]:not([data-spatial-room="atrium"]) .route-stage::before { content: none; }
+html .monumental-spatial[data-spatial-room]:not([data-spatial-room="atrium"]) .route-stage > :is(.page-section, .ex-page, .film-detail),
+html .monumental-spatial[data-spatial-room]:not([data-spatial-room="atrium"]) .motion-showcase { border-inline: 0; }
+html .monumental-spatial[data-spatial-room]:not([data-spatial-room="atrium"]) .site-footer { padding-bottom: 54px; }
+html .monumental-spatial[data-spatial-room]:not([data-spatial-room="atrium"]) .back-to-top { bottom: 26px; }
+html .monumental-spatial[data-spatial-room]:not([data-spatial-room="atrium"]) :is(.page-title-row h1, .settings-page > h1, .credits-page > h1) { font-size: clamp(64px, 6.6vw, 104px); line-height: .94; letter-spacing: -.025em; }
+html .monumental-spatial[data-spatial-room]:not([data-spatial-room="atrium"]) .browse-page--theater .page-title-row h1 { font-size: clamp(38px, 4vw, 56px); }
+.page-title-row > div > p { color: var(--text-secondary); font-size: 16px; line-height: 1.65; max-width: 60ch; }
+.personal-library p { color: var(--text-secondary); }
+.personal-library .personal-library-title { align-items: center; gap: 32px; }
+.personal-library .personal-library-title h1 { white-space: normal; }
+.personal-library .personal-library-title p { max-width: 41ch; margin-top: 18px; }
+.personal-library .guest-label { font-size: 13px; white-space: normal; min-width: 200px; max-width: 300px; gap: 12px; }
+.personal-library .guest-label > svg { color: var(--accent); }
+.personal-library .guest-label small { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.personal-library .guest-label > a { display: grid; place-items: center; min-width: 44px; min-height: 44px; }
+.collection-welcome { display: grid; grid-template-columns: 1fr 1.05fr; gap: clamp(36px, 6vw, 84px); align-items: center; border-block: 1px solid var(--line); padding-block: 36px; }
+.collection-welcome-copy h2 { font-size: clamp(44px, 4.7vw, 68px); line-height: .98; text-transform: none; }
+.collection-welcome-copy p { max-width: 38ch; font-size: 15px; line-height: 1.7; margin: 22px 0; }
+.collection-welcome-copy .text-link { min-height: 44px; font-size: 14px; }
+.collection-welcome-actions { display: flex; align-items: center; gap: 14px 22px; flex-wrap: wrap; }
+.collection-welcome-actions .button { white-space: normal; text-align: left; }
+.collection-starter { min-width: 0; }
+.collection-starter > a { position: relative; display: block; aspect-ratio: 1.9; overflow: hidden; background: var(--surface-secondary); }
+.collection-starter > a > img { width: 100%; height: 100%; object-fit: cover; }
+.collection-starter > a > span { position: absolute; inset: auto 0 0; padding: 50px 20px 20px; background: linear-gradient(transparent, #080909e8); }
+.collection-starter small { display: block; color: var(--text); font-size: 12px; line-height: 1.5; margin-bottom: 7px; }
+.collection-starter strong { display: block; font: 500 clamp(26px, 3vw, 40px)/1.04 var(--display); }
+.collection-starter > div { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 16px; }
+.collection-starter .button { font-size: 12px; padding-inline: 16px; }
+.personal-collection .tab-row { margin-top: 0; gap: 30px; border-bottom: 1px solid var(--line); }
+.personal-collection .tab-row button { display: flex; align-items: center; gap: 8px; min-height: 50px; padding-bottom: 16px; margin-bottom: -1px; font-size: 14px; }
+.personal-collection .tab-row span { padding: 0; margin-left: 0; background: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.personal-collection .empty-inline { padding-block: 32px; }
+.personal-collection .empty-inline h2 { text-transform: none; font-size: 38px; line-height: 1.05; }
+.personal-collection .empty-inline p { font-size: 15px; }
+.personal-collection .empty-inline > .text-link { min-height: 44px; font-size: 14px; }
+.personal-section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 24px; padding-bottom: 22px; }
+.personal-library .personal-section-heading h2 { margin: 0; font-size: clamp(36px, 4vw, 52px); line-height: 1.05; text-transform: none; }
+.personal-section-heading .text-link { min-height: 44px; font-size: 13px; }
+.personal-library .saved-journeys { padding-top: 56px; }
+.personal-library .saved-journeys > .personal-section-heading { border: 0; padding: 0 0 22px; }
+.personal-library .saved-journeys h3 { font-size: 29px; line-height: 1.1; overflow-wrap: anywhere; }
+.personal-library .saved-journeys p { font-size: 13px; line-height: 1.6; }
+.personal-library .saved-journeys > div:not(.personal-section-heading) > div { min-width: 0; }
+.collected-places { margin-top: 56px; }
+.collected-place-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; }
+.collected-place-list article { display: flex; align-items: center; gap: 14px; min-width: 0; border-top: 1px solid var(--line); }
+.collected-place-list article > a { display: flex; align-items: center; min-width: 0; flex: 1; gap: 18px; padding-block: 18px; }
+.collected-place-list img { width: 88px; height: 72px; object-fit: cover; }
+.collected-place-list a span { min-width: 0; }
+.collected-place-list small { display: block; color: var(--text-secondary); font-size: 12px; margin-bottom: 6px; }
+.collected-place-list strong { display: block; font: 500 30px/1.05 var(--display); }
+.collected-place-list a > svg { margin-left: auto; color: var(--accent); }
+.collected-place-list article > .icon-button { border: 0; width: 44px; height: 44px; }
+.personal-journey-invitation { display: flex; align-items: center; gap: 22px; padding: 28px 0; margin-top: 32px; border-bottom: 1px solid var(--line); }
+.personal-journey-invitation > svg:first-child { color: var(--accent); }
+.personal-journey-invitation strong { display: block; font: 500 28px/1.15 var(--display); }
+.personal-journey-invitation small { display: block; font-size: 13px; line-height: 1.6; color: var(--text-secondary); margin-top: 6px; }
+.personal-journey-invitation > svg:last-child { margin-left: auto; }
+.personal-library :is(.moment-notebook, .personal-monument, .culture-passport) { margin-top: 64px; }
+.personal-library :is(.notebook-heading h2, .personal-monument h2, .passport-introduction h2) { font-size: clamp(38px, 4.5vw, 62px); line-height: 1; }
+.personal-library .interest-summary p { font-size: 13px; max-width: 65ch; }
+.local-interest-note { font-size: 13px!important; line-height: 1.65; max-width: 48ch; margin-top: 22px; }
+.membership-grid small { font-size: 13px; max-width: 48ch; color: var(--text-secondary); }
+.membership-grid p { font-size: 16px; line-height: 1.7; }
+
+@media (max-width: 1100px) {
+  .editorial-header .primary-navigation { gap: 19px; }
+  .site-header.editorial-header { gap: 25px; padding-inline: 24px; }
+  .editorial-header .wordmark { font-size: 27px; }
+  .primary-navigation a { font-size: 12px; }
+  .editorial-header .menu-button { gap: 8px; padding-left: 12px; margin-left: 3px; }
+  .directory-groups { gap: 36px; }
+  .directory-primary a { font-size: 36px; }
+  .directory-footer p { display: none; }
+}
+@media (max-width: 980px) {
+  .editorial-header .primary-navigation { display: none; }
+  .editorial-header .header-actions { margin-left: auto; }
+  .personal-library .personal-library-title { align-items: flex-start; }
+  .collection-welcome { gap: 30px; }
+  .collection-starter > a { aspect-ratio: 1.5; }
+}
+@media (max-width: 760px) {
+  :root { --header: 68px; }
+  .site-header.editorial-header { padding-inline: 20px; gap: 12px; }
+  .editorial-header .wordmark { font-size: 25px; }
+  .editorial-header .wordmark small { font-size: 6px; }
+  .editorial-header .header-actions { gap: 0; }
+  .editorial-header .menu-button { width: auto; min-width: 64px; border: 0; padding-left: 6px; margin-left: 3px; gap: 7px; }
+  .editorial-header .menu-button span { display: inline; font-size: 12px; }
+  .editorial-header .menu-button svg { width: 19px; }
+  .cultural-directory .index-header { min-height: 80px; padding-block: 18px; }
+  .directory-groups { grid-template-columns: 1fr; gap: 36px; padding-top: 27px; }
+  .directory-group > p { max-width: none; margin-bottom: 14px; font-size: 14px; }
+  .directory-primary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; }
+  .directory-primary a { font-size: 30px; min-height: 58px; }
+  .directory-primary a svg { width: 18px; }
+  .directory-secondary { gap: 0 24px; }
+  .directory-secondary a { font-size: 14px; }
+  .directory-footer { gap: 16px; padding-top: 16px; }
+  .directory-footer > span { max-width: 100%; width: 100%; }
+  .directory-footer .text-link { margin-left: 0; }
+  html .monumental-spatial[data-spatial-room]:not([data-spatial-room="atrium"]) :is(.page-title-row h1, .settings-page > h1, .credits-page > h1) { font-size: clamp(52px, 14vw, 76px); line-height: .98; }
+  html .monumental-spatial[data-spatial-room]:not([data-spatial-room="atrium"]) .browse-page--theater .page-title-row h1 { font-size: 40px; }
+  .page-title-row > div > p { font-size: 15px; }
+  .personal-library .personal-library-title { margin-bottom: 28px; }
+  .personal-library .guest-label { min-width: 0; max-width: none; margin-top: 22px; }
+  .personal-library .guest-label > a { margin-left: auto; }
+  .collection-welcome { display: flex; flex-direction: column; align-items: stretch; gap: 28px; padding-block: 28px; }
+  .collection-welcome-copy h2 { font-size: 45px; }
+  .collection-welcome-copy p { font-size: 15px; max-width: none; margin-block: 16px; }
+  .collection-welcome-actions { align-items: flex-start; gap: 10px; flex-direction: column; }
+  .collection-starter > a { aspect-ratio: 1.65; }
+  .collection-starter strong { font-size: 30px; }
+  .collection-starter > a > span { padding: 44px 16px 16px; }
+  .collection-starter > div { gap: 8px; }
+  .collection-starter .button { font-size: 11px; gap: 9px; padding-inline: 12px; }
+  .personal-collection .tab-row { gap: 19px; }
+  .personal-collection .film-grid:has(> .film-card:only-child) { grid-template-columns: 1fr; }
+  .personal-collection .tab-row button { font-size: 12px; gap: 6px; white-space: nowrap; }
+  .personal-collection .tab-row span { font-size: 11px; }
+  .personal-library .personal-section-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .personal-library .saved-journeys > .personal-section-heading { padding-bottom: 16px; }
+  .personal-library .saved-journeys > .personal-section-heading > a { width: auto; }
+  .personal-library .saved-journeys > div:not(.personal-section-heading) { gap: 12px; }
+  .personal-library .saved-journeys .button { font-size: 12px; padding-inline: 14px; gap: 10px; }
+  .collected-place-list { grid-template-columns: 1fr; }
+  .collected-place-list article { gap: 10px; }
+  .collected-place-list img { width: 72px; height: 66px; }
+  .collected-place-list article > a { gap: 14px; }
+  .collected-place-list strong { font-size: 28px; }
+  .personal-journey-invitation { gap: 16px; }
+  .personal-journey-invitation small { font-size: 13px; }
+  .personal-library :is(.moment-notebook, .personal-monument, .culture-passport) { margin-top: 48px; }
+  .membership-grid p { font-size: 15px; }
+  .membership-grid small { font-size: 12px; }
+}
+@media (max-width: 380px) {
+  .site-header.editorial-header { padding-inline: 16px; }
+  .editorial-header .wordmark { font-size: 23px; }
+  .editorial-header .menu-button { margin-left: 0; padding-left: 3px; gap: 4px; }
+  .directory-primary { gap: 0 18px; }
+  .directory-primary a { font-size: 27px; gap: 8px; }
+  .personal-collection .tab-row { gap: 13px; }
+  .personal-collection .tab-row button { font-size: 11px; }
+}
+@media (max-height: 760px) and (min-width: 761px) {
+  .cultural-directory .index-header { min-height: 80px; padding-block: 18px; }
+  .directory-groups { padding-block: 24px; }
+  .directory-group > p { margin-bottom: 18px; }
+  .directory-primary a { font-size: 36px; min-height: 48px; }
+  .directory-secondary { margin-top: 10px; }
+  .directory-footer { min-height: 66px; padding-block: 11px 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .primary-navigation a, .primary-navigation a i, .directory-primary a, .directory-primary a svg { transition: none; }
+}
+html[data-motion=reduced] :is(.primary-navigation a, .primary-navigation a i, .directory-primary a, .directory-primary a svg) { transition: none; }
+html[data-motion=reduced] .index-dialog.cultural-directory[open] { animation: none; }

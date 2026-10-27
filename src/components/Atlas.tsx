@@ -29,6 +29,7 @@ type AtlasProps = {
   reducedMotion?: boolean;
   connections?: string[];
   showConnections?: boolean;
+  approaching?: boolean;
 };
 type EarthData = { land: number[]; coast: number[][] };
 const RADIANS = Math.PI / 180;
@@ -49,6 +50,7 @@ export default function Atlas({
   reducedMotion = false,
   connections = [],
   showConnections = true,
+  approaching = false,
 }: AtlasProps) {
   const [systemReduced, setSystemReduced] = useState(
     () =>
@@ -68,8 +70,8 @@ export default function Atlas({
     connect: (id: string, targets: string[], visible: boolean) => void;
   } | null>(null);
   const motionRef = useRef(calm);
-  const pauseRef = useRef(false);
-  const [paused, setPaused] = useState(false);
+  const pauseRef = useRef(true);
+  const [paused, setPaused] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(0);
   const [zoomFactor, setZoomFactor] = useState(1);
   const selectedRef = useRef(selected || "miami");
@@ -83,6 +85,12 @@ export default function Atlas({
   useEffect(() => {
     if (selected) controls.current?.focus(selected);
   }, [selected]);
+  useEffect(() => {
+    if (approaching) controls.current?.focus(selectedRef.current);
+    controls.current?.zoom(approaching ? 2 : zoomLevel);
+    // The departure briefly moves closer without changing the visitor's zoom setting.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approaching]);
   useEffect(() => {
     controls.current?.connect(selected || "miami", connections, showConnections);
   }, [selected, connections.join("|"), showConnections]);
@@ -113,7 +121,7 @@ export default function Atlas({
       setStatus("fallback");
       return;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 700 ? 1.35 : 1.6));
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     const canvas = renderer.domElement;
@@ -300,6 +308,7 @@ export default function Atlas({
     const zoomPanel = element.querySelector<HTMLElement>('.cultural-atlas__zoom');
     let zoomPanelBounds = { left: Infinity, top: Infinity, bottom: -Infinity };
     const labelWidths = new Map<string, number>();
+    const labelHeights = new Map<string, number>();
     let lastInteraction = 0;
     let dragging = false;
     let targetRotation: { x: number; y: number } | null = null;
@@ -313,11 +322,16 @@ export default function Atlas({
     const projected = new THREE.Vector3();
     const towardCamera = new THREE.Vector3();
     const cadence = createFrameCadence();
-    const labelPresentation = new Map<HTMLElement, { visible: boolean; side?: string; transform?: string; depth?: string }>();
+    const labelPresentation = new Map<HTMLElement, { visible: boolean; side?: string; transform?: string; depth?: string; shift?: number; collapsed?: boolean }>();
 
     const updateLabels = () => {
       globe.updateMatrixWorld(true);
-      for (const destination of destinations) {
+      const occupied: { left: number; right: number; top: number; bottom: number }[] = [];
+      const priority = [...destinations].sort((a, b) => {
+        const rank = (id: string) => id === selectedRef.current ? 3 : document.activeElement === markers.current.get(id) ? 2 : 0;
+        return rank(b.id) - rank(a.id);
+      });
+      for (const destination of priority) {
         const label = markers.current.get(destination.id);
         if (!label) continue;
         world.copy(destination.position).applyMatrix4(globe.matrixWorld);
@@ -342,8 +356,25 @@ export default function Atlas({
         const leftRoom = x - clipLeft - 8 - 17;
         const side = rightRoom < (labelWidths.get(destination.id) ?? 110) && leftRoom > rightRoom ? "left" : "right";
         if (presentation.side !== side) { label.dataset.labelSide = side; presentation.side = side; }
+        // Place the selected label first. Neighbouring labels yield while their
+        // geographic pins remain selectable; no layout reads run in this loop.
+        const labelWidth = labelWidths.get(destination.id) ?? 110;
+        const labelHeight = labelHeights.get(destination.id) ?? 30;
+        const labelLeft = side === 'left' ? x - 17 - labelWidth : x + 17;
+        const preferred = destination.id === 'new-york' ? -22 : destination.id === 'puerto-rico' ? 22 : 0;
+        const offsets = [preferred, -32, 32, -56, 56];
+        let shift = preferred, collapsed = true;
+        for (const offset of offsets) {
+          const box = { left: labelLeft - 4, right: labelLeft + labelWidth + 4, top: y + offset - labelHeight / 2 - 3, bottom: y + offset + labelHeight / 2 + 3 };
+          const clear = box.left >= clipLeft + 3 && box.right <= clipRight - 3 && box.top >= 4 && box.bottom <= height - 4 &&
+            !(box.right > zoomPanelBounds.left - 5 && box.bottom > zoomPanelBounds.top && box.top < zoomPanelBounds.bottom) &&
+            !occupied.some(other => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top);
+          if (clear || destination.id === selectedRef.current) { shift = offset; collapsed = false; occupied.push(box); break; }
+        }
+        if (presentation.shift !== shift) { label.style.setProperty('--atlas-label-shift', `${shift}px`); presentation.shift = shift; }
+        if (presentation.collapsed !== collapsed) { label.dataset.labelCollapsed = String(collapsed); presentation.collapsed = collapsed; }
         const transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`;
-        const depth = String(Math.round((projected.z + 1) * 100));
+        const depth = destination.id === selectedRef.current ? '300' : String(Math.round((2 - projected.z) * 100));
         if (presentation.transform !== transform) { label.style.transform = transform; presentation.transform = transform; }
         if (presentation.depth !== depth) { label.style.zIndex = depth; presentation.depth = depth; }
       }
@@ -435,7 +466,10 @@ export default function Atlas({
     const labelObserver = new ResizeObserver(entries => {
       for (const entry of entries) {
         const id = (entry.target.parentElement as HTMLButtonElement | null)?.dataset.place;
-        if (id) labelWidths.set(id, entry.borderBoxSize[0]?.inlineSize ?? (entry.target as HTMLElement).offsetWidth);
+        if (id) {
+          labelWidths.set(id, entry.borderBoxSize[0]?.inlineSize ?? (entry.target as HTMLElement).offsetWidth);
+          labelHeights.set(id, entry.borderBoxSize[0]?.blockSize ?? (entry.target as HTMLElement).offsetHeight);
+        }
       }
       requestDraw();
     });
@@ -477,6 +511,7 @@ export default function Atlas({
     window.addEventListener('monumental:playback', playback);
     const pointerDown = (event: PointerEvent) => {
       if (event.button !== 0 || activePointer !== null) return;
+      pauseRef.current = true; setPaused(true);
       targetRotation = null;
       dragging = true;
       activePointer = event.pointerId; dragAxis = 'pending';
@@ -486,7 +521,7 @@ export default function Atlas({
       canvas.style.cursor = "grabbing";
     };
     const pointerMove = (event: PointerEvent) => {
-      if (!dragging || activePointer !== event.pointerId) return;
+      if (!dragging || activePointer !== event.pointerId) { requestDraw(); return; }
       if (event.pointerType !== 'mouse') {
         dragAxis = resolveDragAxis(event.clientX - startPointerX, event.clientY - startPointerY, dragAxis);
         if (dragAxis !== 'horizontal') return;
@@ -533,6 +568,7 @@ export default function Atlas({
       focus(id) {
         const destination = destinations.find((place) => place.id === id);
         if (!destination) return;
+        pauseRef.current = true; setPaused(true);
         const target = -destination.lon * RADIANS;
         const difference = Math.atan2(
           Math.sin(target - globe.rotation.y),
@@ -680,7 +716,7 @@ export default function Atlas({
 
   return (
     <div
-      className={`cultural-atlas ${compact ? "cultural-atlas--compact" : ""} ${status === "fallback" ? "cultural-atlas--fallback" : ""}`}
+      className={`cultural-atlas ${compact ? "cultural-atlas--compact" : ""} ${status === "fallback" ? "cultural-atlas--fallback" : ""} ${approaching ? "is-approaching" : ""}`}
     >
       <div
         className="cultural-atlas__viewport"
@@ -713,15 +749,18 @@ export default function Atlas({
                   else markers.current.delete(place.id);
                 }}
                 onClick={() => choosePlace(place.id)}
+                onFocus={() => controls.current?.refresh()}
+                onPointerEnter={() => controls.current?.refresh()}
                 data-sound-owned
                 data-place={place.id}
                 aria-label={`Explore ${place.name}`}
+                aria-pressed={place.id === (selected ?? "miami")}
                 data-cursor="Explore"
               >
                 <span className="cultural-atlas__pin" aria-hidden="true" />
                 <span className="cultural-atlas__label">
                   {place.name}
-                  {place.id === "miami" && <small>YOUR FIRST STOP</small>}
+                  {place.id === (selected ?? "miami") && <small>SELECTED DESTINATION</small>}
                 </span>
               </button>
             ))}

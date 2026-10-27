@@ -13,7 +13,7 @@ Completed and enhanced 2026-10-26. The homepage is a native-scroll passage throu
 
 ## One scroll coordinate system
 
-Native document scroll supplies the camera position; there is no separate virtual scroll track. The hero checkpoint is `135svh`, and each desktop chapter is `225svh`. Station Z is `-32 - index * 34`. Each chapter approaches from station Z + 25, reaches Z + 12.8 at 38% progress, moves slowly to Z + 12.2 through 74%, then proceeds to the next station. The final station holds its reading position.
+Native document scroll supplies the camera position; there is no separate virtual scroll track. The hero checkpoint is `135svh`, and each desktop chapter is `225svh`. Station Z is `-32 - index * 34`. Each chapter approaches from station Z + 25, reaches Z + 12.8 at 38% progress, holds that exact reading position through 74%, then proceeds to the next station. Approach and departure use smoothstep with zero endpoint velocity. The final station holds its reading position.
 
 WebGL and CSS3D render with the same perspective camera: desktop FOV 46°, compact FOV 57°, near/far planes 0.12/130. Homepage camera Z is assigned directly from the shared frame, so reversing scroll retraces the same path. The 620px HTML panels use a world scale of 0.0117. React content exists once; the renderer moves its actual mount between CSS3D and its document fallback slot.
 
@@ -21,7 +21,7 @@ WebGL and CSS3D render with the same perspective camera: desktop FOV 46°, compa
 | --- | --- | --- |
 | The World | `/world` | `miami-frequency` |
 | Time Machine | `/time-machine` | `break-beat-city` |
-| The Cinema | `/category/movies` | `sintel` |
+| The Cinema | `/category/movies` | `sintel-full` |
 | Music | `/category/music` | `island-current` |
 | Culture | `/category/culture` | `concrete-and-colour` |
 | My World | `/my-world` | `tokyo-in-motion` |
@@ -30,7 +30,7 @@ Each station has a direct route link, an Inspect control and a preview button wh
 
 ## Enhanced mechanics
 
-The entrance iris has seven beveled extruded leaves, collars and visible linkages. Six station gates open from camera position, so reverse scrolling retraces their movement. Sixteen instanced signal packets follow the existing rails with phase driven by camera travel; compact, reduced-motion and cutaway modes suppress the packets.
+The entrance iris has seven beveled extruded leaves, collars and visible linkages. Six station gates open from camera position, so reverse scrolling retraces their movement. Eight instanced signal packets follow four rails with phase driven by camera travel; compact, reduced-motion and cutaway modes suppress the packets. The October 27 refinement separates quieter architectural surfaces from the chrome sculptures and suspends continuous tunnel rendering on editorial routes.
 
 Inspect opens a distinct exploded arrangement for each sculpture: orbit separation, archive-frame spacing, cinema reel/screen separation, music-bar spreading, culture-fold articulation and collection-ring separation. Captured authored transforms prevent accumulated drift. One shared inspection owner controls the open station; rotation advances in 30° steps within ±180°, with reset and Escape-to-close. Ambient time and pointer response pause during inspection. Compact mode instead reveals the real catalogue film synopsis, falling back to the destination description.
 
