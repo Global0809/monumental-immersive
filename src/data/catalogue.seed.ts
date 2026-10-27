@@ -1,3 +1,4 @@
+import { assetUrl } from '../services/assets';
 import type { Place, Period, Video } from '../platform/catalogue/domain';
 
 export const places: Place[] = [
@@ -8,7 +9,7 @@ export const places: Place[] = [
     kind: "City",
     lat: 25.7617,
     lon: -80.1918,
-    image: "/media/miami.webp",
+    image: assetUrl("/media/miami.webp"),
     tagline: "Where worlds find a rhythm.",
     description:
       "Our opening cultural gateway. Explore music, food and design across Greater Miami, with Miami Beach identified separately in the stories that concern it. Launch plans are in development; no event date or venue is confirmed.",
@@ -20,7 +21,7 @@ export const places: Place[] = [
     kind: "Island territory",
     lat: 18.2208,
     lon: -66.5901,
-    image: "/media/puerto-rico.webp",
+    image: assetUrl("/media/puerto-rico.webp"),
     tagline: "An island. A world of influence.",
     description:
       "A Caribbean island territory with living musical traditions including bomba and plena. The opening WAVEMAKERS journey begins here. Gateway photograph: Old San Juan; the marker represents Puerto Rico as a whole.",
@@ -32,7 +33,7 @@ export const places: Place[] = [
     kind: "City",
     lat: 40.7128,
     lon: -74.006,
-    image: "/media/new-york.webp",
+    image: assetUrl("/media/new-york.webp"),
     tagline: "Every block, another beginning.",
     description:
       "A gateway to the neighbourhood histories behind global culture. Our first historical study looks towards the Bronx and the early years of hip-hop. The gateway photograph shows Manhattan, not the Bronx.",
@@ -44,7 +45,7 @@ export const places: Place[] = [
     kind: "City",
     lat: 51.5074,
     lon: -0.1278,
-    image: "/media/london.webp",
+    image: assetUrl("/media/london.webp"),
     tagline: "Different roots. Shared frequencies.",
     description:
       "The final destination in the planned Valid ID WAVEMAKERS journey. Explore an illustrated introduction to the connections between east London, pirate radio and the musical experiments of the 1990s.",
@@ -56,7 +57,7 @@ export const places: Place[] = [
     kind: "Metropolis",
     lat: 35.6762,
     lon: 139.6503,
-    image: "/media/tokyo.webp",
+    image: assetUrl("/media/tokyo.webp"),
     tagline: "A thousand ways to be yourself.",
     description:
       "Discover a visual study of self-expression through the lens of Harajuku street fashion. Gateway photograph: the Shinjuku skyline, a wider Tokyo illustration rather than a photograph of Harajuku.",
@@ -68,7 +69,7 @@ export const places: Place[] = [
     kind: "City",
     lat: -22.9068,
     lon: -43.1729,
-    image: "/media/rio.webp",
+    image: assetUrl("/media/rio.webp"),
     tagline: "Culture moves through the city.",
     description:
       "A Brazilian coastal city where neighbourhood culture and music connect. Our introductory study follows the idea of rhythm as shared memory, with context on samba’s connections to Bahia.",
@@ -127,8 +128,8 @@ const study = (
   status: "available",
   access: "free",
   credit: studyCredit,
-  src: `/media/${v.id}.mp4`,
-  captions: `/captions/${v.id}.vtt`,
+  src: assetUrl(`/media/${v.id}.mp4`),
+  captions: assetUrl(`/captions/${v.id}.vtt`),
 });
 
 export const videos: Video[] = [
@@ -142,7 +143,7 @@ export const videos: Video[] = [
     period: "now",
     people: [],
     duration: 32.128,
-    poster: "/media/miami.webp",
+    poster: assetUrl("/media/miami.webp"),
     series: "City Signals",
     episode: 1,
     context:
@@ -159,7 +160,7 @@ export const videos: Video[] = [
     period: "1930s",
     people: [],
     duration: 31.953,
-    poster: "/media/deco.svg",
+    poster: assetUrl("/media/deco.svg"),
     series: "Time Studies",
     episode: 1,
     context:
@@ -183,7 +184,7 @@ export const videos: Video[] = [
     period: "now",
     people: [],
     duration: 33.213,
-    poster: "/media/puerto-rico.webp",
+    poster: assetUrl("/media/puerto-rico.webp"),
     series: "City Signals",
     episode: 2,
     context:
@@ -208,7 +209,7 @@ export const videos: Video[] = [
     period: "1970s",
     people: ["DJ Kool Herc"],
     duration: 29.293,
-    poster: "/media/breakbeat.svg",
+    poster: assetUrl("/media/breakbeat.svg"),
     series: "Time Studies",
     episode: 2,
     context:
@@ -225,7 +226,7 @@ export const videos: Video[] = [
     period: "1990s",
     people: [],
     duration: 31.948,
-    poster: "/media/london.webp",
+    poster: assetUrl("/media/london.webp"),
     series: "Time Studies",
     episode: 3,
     context:
@@ -249,7 +250,7 @@ export const videos: Video[] = [
     period: "now",
     people: [],
     duration: 32.853,
-    poster: "/media/tokyo.webp",
+    poster: assetUrl("/media/tokyo.webp"),
     series: "City Signals",
     episode: 3,
     context:
@@ -273,7 +274,7 @@ export const videos: Video[] = [
     period: "now",
     people: [],
     duration: 31.518,
-    poster: "/media/rio.webp",
+    poster: assetUrl("/media/rio.webp"),
     series: "City Signals",
     episode: 4,
     context:
@@ -297,7 +298,7 @@ export const videos: Video[] = [
     period: "now",
     people: [],
     duration: 33.078,
-    poster: "/media/table.svg",
+    poster: assetUrl("/media/table.svg"),
     series: "City Signals",
     episode: 5,
     context:
@@ -322,8 +323,8 @@ export const videos: Video[] = [
     publishedAt: "2008-03-18",
     people: ["Sacha Goedegebure", "Blender Foundation"],
     duration: 33.042,
-    poster: "/media/big-buck-bunny.jpg",
-    src: "/media/big-buck-bunny.mp4",
+    poster: assetUrl("/media/big-buck-bunny.jpg"),
+    src: assetUrl("/media/big-buck-bunny.mp4"),
     access: "free",
     status: "available",
     credit:
@@ -343,8 +344,8 @@ export const videos: Video[] = [
     publishedAt: "2010-05-12",
     people: ["Colin Levy", "Blender Foundation"],
     duration: 52.208,
-    poster: "/media/sintel.jpg",
-    src: "/media/sintel.mp4",
+    poster: assetUrl("/media/sintel.jpg"),
+    src: assetUrl("/media/sintel.mp4"),
     access: "free",
     status: "available",
     credit:
@@ -364,7 +365,7 @@ export const videos: Video[] = [
     publishedAt: "2018-10-27",
     people: ["Sacha Goedegebure", "Blender Foundation"],
     duration: 596.566,
-    poster: "/media/big-buck-bunny.jpg",
+    poster: assetUrl("/media/big-buck-bunny.jpg"),
     src: "https://video.blender.org/object-storage/web_videos/bf1f3fb5-b119-4f9f-9930-8e20e892b898-720.mp4",
     access: "free",
     status: "available",
@@ -385,7 +386,7 @@ export const videos: Video[] = [
     publishedAt: "2018-10-26",
     people: ["Colin Levy", "Blender Foundation"],
     duration: 888.093,
-    poster: "/media/sintel.jpg",
+    poster: assetUrl("/media/sintel.jpg"),
     src: "https://video.blender.org/object-storage/web_videos/0eb052d0-fd51-43e6-aa33-ecdbf77a5d40-720.mp4",
     access: "free",
     status: "available",
@@ -406,7 +407,7 @@ export const videos: Video[] = [
     publishedAt: "",
     people: ["Valid ID"],
     duration: 0,
-    poster: "/media/wavemakers.svg",
+    poster: assetUrl("/media/wavemakers.svg"),
     access: "free",
     status: "development",
     series: "WAVEMAKERS",
@@ -434,7 +435,7 @@ export const videos: Video[] = [
     publishedAt: "",
     people: [],
     duration: 0,
-    poster: "/media/story.svg",
+    poster: assetUrl("/media/story.svg"),
     access: "premium",
     status: "development",
     series: "THE STORY BEHIND THE STORY",

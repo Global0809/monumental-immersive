@@ -35,13 +35,15 @@ The primary checkout has `backup/pre-editorial-redesign-2026-10-27` at `d15a2c66
 
 Automated results are stored in ignored `test-results/`; screenshot review is in ignored `output/playwright/`. Reproducible browser scripts are tracked under `tests/browser/`.
 
-- `npm test`: **134 passed**, zero failed.
+- `npm test`: **136 passed**, zero failed.
 - Updated `verify-ui.mjs`: **97 checks passed**, covering keyboard Index, search/filters, real film playback and resume, saves, journey editing, 19 destination routes, mobile layouts and reduced motion. No uncaught application exceptions.
 - `verify-moments.mjs`: **9 checks passed**. A moment saved at 12 seconds resumed at exactly 12.000 seconds. Note editing, reload persistence, transcript seek, remove/Undo and 320px layout were exercised.
 - `verify-audio-idle-resume.mjs`: actual 100-second idle suspension and first-interaction resumption succeeded. Native engine instrumentation confirmed film playback reduces master gain to zero and stops ambience; closing restores them. Browser output was muted, so this is lifecycle verification, not a listening review.
 - Motion previews: actual time advanced, pause/seek worked, rapid selection retained the correct source, simulated request failure retained its poster and truthful state, and Retry recovered playback.
 - Visual review included 1280×720, 1440×900, 768×1024 and 390×844. A separate reviewer identified mobile station-label crowding, excess search chrome and a Time Machine offset; those findings were corrected and recaptured.
 - `verify-editorial-resilience.mjs`: **47 checks passed**, including unavailable WebGL, rapid normal-motion route interruption, browser Back with destination queries, 360×800, 844×390 and 720×450 layouts. The station panel moved less than one pixel after native scrolling settled. Two visual findings outside those assertions were corrected: landscape entrance copy now uses two columns, and the Time Machine introduction retains its spacing when its line break is hidden.
+- `verify-collection-scale.mjs`: **17 checks passed** with a 33-piece isolated fixture and then 35 pieces after saving two complete films through the UI. All pieces remain selectable beyond the 24-mesh window; filters, reset and reload preserve the collection. Full films are labeled Complete film in the sculpture details.
+- A live GitHub Pages playback check exposed a lost subdirectory prefix during source synchronization. The fix is shared across both checkouts: `services/assets.ts` resolves catalogue media, captions and credits exactly once. Dedicated regression tests cover root hosting, Pages prefixes, already-prefixed URLs and remote sources. Future syncs no longer depend on divergent per-host versions of the catalogue files.
 
 ## Measured optimization
 

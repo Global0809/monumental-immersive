@@ -1,9 +1,13 @@
-/** Resolve public assets for both the root preview and a GitHub Pages subpath. */
-export function assetUrl(path: string): string {
-  const base = import.meta.env?.BASE_URL || '/';
+/** Public media uses the same URL contract on root hosting and GitHub Pages. */
+export function resolvePublicAsset(path: string, base = '/'): string {
   if (!path.startsWith('/') || path.startsWith('//')) return path;
-  if (base !== '/' && path.startsWith(base)) return path;
-  return base + path.slice(1);
+  const prefix = base.endsWith('/') ? base : `${base}/`;
+  if (prefix !== '/' && path.startsWith(prefix)) return path;
+  return prefix + path.slice(1);
+}
+
+export function assetUrl(path: string): string {
+  return resolvePublicAsset(path, import.meta.env?.BASE_URL || '/');
 }
 
 export function isLocalMedia(path?: string): boolean {

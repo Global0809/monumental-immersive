@@ -1,3 +1,4 @@
+import { assetUrl as asset } from '../services/assets';
 import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type RefObject, type PointerEvent } from "react";
 import { ArrowDown } from '@phosphor-icons/react/dist/csr/ArrowDown';
 import { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft';
@@ -38,7 +39,6 @@ function channelOf(video: Video) {
   if (["Art & Design", "Documentary", "Food", "Culture"].includes(video.category)) return "Culture";
   return video.category;
 }
-function asset(url: string) { return url.startsWith("/") ? `${import.meta.env.BASE_URL}${url.slice(1)}` : url; }
 function updateRoute(path: string, params: URLSearchParams, changes: Record<string, string>, sound: SoundType = "select") {
   const next = Object.fromEntries(params.entries());
   Object.entries(changes).forEach(([key, value]) => { if (value) next[key] = value; else delete next[key]; });
