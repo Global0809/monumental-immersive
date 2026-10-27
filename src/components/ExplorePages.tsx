@@ -25,6 +25,8 @@ import { playSound, type SoundType } from "../services/audio";
 import { notify } from "../services/feedback";
 import "./explore.css";
 import "./world-editorial.css";
+import "./world-immersive.css";
+import { useWorldHorizon } from "./useWorldHorizon";
 import { selectDestination } from "../services/exploration";
 import { resolveDragAxis, type DragAxis } from "../services/exploreInteraction";
 
@@ -109,6 +111,7 @@ export function WorldPage({ params, reducedMotion, onWatch, onPlayJourney }: Exp
   const featured = available[0];
   const featuredUsesPlacePhoto = Boolean(featured && places.some(place => place.image === featured.poster));
   useArrival(root, selected.id, reducedMotion);
+  useWorldHorizon(root, reducedMotion);
   const items = videos.filter(video => video.places.includes(selected.id) && (category === "All" || channelOf(video) === category));
   const selectPlace = (place: string) => updateRoute("/world", params, { place }, "destination");
   useEffect(() => {
@@ -126,23 +129,37 @@ export function WorldPage({ params, reducedMotion, onWatch, onPlayJourney }: Exp
   };
   return <div ref={root} className={`ex-page ex-world ${reducedMotion ? "ex-reduced" : ""}`}>
     <header className="ex-page-label"><span><GlobeHemisphereWest size={17} /> World</span><span>{places.length} destinations. A different perspective in every one.</span></header>
-    <div className="ex-world-room">
+    <div className="ex-world-room world-expedition-stage">
+      <div className="world-horizon" aria-hidden="true"><img key={selected.id} src={asset(selected.image)} alt="" fetchPriority="high" /></div>
       <section className="ex-orbit-stage" aria-label="Explore the cultural globe">
         <div className="ex-world-heading"><h1 className="ex-world-title">NO BORDERS.</h1><p>Explore places through<br className="world-desktop-break"/> the stories they hold.</p></div>
         <div className="ex-globe"><Suspense fallback={<div className="ex-atlas-loading"><span /><p>Bringing the world into focus</p></div>}><Atlas selected={selected.id} onSelect={selectPlace} reducedMotion={reducedMotion} connections={connections.map(connection => connection.place.id)} showConnections={linksVisible} approaching={cityEntering} /></Suspense></div>
         <div className="ex-orbit-caption"><span className="ex-signal-dot" /><span>{cityEntering ? "Miami. From planet to place." : "Choose a point. Follow its stories."}</span></div>
       </section>
       <aside className="ex-location" aria-label={`${selected.name} destination`}>
-        <div className="ex-location-top"><span>{selected.country}</span><button data-sound-owned aria-label={`${viewer.savedPlaces.includes(selected.id) ? "Unsave" : "Save"} ${selected.name}`} aria-pressed={viewer.savedPlaces.includes(selected.id)} onClick={() => { const added = togglePlace(selected.id); playSound(added ? "save" : "remove"); notify(added ? `${selected.name} saved to My World.` : `${selected.name} removed from saved places.`); }}><BookmarkSimple size={20} weight={viewer.savedPlaces.includes(selected.id) ? "fill" : "regular"} /></button></div>
+        <div className="world-arrival-heading"><div className="ex-location-top"><span>{selected.country}</span><button data-sound-owned aria-label={`${viewer.savedPlaces.includes(selected.id) ? "Unsave" : "Save"} ${selected.name}`} aria-pressed={viewer.savedPlaces.includes(selected.id)} onClick={() => { const added = togglePlace(selected.id); playSound(added ? "save" : "remove"); notify(added ? `${selected.name} saved to My World.` : `${selected.name} removed from saved places.`); }}><BookmarkSimple size={20} weight={viewer.savedPlaces.includes(selected.id) ? "fill" : "regular"} /></button></div>
         <div className="ex-location-name ex-reactive" key={selected.id}><h2>{selected.name}</h2></div>
-        <div className="ex-location-photo ex-reactive"><img key={selected.image} src={asset(selected.image)} alt={`Destination photograph of ${selected.name}`} /><span>Destination photograph</span></div>
+        <span className="world-photograph-note">Destination photograph</span></div>
+        <div className="world-arrival-details">
         <p className="ex-location-tagline">{selected.tagline}</p>
         <div className="ex-location-inventory"><span><strong>{available.length}</strong> {available.length === 1 ? "available story" : "available stories"}</span><span><strong>{totalRuntime(available.reduce((sum, video) => sum + video.duration, 0))}</strong> total</span></div>
         <button className="ex-location-explore" onClick={() => section.current?.scrollIntoView({ behavior: reducedMotion ? "instant" : "smooth", block: "start" })}>Explore {selected.name}<ArrowDown size={20} /></button>
         {featured && <button className="world-quick-watch" onClick={() => onWatch(featured)}><Play weight="fill" size={16}/><span>Watch a story <small>{featured.title} · {durationLabel(featured.duration)}</small></span><ArrowUpRight size={18}/></button>}
         {selected.id === "miami" && <button className="city-entry-link" data-sound="destination" aria-busy={cityEntering} onClick={enterCity}>Step inside Miami <ArrowUpRight size={17}/></button>}
+        </div>
       </aside>
     </div>
+    <div className="world-rail-heading"><h2>Where to?</h2><p>Choose a place. Find a different perspective.</p></div>
+    <div className="world-destination-rail" role="group" aria-label="Choose a destination" onKeyDown={event => {
+      const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button'));
+      const index = buttons.indexOf(event.target as HTMLButtonElement);
+      if (index < 0 || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+      buttons[next].focus({ preventScroll: true }); buttons[next].click();
+      const rail = event.currentTarget; const item = buttons[next];
+      rail.scrollTo({ left: Math.max(0, rail.scrollLeft + item.getBoundingClientRect().left - rail.getBoundingClientRect().left - (rail.clientWidth - item.offsetWidth) / 2), behavior: reducedMotion ? 'instant' : 'smooth' });
+    }}>{places.map(place => <button key={place.id} data-sound-owned aria-label={`Go to ${place.name}`} aria-pressed={place.id === selected.id} onClick={() => selectPlace(place.id)}><img src={asset(place.image)} alt="" loading="lazy"/><span className="world-destination-name">{place.name}</span><small>{place.country}</small><ArrowUpRight size={20}/></button>)}</div>
     <div className="ex-world-tools"><span>{coordinates(selected.lat, selected.lon)}</span><div><button data-sound-owned aria-pressed={linksVisible} onClick={() => updateRoute("/world", params, { links: linksVisible ? "off" : "" })}><span className={linksVisible ? "ex-toggle-light is-on" : "ex-toggle-light"} />Connections {linksVisible ? "on" : "off"}</button><button data-sound-owned onClick={() => { const options = places.filter(place => place.id !== selected.id); selectPlace(options[Math.floor(Math.random() * options.length)].id); }}><Shuffle size={17} />Surprise me</button></div></div>
     {featured && <section className="world-featured" ref={section} aria-label={`Featured story from ${selected.name}`}>
       <div className="world-featured-media"><img src={asset(featured.poster)} alt={`${featuredUsesPlacePhoto ? 'Destination photograph used as the cover' : 'Cover artwork'} for ${featured.title}`} loading="lazy"/><button onClick={() => onWatch(featured)} aria-label={`Watch ${featured.title}`}><Play weight="fill" size={26}/></button><span>{featured.tags.includes("full film") ? "Guest film" : "Preview study"} · {durationLabel(featured.duration)}</span></div>

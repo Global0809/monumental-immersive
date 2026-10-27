@@ -138,3 +138,7 @@ The sound identity is synthesized from six material families, with meaningful se
 Motion uses damped spatial movement, short route arrivals, cover transitions and GSAP Flip for journey reordering. A contextual cursor and subtle pointer lighting apply only on suitable pointer devices. Native scrolling, focus behavior and reduced-motion preferences remain primary.
 
 The player extends into searchable supplied transcripts and a personal moment notebook. All status copy distinguishes available media, planned Originals and browser-local guest collections. Touch layouts retain distinct save, play and quick-preview controls, and the mobile header keeps four reachable actions without shrinking them to icon-sized hit areas.
+
+## World panoramic expedition
+
+World now brings the existing globe and destination photograph into a single wide scene. A photographic destination rail selects the same URL-backed place as the globe; the name, horizon, story collection, save state and available playback remain connected. The horizon has a short destination reveal and bounded pointer/scroll depth without moving the globe camera or intercepting native scrolling. One WebGL canvas remains on the page. Mobile stacks the globe and arrival composition and uses a native horizontal destination rail; keyboard arrows select places without scrolling the document. Reduced motion removes horizon movement.
