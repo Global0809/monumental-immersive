@@ -1,4 +1,5 @@
 import { videos, places } from '../data/catalogue';
+import { prepareSeekableMedia } from './seekableMedia';
 
 export type PassageChapterId = 'world' | 'time-machine' | 'movies' | 'music' | 'culture' | 'my-world';
 export type PassageMediaKind = 'motion-study' | 'film-trailer';
@@ -106,6 +107,8 @@ export interface PassageMediaEnvironment {
   windowEvents: Pick<Window, 'addEventListener' | 'removeEventListener'>;
   isHidden(): boolean;
   isPlayerOpen(): boolean;
+  /** Bounded local-preview preparation for hosts that do not support byte ranges. */
+  prepareSource?(source: string, signal: AbortSignal): Promise<{ src: string; release(): void }>;
 }
 
 export function createPassageMediaController(environment: PassageMediaEnvironment): PassageMediaController {
@@ -121,6 +124,8 @@ export function createPassageMediaController(environment: PassageMediaEnvironmen
   let selected: PassageMediaEntry | undefined;
   let destroyed = false, playingFilm = environment.isPlayerOpen(), pendingPlay = false, requestedLoad = false;
   let playAttempt = 0, sourceEpoch = 0;
+  let preparation: AbortController | undefined;
+  let preparedSource: { src: string; release(): void } | undefined;
   let snapshot: PassageMediaSnapshot = Object.freeze({ chapterId: null, status: 'idle', sourceEpoch, ready: false });
 
   const emit = (status: PassageMediaStatus, ready = snapshot.ready) => {
@@ -140,7 +145,24 @@ export function createPassageMediaController(environment: PassageMediaEnvironmen
   function resume() {
     if (!mayPlay()) { pause(); return; }
     if (selected && !requestedLoad && !terminal()) {
-      requestedLoad = true; video.preload = 'auto'; video.load();
+      if (environment.prepareSource && !preparedSource) {
+        if (preparation) return;
+        const abort = new AbortController(), epoch = sourceEpoch;
+        preparation = abort;
+        void environment.prepareSource(selected.src, abort.signal).then(source => {
+          if (destroyed || abort.signal.aborted || epoch !== sourceEpoch) { source.release(); return; }
+          preparation = undefined; preparedSource = source;
+          // Preparation may finish after sound playback, motion settings or
+          // visibility has suspended the scene. Resume rechecks every owner.
+          resume();
+        }).catch((error: unknown) => {
+          if (destroyed || abort.signal.aborted || epoch !== sourceEpoch) return;
+          preparation = undefined;
+          if ((error as { name?: string })?.name !== 'AbortError') failed();
+        });
+        return;
+      }
+      requestedLoad = true; video.preload = 'auto'; video.src = preparedSource?.src ?? selected.src; video.load();
     }
     if (terminal() || !snapshot.ready || pendingPlay || !video.paused) return;
     const request = ++playAttempt, epoch = sourceEpoch;
@@ -199,11 +221,13 @@ export function createPassageMediaController(environment: PassageMediaEnvironmen
     // as the new chapter being ready.
     selected = undefined; video.pause();
     video.removeAttribute('src'); video.load();
+    preparation?.abort(); preparation = undefined;
+    preparedSource?.release(); preparedSource = undefined;
     selected = getPassageMedia(id);
     if (!selected) { video.removeAttribute('poster'); emit('idle', false); return; }
     video.poster = selected.poster;
     emit('loading', false);
-    video.preload = 'none'; video.src = selected.src;
+    video.preload = 'none';
     resume();
   }
   return {
@@ -230,6 +254,8 @@ export function createPassageMediaController(environment: PassageMediaEnvironmen
       environment.windowEvents.removeEventListener('monumental:playback', playback);
       Object.entries(mediaEvents).forEach(([name, listener]) => video.removeEventListener(name, listener));
       video.pause(); video.removeAttribute('src'); video.removeAttribute('poster'); video.load(); video.remove();
+      preparation?.abort(); preparation = undefined;
+      preparedSource?.release(); preparedSource = undefined;
       selected = undefined; suspension.clear(); sourceEpoch += 1; emit('idle', false); listeners.clear();
     },
   };
@@ -245,6 +271,7 @@ export function acquirePassageMedia(): { controller: PassageMediaController; rel
       documentEvents: document, windowEvents: window,
       isHidden: () => document.hidden,
       isPlayerOpen: () => Boolean(document.querySelector('.ms-player-dialog[open]')),
+      prepareSource: prepareSeekableMedia,
     }), references: 0,
   };
   const lease = shared;

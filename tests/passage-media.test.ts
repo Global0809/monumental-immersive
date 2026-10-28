@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { PASSAGE_MEDIA, createPassageMediaController } from '../src/services/passageMedia.ts';
+import { PASSAGE_MEDIA, createPassageMediaController, type PassageMediaEnvironment } from '../src/services/passageMedia.ts';
 
 class FakeVideo extends EventTarget {
   muted = false; defaultMuted = false; playsInline = false; preload = ''; loop = false; controls = true;
@@ -27,7 +27,7 @@ class FakeVideo extends EventTarget {
   }
 }
 
-function setup() {
+function setup(prepareSource?: PassageMediaEnvironment['prepareSource']) {
   const video = new FakeVideo(), documentEvents = new EventTarget(), windowEvents = new EventTarget();
   const state = { hidden: false, player: false };
   const controller = createPassageMediaController({
@@ -35,6 +35,7 @@ function setup() {
     documentEvents: documentEvents as unknown as Document,
     windowEvents: windowEvents as unknown as Window,
     isHidden: () => state.hidden, isPlayerOpen: () => state.player,
+    prepareSource,
   });
   return { video, controller, state, documentEvents, windowEvents };
 }
@@ -149,4 +150,55 @@ test('Compact presentation moves the existing element and teardown unloads media
   assert.equal(video.poster, '');
   assert.equal(video.paused, true);
   assert.equal(controller.getSnapshot().chapterId, null);
+});
+
+test('Seekable preparation is lazy, aborts obsolete chapters and releases each Blob after detaching the decoder', async () => {
+  const pending: { source: string; signal: AbortSignal; resolve(source: { src: string; release(): void }): void }[] = [];
+  const { controller, video } = setup((source, signal) => new Promise(resolve => pending.push({ source, signal, resolve })));
+  controller.setSuspended('reduced-motion', true); controller.activate('world');
+  assert.equal(pending.length, 0);
+  assert.equal(video.src, '');
+  controller.setSuspended('reduced-motion', false);
+  assert.equal(pending.length, 1);
+  controller.activate('music');
+  assert.equal(pending[0].signal.aborted, true);
+  assert.equal(pending.length, 2);
+  let obsoleteReleases = 0, activeReleases = 0;
+  pending[0].resolve({ src: 'blob:obsolete-world', release: () => obsoleteReleases++ });
+  await Promise.resolve();
+  assert.equal(obsoleteReleases, 1);
+  assert.equal(video.src, '');
+  controller.setSuspended('full-player', true);
+  pending[1].resolve({ src: 'blob:seekable-music', release: () => { assert.equal(video.src, ''); activeReleases++; } });
+  await Promise.resolve();
+  assert.equal(video.src, '', 'A source resolving behind the full player must not start decoding');
+  controller.setSuspended('full-player', false);
+  assert.equal(video.src, 'blob:seekable-music');
+  video.decode(); await Promise.resolve();
+  assert.equal(video.currentTime, 6);
+  assert.equal(controller.getSnapshot().status, 'playing');
+  controller.destroy();
+  assert.equal(activeReleases, 1);
+  assert.equal(video.src, '');
+});
+
+test('Preparation failure preserves the poster and is retried only on explicit request', async () => {
+  let requests = 0, releaseCount = 0;
+  const { controller, video } = setup(async () => {
+    requests++;
+    if (requests === 1) throw new Error('Preview download interrupted');
+    return { src: 'blob:retry', release: () => releaseCount++ };
+  });
+  controller.activate('world');
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(controller.getSnapshot().status, 'failed');
+  assert.equal(video.poster, PASSAGE_MEDIA[0].poster);
+  assert.equal(video.src, '');
+  controller.setSuspended('route', false);
+  assert.equal(requests, 1);
+  controller.retry(); await Promise.resolve();
+  assert.equal(video.src, 'blob:retry');
+  video.decode(); await Promise.resolve();
+  assert.equal(controller.getSnapshot().status, 'playing');
+  controller.destroy(); assert.equal(releaseCount, 1);
 });

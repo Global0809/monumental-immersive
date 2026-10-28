@@ -258,8 +258,20 @@ try {
     await station(page, 2, true);
     check('Reduced motion retains all six single DOM chapters and poster presentation', await page.locator('.tunnel-panel').count() === 6 && await page.locator('.tunnel-journey').getAttribute('data-compact') === 'true' && await panel(page, 'movies').locator('.tunnel-compact-window img').isVisible());
     check('Reduced motion plays no ambient decoders', await page.evaluate(() => window.__passageAudit.videos().every(video => video.paused)));
-    const before = await page.evaluate(() => window.__passageAudit.draws()); await page.waitForTimeout(400);
-    check('Reduced motion does not continuously render the Passage', await page.evaluate(() => window.__passageAudit.draws()) === before);
+    // Poster textures legitimately demand a frame as remote images arrive.
+    // Wait for a bounded quiet window; an actual continuous loop cannot pass.
+    await page.waitForLoadState('networkidle', { timeout: 4000 }).catch(() => {});
+    const settled = await page.evaluate(async () => {
+      const started = performance.now(); let count = window.__passageAudit.draws(), quietSince = started;
+      while (performance.now() - started < 5000) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const next = window.__passageAudit.draws();
+        if (next !== count) { count = next; quietSince = performance.now(); }
+        if (performance.now() - quietSince >= 600) return true;
+      }
+      return false;
+    });
+    check('Reduced motion does not continuously render the Passage', settled);
   });
 
   await scenario('webgl-unavailable', async context => {
