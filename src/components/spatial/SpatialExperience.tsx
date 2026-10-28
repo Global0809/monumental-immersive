@@ -7,6 +7,7 @@ import {
 } from '../../services/spatial';
 import type { SpatialSceneController } from './scene';
 import SpatialNavigator from './SpatialNavigator';
+import FlightEnvironment from './FlightEnvironment';
 import './spatial-world.css';
 import './spatial-rooms.css';
 
@@ -20,10 +21,11 @@ export default function SpatialExperience({ path, reducedMotion, paused }: {
   // A direct link to a film or destination must not pay for the entire Passage.
   // Once entered, keep one scene alive for return visits and camera handoffs.
   const [sceneRequested, setSceneRequested] = useState(path === '/');
+  const [crewOpen, setCrewOpen] = useState(false);
   const spatial = useSpatial();
   const room = spatialRoomForPath(path);
   const latest = useRef({ entered: spatial.entered || path !== '/', room, reducedMotion, paused });
-  latest.current = { entered: spatial.entered || path !== '/', room, reducedMotion, paused };
+  latest.current = { entered: spatial.entered || path !== '/', room, reducedMotion, paused: paused || crewOpen };
   useEffect(() => { if (path === '/') setSceneRequested(true); }, [path]);
 
   useEffect(() => {
@@ -77,10 +79,11 @@ export default function SpatialExperience({ path, reducedMotion, paused }: {
     };
   }, [sceneRequested]);
 
-  useEffect(() => { if (path !== '/') enterSpatialWorld(); controller.current?.setState(latest.current); }, [path, reducedMotion, paused, spatial.entered]);
+  useEffect(() => { if (path !== '/') enterSpatialWorld(); controller.current?.setState(latest.current); }, [path, reducedMotion, paused, spatial.entered, crewOpen]);
   useEffect(() => { controller.current?.setFocus(spatial.focus); }, [spatial.focus]);
 
   return <>
+    <FlightEnvironment path={path} reducedMotion={reducedMotion} paused={paused} onInspectionChange={setCrewOpen}/>
     <div className={`spatial-world ${spatial.unavailable ? 'spatial-world--fallback' : ''}`} data-entered={spatial.entered || path !== '/'} data-home={path === '/'} data-travelling={!!spatial.travelling}>
       <div className="spatial-world-canvas" ref={host}/>
       <div className="spatial-world-vignette" aria-hidden="true"/>
