@@ -16,4 +16,6 @@ FORM: User-selected reference; native document scroll is the only journey author
 
 SIGNATURE: Articulated wall arms carry layered frames into view. Twelve physical leaves and the semantic text's matching weave mask open together; reverse scrolling reconstructs them. Frame clearance, pointer response and media activation never displace readable controls.
 
+EXTENSION: A six-leaf entrance relay opens through the same accessible Unfold/Fold action as a click on its 3D geometry. Five smaller relays appear during travel; wall vanes, helical light trains and a visitor-triggered signal animate the existing tunnel. These are local mechanisms in the incumbent chrome, charcoal, ivory and signal-red world. They share the existing camera and frame clock, calm at reading positions, freeze during inspection and disappear in compact or reduced-motion mode. Preserve the continuous scroll path, exact reading holds, content protection and direct discovery actions. See `docs/tunnel-life.md` for implementation and review evidence.
+
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

@@ -26,14 +26,16 @@ export function createTunnelAtmosphere() {
       uTrail: { value: Array.from({ length: 4 }, () => new THREE.Vector3()) },
       uPulse: { value: new THREE.Vector4(0, 0, 2, 0) },
       uOrbit: { value: 0 },
+      uTravel: { value: 0 }, uSignal: { value: new THREE.Vector3(0, 8, 0) },
     },
     vertexShader: `
       attribute vec3 aTraits;
-      uniform float uTime, uHeight, uPixelRatio, uOrbit;
+      uniform float uTime, uHeight, uPixelRatio, uOrbit, uTravel;
+      uniform vec3 uSignal;
       uniform vec4 uPointer, uPulse;
       uniform vec2 uVelocity;
       uniform vec3 uTrail[4];
-      varying float vEnergy, vTint, vDepth, vReaction;
+      varying float vEnergy, vTint, vDepth, vReaction, vTravel;
       varying vec2 vDirection;
       void main() {
         vec3 p = position;
@@ -45,6 +47,8 @@ export function createTunnelAtmosphere() {
         p.x += sin(p.z * .17 + uTime * .22 + stream) * .24;
         p.y += sin(p.x * .21 - uTime * .19 + phase * .35) * .19;
         p.z += cos(p.x * .16 + uTime * .18 + stream) * .24;
+        float signalDistance = (p.z - (uSignal.x - 4.0 - uSignal.y * 36.0)) / 7.0;
+        float signal = exp(-signalDistance * signalDistance) * uSignal.z * (1.0 - smoothstep(5.0, 8.0, uSignal.y));
         vec4 view = modelViewMatrix * vec4(p, 1.0);
         float depth = -view.z;
         vec2 projection = vec2(projectionMatrix[0][0], projectionMatrix[1][1]);
@@ -81,7 +85,7 @@ export function createTunnelAtmosphere() {
         float wave = exp(-waveDistance * waveDistance);
         wave *= uPulse.w * (1.0 - smoothstep(.15, 1.6, uPulse.z));
         drift += pulseDelta / max(pulseRadius, .02) * wave * .19;
-        float reaction = min(1.0, influence * (.35 + speed * .28 + charge * .65) + wake * .22 + wave);
+        float reaction = min(1.0, influence * (.35 + speed * .28 + charge * .65) + wake * .22 + wave + signal * .8);
         view.xy += (drift / metric) * max(depth, .5) / projection;
         view.z += sin(phase + uTime * .7) * influence * charge * .24;
         gl_Position = projectionMatrix * view;
@@ -90,13 +94,14 @@ export function createTunnelAtmosphere() {
         vDepth = smoothstep(.7, 2.0, depth) * (1.0 - smoothstep(65.0, 120.0, depth));
         vEnergy = .85 + .12 * sin(uTime * .45 + phase);
         vReaction = reaction;
+        vTravel = uTravel;
         vTint = aTraits.z;
         vDirection = normalize(vec2(drift.x, -drift.y) + vec2(.001, .002));
       }
     `,
     fragmentShader: `
       uniform float uLight;
-      varying float vEnergy, vTint, vDepth, vReaction;
+      varying float vEnergy, vTint, vDepth, vReaction, vTravel;
       varying vec2 vDirection;
       void main() {
         vec2 uv = (gl_PointCoord - .5) * 2.0;
@@ -105,7 +110,7 @@ export function createTunnelAtmosphere() {
         float halo = exp(-r * r * 12.0) * (.055 + vReaction * .055);
         float core = exp(-r * r * 105.0) * .7;
         vec2 axial = vec2(dot(uv, vDirection), dot(uv, vec2(-vDirection.y, vDirection.x)));
-        float glint = exp(-axial.x * axial.x * 14.0 - axial.y * axial.y * 160.0) * vReaction * .1;
+        float glint = exp(-axial.x * axial.x * (14.0 - vTravel * 9.0) - axial.y * axial.y * 160.0) * (vReaction * .1 + vTravel * .12);
         float alpha = (core + halo + glint) * (1.0 - smoothstep(.65, 1.0, r)) * vDepth * vEnergy * uLight;
         vec3 chrome = vec3(.88, .86, .78);
         vec3 signal = vec3(1.0, .302, .196);
@@ -127,10 +132,12 @@ export function createTunnelAtmosphere() {
       material.uniforms.uPixelRatio.value = ratio;
       material.uniforms.uLight.value = .9 + THREE.MathUtils.clamp(light, 0, 100) / 400;
     },
-    update(time: number, dt = 1 / 60, reducedMotion = false) {
+    update(time: number, dt = 1 / 60, reducedMotion = false, travel = 0, signal?: {age:number;originZ:number;strength:number}) {
       if (reducedMotion) input.reset();
       const field = input.update(reducedMotion ? 0 : dt);
       material.uniforms.uTime.value = time;
+      material.uniforms.uTravel.value = Math.min(1, Math.max(0, travel));
+      material.uniforms.uSignal.value.set(signal?.originZ ?? 0, signal?.age ?? 8, signal?.strength ?? 0);
       material.uniforms.uOrbit.value = field.orbit;
       material.uniforms.uPointer.value.set(field.x, field.y, field.strength, field.charge);
       material.uniforms.uVelocity.value.set(field.vx, field.vy);

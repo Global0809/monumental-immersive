@@ -102,7 +102,13 @@
       "A single warm signal accent for selected state, forward action and cultural connections.",
       "Direct conventional controls accompany immersive interactions."
     ],
-    "rules": [],
+    "rules": [
+      {
+        "name": "The Passage Mechanism Rule",
+        "body": "Local relay articulation and wall signals share the existing camera and frame scheduler. They calm during chapter reading, freeze during inspection, pause under player/dialog or hidden-document suspension, and disappear in compact or reduced-motion mode.",
+        "section": "elevation"
+      }
+    ],
     "dos": [
       "Do keep the shared catalogue and page controls connected.",
       "Do preserve the exact thirteen-category Index and dedicated World and Time Machine pages.",

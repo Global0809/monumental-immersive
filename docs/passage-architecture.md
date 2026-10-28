@@ -69,6 +69,12 @@ Repeated structure uses shared geometry/materials and instancing. Posters load f
 
 There are no React state changes per rendered animation frame. Passage rendering pauses during player/dialog suspension and hidden-document periods, and continuous rendering stops on other routes. Cleanup cancels queued frames and travel, removes listeners and observers, releases subscriptions and the media lease, restores panel mounts, and disposes textures, geometry, materials, environment and renderer.
 
+## Living tunnel extension
+
+The existing Passage also carries a six-leaf kinetic relay at the entrance, five smaller relays between stations, hinged wall vanes and light trains on helical rails. The entrance relay opens through the keyboard-accessible Unfold/Fold control or a raycast click on its physical geometry. Send a signal launches one retriggerable pulse through the wall mechanisms and existing particle field at 36 world units per second. The extension shares the current camera, renderer and frame scheduler; station reading holds, semantic panels, media and catalogue behavior remain governed by the architecture above.
+
+`tunnelRelays.ts` owns the relay geometry and local articulation, `tunnelSignals.ts` owns the instanced wall mechanisms, and `tunnelLife.ts` owns event-driven controls and the bounded pulse envelope. Travel relays disappear around reading holds, wall activity calms near the active station, and inspection freezes the additional animation. Compact and reduced-motion modes omit the added mechanisms and their controls. Implementation, verification evidence and the extension's separate review status are recorded in [Living tunnel](tunnel-life.md); the verification record below describes the preceding continuous-tunnel foundation.
+
 ## Verification record and limits
 
 The production build and all 164 unit/service tests pass after the two finish-review fixes. The final production-bundle browser pass recorded 57 passing Passage checks and 29 passing Flight regression checks, with no uncaught exceptions. Coverage includes all chapters, exact CSS3D reading holds, fast/reverse travel, inspection/reset/Escape/focus, player priority, route return, saved collections, compact/landscape transitions, reduced motion, WebGL fallback/context loss, blocked media and projected media protection. A separate geometry clearance run recorded 9,160 camera rays with zero intersections.

@@ -9,6 +9,7 @@ import { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft';
 import { Play } from '@phosphor-icons/react/dist/csr/Play';
 import { CornersOut } from '@phosphor-icons/react/dist/csr/CornersOut';
 import { ArrowCounterClockwise } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise';
+import { Waveform } from '@phosphor-icons/react/dist/csr/Waveform';
 import { videos, type Video } from '../../data/catalogue';
 import { durationLabel } from '../../services/discovery';
 import { filmFormat } from '../FilmCard';
@@ -19,6 +20,7 @@ import { useViewer } from '../../services/viewer';
 import { PASSAGE_CHAPTERS as chapters } from '../../services/passageChapters';
 import { acquirePassageMedia, type PassageChapterId, type PassageMediaController } from '../../services/passageMedia';
 import { enterSpatialWorld, spatialPortals, useSpatial } from '../../services/spatial';
+import { getTunnelLife, subscribeTunnelLife, setTunnelRelay, sendTunnelSignal } from '../../services/tunnelLife';
 import { getTunnelFrame, getTunnelInspection, setTunnelFrame, setTunnelInspection, setTunnelPanels, subscribeTunnelFrame, subscribeTunnelInspection, tunnelChapterZ, tunnelEntranceZ, tunnelCompact, TUNNEL_CHAPTER_UNITS, TUNNEL_HERO_UNITS } from '../../services/tunnelJourney';
 import PassageCompactMedia, { PassageMediaCaption } from './passageCompactMedia';
 import './tunnel-journey.css';
@@ -86,6 +88,7 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
   onWatch: (video: Video) => void; reducedMotion: boolean; soundUnavailable: boolean;
 }) {
   const spatial = useSpatial();
+  const life = useSyncExternalStore(subscribeTunnelLife, getTunnelLife);
   const root = useRef<HTMLDivElement>(null), hero = useRef<HTMLElement>(null);
   const slots = useRef<(HTMLElement | null)[]>([]), track = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(() => tunnelCompact(document.documentElement.clientWidth, innerHeight, reducedMotion));
@@ -95,6 +98,7 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
   const metrics = useRef<{ top: number; height: number }[]>([]);
   const layoutRefreshFrame = useRef(0), stationJumpFrame = useRef(0);
   const reading = compact || spatial.unavailable;
+  useEffect(() => () => setTunnelRelay(false), []);
   const mediaController = useRef<PassageMediaController | null>(null);
   useEffect(() => {
     // The document owns selection so ambient media also works without WebGL.
@@ -272,6 +276,10 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
         <a className="tunnel-browse" href={href('/category/movies')}>Browse the films <ArrowUpRight size={14}/></a>
       </div>
       <div className="tunnel-hero-caption" aria-hidden="true"><span>AN OPEN WORLD<br/>OF ENTERTAINMENT</span><i/><span>MONUMENTAL<br/>STREAMS</span></div>
+      {!reading && !reducedMotion && <div className="tunnel-relay-control">
+        <button aria-pressed={life.relayOpen} onClick={() => { setTunnelRelay(!life.relayOpen); playSound('sculpture-turn'); }}><CornersOut size={17}/><span>{life.relayOpen ? 'Fold the relay' : 'Unfold the relay'}</span><ArrowUpRight size={16}/></button>
+        <span>A living mechanism. Yours to open.</span>
+      </div>}
       <div className="tunnel-hero-bottom"><button onClick={() => goToStation(0)}><ArrowDown size={17}/><span>SCROLL INTO THE EXPERIENCE</span></button><span>{spatial.unavailable ? 'Every story is still open.' : spatial.ready ? 'Six stations. Endless connections.' : 'Opening the world…'}</span></div>
     </section></div>
     {chapters.map((chapter, index) => <section key={spatialPortals[index].id} className="tunnel-checkpoint" data-station-index={index} data-environment={chapter.environment} aria-label={`${spatialPortals[index].title} station`}>
@@ -282,6 +290,7 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
     <nav className="tunnel-wayfinder" aria-label="Tunnel stations" data-in-journey={active >= 0}>
       <div className="tunnel-destination-preview" data-visible={previewStation !== null} aria-hidden="true">{previewStation !== null && <><span>{String(previewStation + 1).padStart(2, '0')} / {spatialPortals[previewStation].title}</span><strong>{chapters[previewStation].object}</strong><ArrowUpRight size={18}/></>}</div>
       <button className="tunnel-home-stop" onClick={() => goToStation(-1)} aria-label="Return to tunnel entrance">M<span>THE PASSAGE</span></button>
+      {!reading && !reducedMotion && <button className="tunnel-signal-button" aria-label="Send a signal" title="Send a signal through the tunnel" onClick={() => { sendTunnelSignal(); playSound('sculpture-turn'); }}><span key={life.signal} className={life.signal ? 'tunnel-signal-mark is-sent' : 'tunnel-signal-mark'}><Waveform size={19}/></span><span>Send a signal</span></button>}
       <select className="tunnel-mobile-station" aria-label="Choose Passage station" value={active} onChange={event => goToStation(Number(event.target.value))}><option value={-1}>The Passage</option>{spatialPortals.map((portal, index) => <option key={portal.id} value={index}>{String(index + 1).padStart(2, '0')} · {portal.title.replace('The ', '')}</option>)}</select>
       <div className="tunnel-stop-list">{spatialPortals.map((portal, index) => <button key={portal.id} onClick={() => goToStation(index)} onPointerEnter={event => { if (event.pointerType === 'mouse') setPreviewStation(index); }} onPointerLeave={() => setPreviewStation(null)} onFocus={() => setPreviewStation(index)} onBlur={() => setPreviewStation(null)} aria-current={active === index ? 'step' : undefined} aria-label={`Travel to ${portal.title}`}><i/><span>{portal.title.replace('The ', '')}</span></button>)}</div>
       <div className="tunnel-step-buttons"><button onClick={() => goToStation(active - 1)} disabled={active < 0} aria-label="Previous station"><ArrowLeft size={18}/></button><span>{String(Math.max(0, active + 1)).padStart(2, '0')} / 06</span><button onClick={() => goToStation(active + 1)} disabled={active === 5} aria-label="Next station"><ArrowRight size={18}/></button></div>
