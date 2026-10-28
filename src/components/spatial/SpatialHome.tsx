@@ -13,13 +13,13 @@ import { videos, type Video } from '../../data/catalogue';
 import { durationLabel } from '../../services/discovery';
 import { filmFormat } from '../FilmCard';
 import { href } from '../../services/router';
+import { assetUrl as asset } from '../../services/assets';
 import { playSound } from '../../services/audio';
 import { enterSpatialWorld, spatialPortals, useSpatial } from '../../services/spatial';
 import { getTunnelInspection, setTunnelFrame, setTunnelInspection, setTunnelPanels, subscribeTunnelInspection, tunnelChapterZ, tunnelCompact, TUNNEL_CHAPTER_UNITS, TUNNEL_HERO_UNITS } from '../../services/tunnelJourney';
 import './tunnel-journey.css';
 
 gsap.registerPlugin(ScrollTrigger);
-const asset = (url: string) => url.startsWith('/') ? `${import.meta.env.BASE_URL}${url.slice(1)}` : url;
 const chapters = [
   { lines: ['EVERY PLACE.', 'AN OPEN DOOR.'], copy: 'A story can take you somewhere. Turn the globe, choose a destination and meet the people making its culture.', action: 'Explore the world', feature: 'miami-frequency', detail: 'MIAMI → THE WORLD', object: 'A planet of possibilities' },
   { lines: ['THE PAST.', 'STILL IN MOTION.'], copy: 'Move through cultural moments. Follow the music, images and ideas that keep finding new life.', action: 'Enter the Time Machine', feature: 'break-beat-city', detail: 'THEN ↔ NOW', object: 'An archive without an ending' },
