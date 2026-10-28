@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
@@ -15,49 +15,24 @@ import { filmFormat } from '../FilmCard';
 import { href } from '../../services/router';
 import { assetUrl as asset } from '../../services/assets';
 import { playSound } from '../../services/audio';
+import { useViewer } from '../../services/viewer';
+import { PASSAGE_CHAPTERS as chapters } from '../../services/passageChapters';
+import { acquirePassageMedia, type PassageChapterId, type PassageMediaController } from '../../services/passageMedia';
 import { enterSpatialWorld, spatialPortals, useSpatial } from '../../services/spatial';
-import { getTunnelInspection, setTunnelFrame, setTunnelInspection, setTunnelPanels, subscribeTunnelInspection, tunnelChapterZ, tunnelCompact, TUNNEL_CHAPTER_UNITS, TUNNEL_HERO_UNITS } from '../../services/tunnelJourney';
+import { getTunnelFrame, getTunnelInspection, setTunnelFrame, setTunnelInspection, setTunnelPanels, subscribeTunnelFrame, subscribeTunnelInspection, tunnelChapterZ, tunnelCompact, TUNNEL_CHAPTER_UNITS, TUNNEL_HERO_UNITS } from '../../services/tunnelJourney';
+import PassageCompactMedia, { PassageMediaCaption } from './passageCompactMedia';
 import './tunnel-journey.css';
 
 gsap.registerPlugin(ScrollTrigger);
-const chapters = [
-  { lines: ['EVERY PLACE.', 'AN OPEN DOOR.'], copy: 'A story can take you somewhere. Turn the globe, choose a destination and meet the people making its culture.', action: 'Explore the world', feature: 'miami-frequency', detail: 'MIAMI → THE WORLD', object: 'A planet of possibilities' },
-  { lines: ['THE PAST.', 'STILL IN MOTION.'], copy: 'Move through cultural moments. Follow the music, images and ideas that keep finding new life.', action: 'Enter the Time Machine', feature: 'break-beat-city', detail: 'THEN ↔ NOW', object: 'An archive without an ending' },
-  { lines: ['LIGHTS DOWN.', 'WORLDS OPEN.'], copy: 'Independent films and extraordinary perspectives. Find a story, take your seat and stay a little longer.', action: 'Enter the cinema', feature: 'sintel-full', detail: 'INDEPENDENT FILM', object: 'A window into another world' },
-  { lines: ['FOLLOW', 'THE FREQUENCY.'], copy: 'Every sound comes from somewhere. Trace a rhythm back to its people, its streets and its story.', action: 'Explore music', feature: 'island-current', detail: 'SOUND → PLACE → PEOPLE', object: 'Culture has a resonance' },
-  { lines: ['LIFE.', 'IN EVERY FORM.'], copy: 'Art on the street. Food around a shared table. Culture lives in the things we make together.', action: 'Discover culture', feature: 'concrete-and-colour', detail: 'ART / FOOD / PEOPLE', object: 'Many perspectives. One connection.' },
-  { lines: ['BRING', 'SOMETHING BACK.'], copy: 'Keep the stories that stay with you. Collect places, make a journey and build a world that is yours.', action: 'Open My World', feature: 'tokyo-in-motion', detail: 'YOUR COLLECTION', object: 'Your own Monumental' },
-];
-
 function Station({ index, onWatch, compact, reducedMotion }: { index: number; onWatch: (video: Video) => void; compact: boolean; reducedMotion: boolean }) {
   const inspection = useSyncExternalStore(subscribeTunnelInspection, getTunnelInspection);
+  const viewer = useViewer();
   const chapter = chapters[index], portal = spatialPortals[index];
   const expanded = inspection.station === portal.id && inspection.expanded;
-  const panel = useRef<HTMLElement>(null), inspectionToggle = useRef<HTMLButtonElement>(null), pointerFrame = useRef(0), pointerBounds = useRef<DOMRect | null>(null);
-  const film = videos.find(video => video.id === chapter.feature && video.status === 'available');
+  const inspectionToggle = useRef<HTMLButtonElement>(null);
+  const savedFilm = chapter.id === 'my-world' ? viewer.saved.map(id => videos.find(video => video.id === id && video.status === 'available')).find(Boolean) : undefined;
+  const film = savedFilm ?? videos.find(video => video.id === chapter.feature && video.status === 'available');
   const inspectionId = `tunnel-inspection-${portal.id}`;
-  function clearReflection() {
-    cancelAnimationFrame(pointerFrame.current);
-    pointerBounds.current = null;
-    if (!panel.current) return;
-    panel.current.style.setProperty('--panel-pointer-x', '0');
-    panel.current.style.setProperty('--panel-pointer-y', '0');
-    panel.current.removeAttribute('data-reflecting');
-  }
-  function reflect(event: PointerEvent<HTMLElement>) {
-    if (compact || reducedMotion || event.pointerType !== 'mouse') return;
-    const bounds = pointerBounds.current ??= event.currentTarget.getBoundingClientRect();
-    const x = Math.max(-1, Math.min(1, (event.clientX - bounds.left) / Math.max(1, bounds.width) * 2 - 1));
-    const y = Math.max(-1, Math.min(1, (event.clientY - bounds.top) / Math.max(1, bounds.height) * 2 - 1));
-    cancelAnimationFrame(pointerFrame.current);
-    pointerFrame.current = requestAnimationFrame(() => {
-      if (!panel.current) return;
-      panel.current.dataset.reflecting = 'true';
-      panel.current.style.setProperty('--panel-pointer-x', String(x));
-      panel.current.style.setProperty('--panel-pointer-y', String(y));
-    });
-  }
-  useEffect(() => { clearReflection(); return () => cancelAnimationFrame(pointerFrame.current); }, [compact, reducedMotion]);
   function toggleInspection() {
     setTunnelInspection({ station: expanded ? null : portal.id, expanded: !expanded, rotation: 0 });
     playSound('select');
@@ -66,11 +41,24 @@ function Station({ index, onWatch, compact, reducedMotion }: { index: number; on
     setTunnelInspection({ station: portal.id, expanded: true, rotation: Math.max(-Math.PI, Math.min(Math.PI, inspection.rotation + direction * Math.PI / 6)) });
     playSound('sculpture-turn');
   }
-  return <article ref={panel} className="tunnel-panel" data-expanded={expanded} data-inspection-mode={compact ? 'story' : 'sculpture'} aria-labelledby={`tunnel-heading-${portal.id}`}
-    onPointerMove={reflect} onPointerLeave={clearReflection} onPointerCancel={clearReflection} onKeyDown={event => { if (event.key === 'Escape' && expanded) { toggleInspection(); inspectionToggle.current?.focus(); event.stopPropagation(); } }}>
-    <div className="tunnel-panel-back" aria-hidden="true"/><div className="tunnel-panel-edge" aria-hidden="true"/>
-    <div className="tunnel-material-reflection" aria-hidden="true"/>
+  useEffect(() => {
+    if (!expanded) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      // Reset disables its own button, which can move browser focus to body.
+      // Escape must still close the exhibit, while a real dialog keeps priority.
+      if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector('dialog[open]')) return;
+      setTunnelInspection({ station: null, expanded: false, rotation: 0 });
+      inspectionToggle.current?.focus({ preventScroll: true });
+      event.preventDefault();
+      playSound('select');
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [expanded]);
+  return <article className="tunnel-panel" data-environment={chapter.environment} data-text-motion="off" data-reduced-motion={reducedMotion} data-expanded={expanded} data-inspection-mode={compact ? 'story' : 'sculpture'} aria-labelledby={`tunnel-heading-${portal.id}`}
+    onKeyDown={event => { if (event.key === 'Escape' && expanded) { toggleInspection(); inspectionToggle.current?.focus(); event.stopPropagation(); } }}>
     <div className="tunnel-panel-top"><span><b>{String(index + 1).padStart(2, '0')}</b>{portal.title}</span><button ref={inspectionToggle} onClick={toggleInspection} aria-expanded={expanded} aria-controls={inspectionId} aria-label={`${expanded ? 'Close' : 'Inspect'} ${portal.title} exhibit`}><CornersOut size={16}/><span>{expanded ? 'CLOSE EXHIBIT' : 'INSPECT'}</span></button></div>
+    {compact && film && <PassageCompactMedia chapter={chapter} film={film} saved={!!savedFilm} reducedMotion={reducedMotion} onWatch={onWatch}/>}
     <div className="tunnel-panel-heading"><h2 id={`tunnel-heading-${portal.id}`}>{chapter.lines[0]}<br/><span>{chapter.lines[1]}</span></h2></div>
     <div className="tunnel-panel-copy"><p>{chapter.copy}</p><a className="tunnel-enter-room" href={href(portal.route)}>{chapter.action}<ArrowUpRight size={22}/></a></div>
     <div id={inspectionId} className="tunnel-inspection" hidden={!expanded}>
@@ -82,10 +70,12 @@ function Station({ index, onWatch, compact, reducedMotion }: { index: number; on
         <button className="tunnel-inspection-reset" onClick={() => { setTunnelInspection({ station: portal.id, expanded: true, rotation: 0 }); playSound('select'); }} disabled={Math.abs(inspection.rotation) < .001}><ArrowCounterClockwise size={16}/><span>Reset</span></button>
       </div>}
     </div>
+    {chapter.id === 'my-world' && <p className="tunnel-collection-state">{savedFilm ? `From your collection · ${viewer.saved.length} saved ${viewer.saved.length === 1 ? 'story' : 'stories'}` : 'Your collection starts with a story. An editorial selection to begin.'}</p>}
     {film && <button className="tunnel-story" onClick={() => onWatch(film)} data-cursor="PLAY" aria-label={`Play ${film.title}`}>
       <span className="tunnel-story-image"><img src={asset(film.poster)} alt="" loading="lazy" decoding="async"/><span><Play size={18} weight="fill"/></span></span>
       <span className="tunnel-story-copy"><small>{filmFormat(film)} · {durationLabel(film.duration)}</small><strong>{film.title}</strong><span>Watch the story <ArrowUpRight size={13}/></span></span>
     </button>}
+    {!compact && <PassageMediaCaption chapterId={chapter.id}/>}
     <div className="tunnel-panel-foot"><span>{chapter.detail}</span><span>MONUMENTAL / {String(index + 1).padStart(2, '0')}</span></div>
   </article>;
 }
@@ -105,6 +95,43 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
   const metrics = useRef<{ top: number; height: number }[]>([]);
   const layoutRefreshFrame = useRef(0), stationJumpFrame = useRef(0);
   const reading = compact || spatial.unavailable;
+  const mediaController = useRef<PassageMediaController | null>(null);
+  useEffect(() => {
+    // The document owns selection so ambient media also works without WebGL.
+    const lease = acquirePassageMedia();
+    mediaController.current = lease.controller;
+    lease.controller.setSuspended('passage-dom-reduced', reducedMotion);
+    const select = () => {
+      const frame = getTunnelFrame();
+      lease.controller.activate(chapters[Math.max(0, frame.active)]?.id as PassageChapterId ?? null);
+    };
+    const unsubscribe = subscribeTunnelFrame(select);
+    select();
+    return () => {
+      unsubscribe();
+      lease.controller.activate(null);
+      lease.controller.setSuspended('passage-dom-reduced', false);
+      mediaController.current = null;
+      lease.release();
+    };
+  }, []);
+  useEffect(() => { mediaController.current?.setSuspended('passage-dom-reduced', reducedMotion); }, [reducedMotion]);
+  const previousReading = useRef(reading);
+  const measuredViewport = useRef({ width: document.documentElement.clientWidth, height: innerHeight });
+  const viewportChanged = () => measuredViewport.current.width !== document.documentElement.clientWidth || measuredViewport.current.height !== innerHeight;
+  const modeAnchor = useRef<{ index: number; progress: number; focused: HTMLElement | null; focusTop: number } | null>(null);
+  function captureModeAnchor() {
+    if (modeAnchor.current || !metrics.current.length) return;
+    // A viewport change can clamp native scrollY before React has changed the
+    // layout. Keep the last authored journey sample, not that temporary value.
+    const { active: index, progress } = getTunnelFrame();
+    const focused = document.activeElement instanceof HTMLElement && document.activeElement.closest('.tunnel-panel,.tunnel-wayfinder,.tunnel-hero') ? document.activeElement : null;
+    modeAnchor.current = { index, progress, focused, focusTop: focused?.getBoundingClientRect().top ?? 0 };
+  }
+  useLayoutEffect(() => {
+    if (previousReading.current !== reading) captureModeAnchor();
+    previousReading.current = reading;
+  }, [reading]);
   useEffect(() => {
     const cancelJump = () => { cancelAnimationFrame(stationJumpFrame.current); stationJumpFrame.current = 0; };
     window.addEventListener('wheel', cancelJump, { passive: true });
@@ -129,10 +156,14 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
     return node;
   }), []);
   useEffect(() => {
-    const resize = () => setCompact(tunnelCompact(document.documentElement.clientWidth, innerHeight, reducedMotion));
+    const resize = () => {
+      const next = tunnelCompact(document.documentElement.clientWidth, innerHeight, reducedMotion);
+      if (viewportChanged() || (next || spatial.unavailable) !== previousReading.current) captureModeAnchor();
+      setCompact(next);
+    };
     resize(); window.addEventListener('resize', resize, { passive: true });
     return () => window.removeEventListener('resize', resize);
-  }, [reducedMotion]);
+  }, [reducedMotion, spatial.unavailable]);
   useLayoutEffect(() => {
     const bindings = mounts.flatMap((element, index) => {
       const fallback = slots.current[index];
@@ -146,9 +177,10 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
   useLayoutEffect(() => {
     if (!root.current || !hero.current) return;
     const element = root.current, heroElement = hero.current;
-    let alive = true, raf = 0;
+    let alive = true, raf = 0, focusFrame = 0;
     function update() {
       if (!alive) return;
+      if (viewportChanged() || (tunnelCompact(document.documentElement.clientWidth, innerHeight, reducedMotion) || spatial.unavailable) !== reading) { captureModeAnchor(); return; }
       const y = window.scrollY, sampleY = y + (reading ? 85 : 0), points = metrics.current;
       if (!points.length) return;
       let index = -1;
@@ -172,12 +204,34 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
       track.current?.style.setProperty('--journey-progress', String(Math.min(1, y / Math.max(1, document.documentElement.scrollHeight - innerHeight))));
     }
     function measure() {
-      setCompact(tunnelCompact(document.documentElement.clientWidth, innerHeight, reducedMotion));
+      const nextCompact = tunnelCompact(document.documentElement.clientWidth, innerHeight, reducedMotion);
+      if (viewportChanged()) captureModeAnchor();
+      if ((nextCompact || spatial.unavailable) !== reading) { captureModeAnchor(); setCompact(nextCompact); return; }
+      setCompact(nextCompact);
+      measuredViewport.current = { width: document.documentElement.clientWidth, height: innerHeight };
       metrics.current = slots.current.filter(Boolean).map(slot => {
         const section = slot!.closest<HTMLElement>('.tunnel-checkpoint')!;
         return { top: section.getBoundingClientRect().top + window.scrollY, height: section.offsetHeight };
       });
+      const anchor = modeAnchor.current;
+      if (anchor) {
+        modeAnchor.current = null;
+        const point = metrics.current[anchor.index];
+        const top = point ? point.top + point.height * anchor.progress - (reading ? 85 : 0) : (metrics.current[0]?.top ?? 0) * anchor.progress;
+        window.scrollTo({ top: Math.max(0, top), behavior: 'instant' });
+      }
       update();
+      if (anchor?.focused) {
+        cancelAnimationFrame(focusFrame);
+        focusFrame = requestAnimationFrame(() => {
+          if (!alive || !anchor.focused?.isConnected) return;
+          anchor.focused.focus({ preventScroll: true });
+          if (reading && anchor.focused.closest('.tunnel-panel')) {
+            const nextTop = anchor.focused.getBoundingClientRect().top;
+            if (nextTop < 80 || nextTop > innerHeight - 100) window.scrollBy({ top: nextTop - Math.max(90, Math.min(innerHeight - 130, anchor.focusTop)), behavior: 'instant' });
+          }
+        });
+      }
     }
     const ctx = gsap.context(() => { ScrollTrigger.create({ trigger: element, start: 'top top', end: 'bottom bottom', onUpdate: update, onRefresh: measure }); }, element);
     const refresh = () => {
@@ -190,7 +244,7 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
     window.addEventListener('scroll', update, { passive: true });
     document.fonts.ready.then(() => { if (alive) refresh(); });
     measure();
-    return () => { alive = false; cancelAnimationFrame(raf); if (layoutRefreshFrame.current === raf) layoutRefreshFrame.current = 0; resize.disconnect(); window.removeEventListener('resize', refresh); window.removeEventListener('scroll', update); ctx.revert(); };
+    return () => { alive = false; cancelAnimationFrame(raf); cancelAnimationFrame(focusFrame); if (layoutRefreshFrame.current === raf) layoutRefreshFrame.current = 0; resize.disconnect(); window.removeEventListener('resize', refresh); window.removeEventListener('scroll', update); ctx.revert(); };
   }, [reading, reducedMotion]);
   function goToStation(index: number) {
     cancelAnimationFrame(stationJumpFrame.current);
@@ -205,13 +259,13 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
       if (index < 0) { window.scrollTo({ top: 0, behavior: reducedMotion ? 'instant' : 'smooth' }); return; }
       const target = slots.current[Math.min(chapters.length - 1, index)]?.closest<HTMLElement>('.tunnel-checkpoint');
       const isReading = tunnelCompact(document.documentElement.clientWidth, innerHeight, reducedMotion) || spatial.unavailable;
-      if (target) window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY + (isReading ? 20 : target.offsetHeight * .46), behavior: reducedMotion ? 'instant' : 'smooth' });
+      if (target) window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY + (isReading ? 0 : target.offsetHeight * .46), behavior: reducedMotion ? 'instant' : 'smooth' });
     }
     stationJumpFrame.current = requestAnimationFrame(() => { stationJumpFrame.current = requestAnimationFrame(deliverJump); });
   }
   return <div ref={root} className="spatial-home-content tunnel-journey" data-compact={reading} data-ready={spatial.ready} data-travelling={!!spatial.travelling} inert={!!spatial.travelling}
     style={{ '--tunnel-hero-height': `${TUNNEL_HERO_UNITS * 100}svh`, '--tunnel-chapter-height': `${TUNNEL_CHAPTER_UNITS * 100}svh` } as CSSProperties}>
-    <div className="tunnel-hero-checkpoint"><section className="tunnel-hero" ref={hero}>
+    <div className="tunnel-hero-checkpoint"><section className="tunnel-hero" data-text-motion="off" ref={hero}>
       <div className="tunnel-hero-copy"><h1>CULTURE.<br/><span>WITHOUT</span><br/>BORDERS<span className="tunnel-full-stop">.</span></h1>
         <p>Every film opens a world.<br/>Go inside. See where it takes you.</p>
         <button className="tunnel-entry-button" onClick={() => goToStation(0)} data-cursor="ENTER"><span>ENTER THE WORLD</span><ArrowRight size={23}/></button>
@@ -220,7 +274,7 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
       <div className="tunnel-hero-caption" aria-hidden="true"><span>AN OPEN WORLD<br/>OF ENTERTAINMENT</span><i/><span>MONUMENTAL<br/>STREAMS</span></div>
       <div className="tunnel-hero-bottom"><button onClick={() => goToStation(0)}><ArrowDown size={17}/><span>SCROLL INTO THE EXPERIENCE</span></button><span>{spatial.unavailable ? 'Every story is still open.' : spatial.ready ? 'Six stations. Endless connections.' : 'Opening the world…'}</span></div>
     </section></div>
-    {chapters.map((chapter, index) => <section key={spatialPortals[index].id} className="tunnel-checkpoint" data-station-index={index} aria-label={`${spatialPortals[index].title} station`}>
+    {chapters.map((chapter, index) => <section key={spatialPortals[index].id} className="tunnel-checkpoint" data-station-index={index} data-environment={chapter.environment} aria-label={`${spatialPortals[index].title} station`}>
       <div className="tunnel-fallback-slot" ref={element => { slots.current[index] = element; }}/>
       {createPortal(<Station index={index} onWatch={onWatch} compact={reading} reducedMotion={reducedMotion}/>, mounts[index])}
       <span className="tunnel-object-caption" aria-hidden="true">{chapter.object}</span>

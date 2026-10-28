@@ -1,9 +1,11 @@
+import { requestVisualFrame, cancelVisualFrame } from '../../services/visualFrame';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { createFrameCadence } from '../../services/frameCadence';
 import { getSpatialPreferences, subscribeSpatialPreferences } from '../../services/spatialPreferences';
 import { createDroneFamily } from './droneModels';
 import { createSpiralField } from './spiralField';
+import { tunnelCompact } from '../../services/tunnelJourney';
 
 export type FlightFormation = 'escort' | 'orbit';
 type FlightState = { home: boolean; reducedMotion: boolean; paused: boolean; inspecting: boolean; docked: boolean; formation: FlightFormation; selected: string };
@@ -49,7 +51,7 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
   const scales = [1, 1, 1, 1];
   let positioned = false;
 
-  function wake() { if (!request && !disposed && !lost && !state.paused && !document.hidden) request = requestAnimationFrame(render); }
+  function wake() { if (!request && !disposed && !lost && !state.paused && !document.hidden) request = requestVisualFrame(render); }
   function resize() {
     if (disposed) return;
     const bounds = host.getBoundingClientRect();
@@ -104,8 +106,8 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
     const t = state.reducedMotion ? 0 : elapsed;
     // A readable hero formation; afterwards the family flies in the edge corridor.
     const centerX = state.inspecting ? 0 : hero ? compact ? .46 : .55 : .84;
-    const centerY = state.inspecting ? -.08 : hero ? compact ? -.43 : -.02 : -.24;
-    const adultScale = state.inspecting ? Math.min(5.2, viewW * (compact ? .24 : .16)) : hero ? (compact ? .55 : 1.03) : compact ? .32 : .52;
+    const centerY = state.inspecting ? -.08 : hero ? compact ? -.43 : -.02 : state.home ? .62 : -.24;
+    const adultScale = state.inspecting ? Math.min(5.2, viewW * (compact ? .24 : .16)) : hero ? (compact ? .55 : 1.03) : state.home ? .38 : compact ? .32 : .52;
     const homeOffsets = [[-.9, .6], [.9, -.25], [-.55, -.95], [1.5, .9]];
     const inspectOffsets = compact ? [[-viewW * .23, 1.35], [viewW * .23, 1.25], [-viewW * .2, -1.4], [viewW * .22, -1.35]] : [[-viewW * .3, .55], [-viewW * .09, -.25], [viewW * .15, .5], [viewW * .32, -.25]];
     const offsets = state.inspecting ? inspectOffsets : homeOffsets;
@@ -160,11 +162,16 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
     }
     positioned = true;
     // The same phase survives routes. The camera and DOM are never moved by it.
-    spiral.update(elapsed, still ? 0 : dt, { pointerX: px, pointerY: py, energy: energy * .75, compact, reducedMotion: still });
+    // Passage architecture supplies its own depth and air. The overlay current
+    // belongs to the editorial routes; it must never stripe the cultural screens.
+    spiral.root.visible = !state.home || state.inspecting;
+    const passageCompact = tunnelCompact(width, height, state.reducedMotion);
+    family.root.visible = !state.home || !passageCompact || state.inspecting;
+    if (spiral.root.visible) spiral.update(elapsed, still ? 0 : dt, { pointerX: px, pointerY: py, energy: energy * .75, compact, reducedMotion: still });
     renderer.render(scene, camera);
     const status = state.reducedMotion ? 'reduced' : state.docked ? 'docked' : 'active';
     if (initialHost.dataset.state !== status) initialHost.dataset.state = status;
-    if (!still) wake();
+    if (!still && (!state.home || !passageCompact || state.inspecting)) wake();
   }
   function move(event: PointerEvent) {
     if (!event.isPrimary || state.paused || state.reducedMotion || state.docked) return;
@@ -182,10 +189,10 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
   }
   function visibility() {
     last = 0; cadence.reset(); resetPointer();
-    if (document.hidden) { cancelAnimationFrame(request); request = 0; initialHost.dataset.state = 'paused'; }
+    if (document.hidden) { cancelVisualFrame(request); request = 0; initialHost.dataset.state = 'paused'; }
     else wake();
   }
-  function lostContext(event: Event) { event.preventDefault(); lost = true; cancelAnimationFrame(request); request = 0; unavailable(); }
+  function lostContext(event: Event) { event.preventDefault(); lost = true; cancelVisualFrame(request); request = 0; unavailable(); }
   const resizeObserver = new ResizeObserver(resize); resizeObserver.observe(host);
   const main = document.getElementById('main');
   const contentObserver = new ResizeObserver(() => { collectProtection(); });
@@ -207,12 +214,12 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
       state = { ...next };
       if (changed) { resetPointer(); positioned = false; }
       collectProtection();
-      if (state.paused) { cancelAnimationFrame(request); request = 0; initialHost.dataset.state = 'paused'; }
+      if (state.paused) { cancelVisualFrame(request); request = 0; initialHost.dataset.state = 'paused'; }
       else { last = 0; cadence.reset(); scheduleProtection(); wake(); }
     },
     destroy() {
       if (disposed) return; disposed = true;
-      cancelAnimationFrame(request); cancelAnimationFrame(protectionRequest); resizeObserver.disconnect(); contentObserver.disconnect(); unsubscribe();
+      cancelVisualFrame(request); cancelAnimationFrame(protectionRequest); resizeObserver.disconnect(); contentObserver.disconnect(); unsubscribe();
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerout', leave); window.removeEventListener('blur', resetPointer);
       window.removeEventListener('scroll', scroll); document.removeEventListener('visibilitychange', visibility); document.removeEventListener('load', collectProtection, true);
       canvas.removeEventListener('webglcontextlost', lostContext); family.dispose(); spiral.dispose(); environment.dispose(); scene.clear(); renderer.dispose(); renderer.forceContextLoss(); canvas.remove();

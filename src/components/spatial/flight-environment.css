@@ -11,3 +11,7 @@ html[data-spatial-passage] .flight-invitation{visibility:hidden}body:has(dialog:
 @media(max-width:760px){.flight-invitation{top:calc(var(--header,70px) + 8px);right:16px;padding:5px 9px;font-size:10px;min-height:38px}.flight-invitation svg{width:24px}.flight-dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 20px);padding:20px 18px}.flight-heading h2{font-size:40px}.flight-heading .eyebrow{font-size:7px}.flight-heading>button{gap:10px}.flight-view{height:clamp(220px,35vh,330px);margin-top:0}.flight-crew-list strong{font-size:24px}.flight-crew-list button{padding:14px 4px}.flight-crew-list span{font-size:8px;max-width:9ch;line-height:1.4}.flight-detail{display:block;padding-top:14px}.flight-detail p{font-size:11px;max-width:none;min-height:4.8em}.flight-commands{margin-top:14px;justify-content:space-between;gap:8px}.flight-commands button{padding:10px;font-size:10px}}
 @media(prefers-reduced-motion:reduce){.flight-environment{transition:none}}
 html[data-motion=reduced] .flight-environment{transition:none}
+
+/* Keep compact Passage reading clear; crew remains available at its entrance. */
+body:has(.tunnel-journey[data-compact="true"]) .flight-invitation{min-height:44px}
+body:has(.tunnel-journey[data-compact="true"] .tunnel-wayfinder[data-in-journey="true"]) .flight-invitation{display:none}
