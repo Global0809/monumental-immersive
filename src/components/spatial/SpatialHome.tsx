@@ -19,7 +19,7 @@ import { useViewer } from '../../services/viewer';
 import { PASSAGE_CHAPTERS as chapters } from '../../services/passageChapters';
 import { acquirePassageMedia, type PassageChapterId, type PassageMediaController } from '../../services/passageMedia';
 import { enterSpatialWorld, spatialPortals, useSpatial } from '../../services/spatial';
-import { getTunnelFrame, getTunnelInspection, setTunnelFrame, setTunnelInspection, setTunnelPanels, subscribeTunnelFrame, subscribeTunnelInspection, tunnelChapterZ, tunnelCompact, TUNNEL_CHAPTER_UNITS, TUNNEL_HERO_UNITS } from '../../services/tunnelJourney';
+import { getTunnelFrame, getTunnelInspection, setTunnelFrame, setTunnelInspection, setTunnelPanels, subscribeTunnelFrame, subscribeTunnelInspection, tunnelChapterZ, tunnelEntranceZ, tunnelCompact, TUNNEL_CHAPTER_UNITS, TUNNEL_HERO_UNITS } from '../../services/tunnelJourney';
 import PassageCompactMedia, { PassageMediaCaption } from './passageCompactMedia';
 import './tunnel-journey.css';
 
@@ -189,7 +189,7 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
       const first = points[0].top;
       if (index < 0) {
         progress = Math.max(0, Math.min(1, sampleY / Math.max(1, first)));
-        z = 12 + (-7 - 12) * progress;
+        z = tunnelEntranceZ(progress);
       } else {
         index = Math.min(chapters.length - 1, index);
         progress = Math.max(0, Math.min(1, (sampleY - points[index].top) / points[index].height));

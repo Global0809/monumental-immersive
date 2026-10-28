@@ -67,7 +67,7 @@ components:
 
 **Creative North Star: "A Living Atlas of Culture"**
 
-The implemented world combines assertive editorial typography with physical, interactive objects. A dark stage and bright signal accent frame the content; the hero sculpture, geographic globe and overlapping era frames supply depth. This records the shipped design rather than prescribing a new direction.
+The implemented world combines assertive editorial typography with physical, interactive objects. A dark stage and bright signal accent frame the content; the continuous mechanical Passage, geographic globe and overlapping era frames supply depth. This records the implemented design rather than prescribing a new direction.
 
 **Key Characteristics:**
 - Monumental condensed headlines with occasional outlined words.
@@ -83,21 +83,23 @@ Signal is the primary action and selection color. Background and Surface separat
 
 Barlow Condensed gives headlines, film titles, destinations and era numerals their compact vertical scale. DM Sans carries descriptions, buttons, controls and metadata. Display text is generally uppercase; explanatory text remains sentence case. Small tracked labels are secondary information, never a replacement for a readable primary control or content caveat.
 
-The home headline uses three lines with an outlined final line. Content page titles use a separate fluid scale. On mobile the headline scales to the viewport, while longer film and destination titles wrap. Film cards pair a compact category/duration row with a larger title and quieter place line.
+The Passage entrance headline uses three lines with an outlined middle line and a signal-colored final stop. Its local desktop scale is clamp(78px, 8.4vw, 138px), with a 0.84 line height; this surface override does not replace the shared display token. Content page titles use a separate fluid scale. On mobile the headline scales to the viewport, while longer film and destination titles wrap. Film cards pair a compact category/duration row with a larger title and quieter place line.
 
 ## Layout
 
 The fixed header is 82px on desktop and 70px on narrow screens. The bottom navigation presents all thirteen primary destinations on desktop; below 760px it shows Home, World, Time Machine and My World, with the full ordered Index available in the header.
 
-Desktop sections use roughly 5.2% side margins and generous vertical spacing. Home's three featured films are intentionally staggered. Mobile stacks those films with modest differences in width. Browse grids become two columns; World story results become one column on narrow screens. World places the globe beside a destination panel on desktop and stacks them on mobile. Time Machine uses overlapping perspective frames with a native range input and previous/next buttons.
+Desktop sections use roughly 5.2% side margins and generous vertical spacing. Home is a native-scroll journey through World, Time Machine, Cinema, Music, Culture and My World within one continuous spiral tunnel. The entrance places the existing statement and direct action at left, a layered vanishing point at center and the existing Flight crew toward the right. Alternating wall carriers settle into a consistent text-and-film composition. Browse grids become two columns; World story results become one column on narrow screens. World places the globe beside a destination panel on desktop and stacks them on mobile. Time Machine uses overlapping perspective frames with a native range input and previous/next buttons.
 
-The code has feature-specific breakpoints at 500, 760, 800, 1100, 1200 and 1700px. Preserve content readability instead of assuming a single global breakpoint controls every scene.
+The Passage entrance spans 160svh and each desktop chapter 285svh. Text, film and mechanisms share one camera, with an exact reading hold from 38% through 74% of chapter progress. The 470px semantic text mount sits left of the contained media plane. The same DOM returns to ordinary document flow below 980px width, below 660px height, below a 1.4 aspect ratio, or with reduced motion. Compact retains the tunnel background when WebGL is available, hides the carriers and uses contained media with readable captions and direct controls. Orientation and presentation-mode changes preserve chapter, progress and focus.
+
+The code has feature-specific width breakpoints at 500, 760, 800, 980, 1100, 1200 and 1700px, alongside the Passage height and aspect-ratio boundaries above. Preserve content readability instead of assuming a single global breakpoint controls every scene.
 
 ## Elevation & Depth
 
 Most interface surfaces stay flat, separated by tone and thin rules. Depth comes from real Three.js geometry, photography, film-frame overlap and restrained transform responses. The header and bottom navigation use translucent backgrounds with blur. The globe's labels remain semantic buttons over the canvas.
 
-Motion is purposeful: GSAP introduces the home typography; selected destinations update the sculpture and linked story; globe rotation exposes geography; choosing an era rearranges film frames and changes results. Rendering pauses offscreen. Reduced motion suppresses automatic movement and the cursor follower. Interface sound is opt-in, persistent and silent during video playback.
+Motion is purposeful: native scroll moves the Passage camera, unfolds its carriers and reveals its editorial plates; globe rotation exposes geography; choosing an era rearranges film frames and changes results. Twelve physical carrier leaves and the semantic text's twelve-strand mask open together. Scroll reversal reconstructs the same pose. Pointer response affects local mechanisms and world-anchored air without displacing readable text, media or controls. The carriers retract before the camera crosses their plane. Rendering pauses when suspended or hidden. Reduced motion suppresses automatic movement and the cursor follower. Interface sound is opt-in, persistent and silent during video playback.
 
 ## Shapes
 
@@ -109,6 +111,7 @@ Media and editorial containers are square. Main action buttons have very small c
 - **Film cards:** full-bleed image, visible programme-status label, save action, available-only play action, progress line, category/duration and linked title. Photographs and film imagery keep their content notes.
 - **Search and filters:** native inputs/selects with transparent surfaces and thin dividers. Query and filters are reflected in hash-route parameters.
 - **Navigation:** compact fixed chrome, a full-screen native Index dialog and active signal marks. The full Index keeps the exact product order.
+- **Passage:** alternating mechanical carriers hold one semantic editorial panel, contained media and a small inspectable object. Layered dark plates protect text contrast within the bright tunnel. Inspect changes the object and surrounding frame, while the reading content stays fixed. The wayfinder provides direct station jumps, previous/next and return to entrance; compact uses a station selector. Source captions distinguish motion studies, destination photographs, the official trailer and actual saved stories.
 - **Globe:** geographic data, draggable rotation, destination labels, pause/reset controls and a destination list. Place selection updates both URL state and content.
 - **Time Machine:** overlapping frames, a visible era rail, keyboard-operable slider and optional category/destination filters. Modern imagery with historical context is explicitly identified.
 - **Player:** a native modal dialog over the app, with real media state, resume position, captions where supplied and browser-supported fullscreen/Picture-in-Picture.
@@ -131,7 +134,7 @@ Media and editorial containers are square. Main action buttons have very small c
 
 ## Interaction edition
 
-The sculpture now unfolds and resonates, while the globe exposes actual catalogue connections. The Time Machine supports a contact sheet and direct era comparison. These interactions retain conventional controls beside spatial gestures. The homepage's discovery tuner, silent previews and planned-original route make its editorial sections respond to the visitor.
+The Passage now unfolds side-mounted displays inside a continuous mechanical spiral, while the globe exposes actual catalogue connections. The Time Machine supports a contact sheet and direct era comparison. These interactions retain conventional controls beside spatial gestures. The homepage's silent previews, inspection controls, saved-story state and direct destination routes stay connected to the existing catalogue.
 
 The sound identity is synthesized from six material families, with meaningful selection, travel, memory and mechanical responses. Sound Studio makes volume and optional atmosphere explicit. A real waveform responds to the audio signal. Sound is off until enabled and stays quiet during film playback.
 
@@ -147,6 +150,6 @@ World now brings the existing globe and destination photograph into a single wid
 
 Vela and Atlas are the two parent drones; Pip and Echo are the smaller scouts. Their authored ceramic, chrome and graphite bodies share a manufacturing language, with different shell profiles, articulated optics and ducted turbines. Spring-following flight, banking, cursor curiosity and delayed parent-following give the family coordinated behavior. They are ambient companions, not a claim of AI assistance.
 
-One lightweight transparent renderer carries the family and a two-draw-call helical field across all spatial routes. Forward movement continues at rest; pointer position bends the current and native scroll supplies a short bounded acceleration. The page and globe cameras remain independent. Media, headings, prose and controls are clipped out of this decorative layer; it cannot intercept pointer input. The Flight crew control opens a native modal using the same canvas, with individual identities, escort/orbit formations and a persistent pause choice. The Passage renderer pauses behind this viewer.
+One lightweight transparent renderer carries the family and a two-draw-call helical field across all spatial routes. Forward movement continues at rest; pointer position bends the current and native scroll supplies a short bounded acceleration. The page and globe cameras remain independent. Media, headings, prose and controls are clipped out of this decorative layer; it cannot intercept pointer input. The Passage scene also publishes the projected bounds of its WebGL media plane so Flight cannot cross the displayed film. The Flight crew control opens a native modal using the same canvas, with individual identities, escort/orbit formations and a persistent pause choice. The Passage renderer pauses behind this viewer.
 
 Cap pixel ratio, share geometry and materials, merge static drone parts, and lower detail on compact devices. Pause under film playback, other dialogs, popovers and hidden tabs; show a static portrait for OS or site reduced motion. No fullscreen bloom, extra sound or camera motion is added. A WebGL failure removes this optional enhancement without blocking navigation or films.

@@ -25,7 +25,7 @@ The client is preparing a Miami launch. No date, venue or finished client video 
 ## Capabilities and Constraints
 
 - Preserve the exact primary index and order: Home, World, Time Machine, Live, Movies, Music, Sports, Gaming, News, Fashion, Culture, Kids, My World. Search, sound, settings and membership are utilities.
-- Home introduces the platform through a destination-linked 3D sculpture, preview films, planned Originals and discovery routes.
+- Home introduces the platform through a continuous mechanical 3D Passage connecting World, Time Machine, Cinema, Music, Culture and My World, with existing preview films, inspectable objects, saved-story state and direct discovery routes.
 - World has a real globe with geographic markers, a selectable destination list, saved places and related catalogue results. It is a dedicated page.
 - Time Machine is a dedicated page with an era selector, destination/category filters and related films. Historical context is distinct from film publication or release date.
 - Film details, playback, search, saved stories, progress/history, category interests, saved journeys and a Culture Passport use the same catalogue and viewer state.

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-21T16:20:00Z",
+  "generatedAt": "2026-10-28T10:35:00Z",
   "title": "Design System: Monumental Streams",
   "extensions": {
     "colorMeta": {
@@ -12,23 +12,39 @@
       "paper": { "role": "neutral", "displayName": "Paper", "canonical": "#e8e8e1" }
     },
     "typographyMeta": {
-      "display": { "displayName": "Home Display", "purpose": "Three-line monumental home headline; other routes use their own fluid display sizes." },
+      "display": { "displayName": "Home Display", "purpose": "Shared monumental display token; the Passage entrance uses its documented local scale and other routes retain their own fluid sizes." },
       "headline": { "displayName": "Section Headline", "purpose": "Editorial section headings." },
       "body": { "displayName": "Body", "purpose": "Descriptions, explanatory text and controls." }
     },
     "motion": [
       { "name": "control-transition", "value": "200ms ease", "purpose": "Button tone and navigation feedback." },
       { "name": "film-image", "value": "700ms cubic-bezier(.2,.7,.2,1)", "purpose": "Subtle media enlargement on hover." },
-      { "name": "hero-entry", "value": "1.2s power4.out; 0.09s stagger", "purpose": "GSAP home headline entrance; bypassed in reduced motion." }
+      { "name": "passage-entry", "value": "Native scroll; 160svh entrance; 285svh chapters; exact 38–74% reading hold", "purpose": "Deterministic shared camera, mechanical carrier and semantic reveal; compact returns the same content to document flow." }
     ],
     "breakpoints": [
       { "name": "explore-small", "value": "500px" },
       { "name": "navigation-mobile", "value": "760px" },
       { "name": "explore-stacked", "value": "800px" },
+      { "name": "passage-compact-width", "value": "980px" },
+      { "name": "passage-compact-height", "value": "660px" },
+      { "name": "passage-compact-aspect", "value": "1.4" },
       { "name": "explore-medium", "value": "1100px" },
       { "name": "layout-medium", "value": "1200px" },
       { "name": "hero-wide", "value": "1700px" }
-    ]
+    ],
+    "passage": {
+      "scope": "Homepage Passage only; existing global brand tokens and other routes remain authoritative.",
+      "contract": "Continuous spiral tunnel with six alternating wall-mounted mechanical carriers; replaces the separate architectural rooms.",
+      "reference": "https://globalgupta13-crypto.github.io/monumental-streams/#vision",
+      "documentation": "docs/passage-architecture.md",
+      "chapterOrder": ["World", "Time Machine", "Cinema", "Music", "Culture", "My World"],
+      "nativeScroll": { "heroViewportHeights": 1.6, "chapterViewportHeights": 2.85, "readingStart": 0.38, "readingEnd": 0.74, "finalChapterHoldsToEnd": true },
+      "camera": { "fieldOfViewDegrees": 59, "near": 0.16, "far": 165, "firstStationZ": -36, "stationSpacing": 42, "readingOffsetZ": 11.5 },
+      "carrier": { "retractionDistanceRange": [11.2, 8], "readingSideYawRadians": 0.07, "physicalLeaves": 12, "semanticRevealStrands": 12, "textMountWidthPx": 470, "textWorldScale": 0.012, "mediaWidth": 7.8, "cinemaMediaWidth": 8.6 },
+      "compact": { "condition": "width < 980 or height < 660 or aspect ratio < 1.4 or reduced motion", "sameSemanticContent": true, "tunnelRetainedWhenWebGLAvailable": true, "carriersVisible": false, "continuousPassageRendering": false, "reducedMotionUsesPosters": true },
+      "media": { "ambientDecoders": 1, "truth": "Five labelled motion studies, destination photographs and the official Sintel trailer; My World distinguishes actual saved stories from the editorial starting point.", "preservedSeekablePreviewCapBytes": 16777216, "newRasterAssets": 0 },
+      "protection": "Projected WebGL media bounds cut the film plane out of the decorative Flight layer; existing DOM text, media and control protection remains active."
+    }
   },
   "components": [
     {
@@ -79,7 +95,7 @@
   ],
   "narrative": {
     "northStar": "A Living Atlas of Culture",
-    "overview": "The implemented world combines assertive editorial typography with physical, interactive objects. A dark stage and bright signal accent frame the content; the hero sculpture, geographic globe and overlapping era frames supply depth. This records the shipped design rather than prescribing a new direction.",
+    "overview": "The implemented world combines assertive editorial typography with physical, interactive objects. A dark stage and bright signal accent frame the content; the continuous mechanical Passage, geographic globe and overlapping era frames supply depth. This records the implemented design rather than prescribing a new direction.",
     "keyCharacteristics": [
       "Monumental condensed headlines with occasional outlined words.",
       "Thin rules, square media, deliberate negative space and visible content provenance.",

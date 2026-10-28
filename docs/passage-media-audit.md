@@ -23,11 +23,13 @@ The 18 supplied motion concept previews are concept animations. The initially su
 
 Only the active source is requested; reduced motion and other suspension reasons prevent a new source request. A source switch increments `sourceEpoch`, clears decoded readiness and seeks to the verified loop start before reporting a frame ready. Rejected play promises from replaced sources cannot mark a newer source as failed. A failed or blocked source retains its poster until an explicit retry. No animation frame loop or React frame updates are introduced by the media service.
 
+The controller reuses `prepareSeekableMedia` for host compatibility. Range-capable hosts stream the original local URL; hosts without byte ranges receive a finite Blob capped at 16 MiB. All six verified sources are 0.46–4.37 MB. Preparation is lazy, cancelled on chapter replacement, protected against stale completions and released only after detaching the old decoder. A full player or other suspension beginning during preparation prevents decoding when the download completes. This fixes the production host's observable `seekable=[0,0]` behavior despite a fully buffered MP4: the same source as a Blob correctly exposes the complete seekable interval. A forced non-range Chrome check confirmed all six chapter sources seek and advance with one active decoder.
+
 The scene should recreate/dispose its VideoTexture when the source epoch changes, keep poster material visible while `ready` is false, and retain original aspect ratios. Ambient video is always muted; full playback uses the existing player and its sound controls.
 
 ## Verification
 
-Six Node lifecycle checks cover manifest validity, independent suspension, reduced-motion loading, source races, hidden-tab/full-player pause, bounded loops, decode failure and retry, DOM reparenting and teardown. A real Chrome decode pass confirmed all six ranges advance, native dimensions match, exactly one video element exists, full-player activation pauses it, a blocked source keeps the correct poster, and final release removes the element.
+Eight Node lifecycle checks cover manifest validity, independent suspension, reduced-motion loading, source races, hidden-tab/full-player pause, bounded loops, decode failure and retry, DOM reparenting, asynchronous seekable-source ownership and teardown. A real Chrome decode pass confirmed all six ranges advance, native dimensions match, exactly one video element exists, full-player activation pauses it, a blocked source keeps the correct poster, and final release removes the element.
 
 Seven journey tests additionally check chapter/catalogue consistency, camera and look-target continuity, exact stable reading intervals, deterministic reversing, invalid-input handling, departure clearance around every media plane and clean single-chapter content visibility.
 

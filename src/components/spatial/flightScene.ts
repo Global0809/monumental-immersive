@@ -6,6 +6,7 @@ import { getSpatialPreferences, subscribeSpatialPreferences } from '../../servic
 import { createDroneFamily } from './droneModels';
 import { createSpiralField } from './spiralField';
 import { tunnelCompact } from '../../services/tunnelJourney';
+import { getPassageMediaBounds, subscribePassageMediaBounds } from '../../services/passageProtection';
 
 export type FlightFormation = 'escort' | 'orbit';
 type FlightState = { home: boolean; reducedMotion: boolean; paused: boolean; inspecting: boolean; docked: boolean; formation: FlightFormation; selected: string };
@@ -27,8 +28,10 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
   let hero = false;
   const cadence = createFrameCadence();
   const canvas = renderer.domElement;
+  const mediaMask=document.createElement('div');mediaMask.className='flight-media-mask';
+  Object.assign(mediaMask.style,{position:'absolute',inset:'0',pointerEvents:'none'});
   canvas.className = 'flight-canvas'; canvas.setAttribute('aria-hidden', 'true');
-  initialHost.appendChild(canvas);
+  initialHost.appendChild(mediaMask);mediaMask.appendChild(canvas);
   renderer.setClearColor(0x080909, 0);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -52,13 +55,18 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
   let positioned = false;
 
   function wake() { if (!request && !disposed && !lost && !state.paused && !document.hidden) request = requestVisualFrame(render); }
+  function protectPassageMedia(){
+    const r=state.home&&!state.inspecting?getPassageMediaBounds():null;
+    mediaMask.style.clipPath=r?`path(evenodd, "M0 0H${width}V${height}H0Z M${r.left} ${r.top}H${r.right}V${r.bottom}H${r.left}Z")`:'';
+    mediaMask.dataset.protected=String(!!r);
+  }
   function resize() {
     if (disposed) return;
     const bounds = host.getBoundingClientRect();
     width = Math.max(1, bounds.width); height = Math.max(1, bounds.height); compact = width < 760;
     renderer.setPixelRatio(Math.max(.7, Math.min(devicePixelRatio || 1, preferences.quality === 'light' ? .85 : compact ? 1 : 1.2) - qualityPenalty));
     renderer.setSize(width, height, false); camera.aspect = width / height; camera.updateProjectionMatrix();
-    positioned = false; scheduleProtection(); wake();
+    positioned = false; protectPassageMedia();scheduleProtection(); wake();
   }
 
   // Cut real media out of the decorative canvas. Rebuild only on layout/scroll,
@@ -198,6 +206,7 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
   const contentObserver = new ResizeObserver(() => { collectProtection(); });
   if (main) contentObserver.observe(main);
   const unsubscribe = subscribeSpatialPreferences(() => { preferences = getSpatialPreferences(); qualityPenalty = 0; resize(); });
+  const unsubscribeMedia=subscribePassageMediaBounds(protectPassageMedia);
   window.addEventListener('pointermove', move, { passive: true }); window.addEventListener('pointerout', leave, { passive: true });
   window.addEventListener('blur', resetPointer); window.addEventListener('scroll', scroll, { passive: true });
   document.addEventListener('visibilitychange', visibility); document.addEventListener('load', collectProtection, true);
@@ -206,12 +215,13 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
   return {
     mount(parent) {
       if (disposed || parent === host || !parent) return;
-      resizeObserver.unobserve(host); host = parent; host.appendChild(canvas); resizeObserver.observe(host); resize();
+      resizeObserver.unobserve(host); host = parent; host.appendChild(mediaMask); resizeObserver.observe(host); resize();
     },
     setState(next) {
       if (disposed) return;
       const changed = state.home !== next.home || state.inspecting !== next.inspecting;
       state = { ...next };
+      protectPassageMedia();
       if (changed) { resetPointer(); positioned = false; }
       collectProtection();
       if (state.paused) { cancelVisualFrame(request); request = 0; initialHost.dataset.state = 'paused'; }
@@ -219,10 +229,10 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
     },
     destroy() {
       if (disposed) return; disposed = true;
-      cancelVisualFrame(request); cancelAnimationFrame(protectionRequest); resizeObserver.disconnect(); contentObserver.disconnect(); unsubscribe();
+      cancelVisualFrame(request); cancelAnimationFrame(protectionRequest); resizeObserver.disconnect(); contentObserver.disconnect(); unsubscribe();unsubscribeMedia();
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerout', leave); window.removeEventListener('blur', resetPointer);
       window.removeEventListener('scroll', scroll); document.removeEventListener('visibilitychange', visibility); document.removeEventListener('load', collectProtection, true);
-      canvas.removeEventListener('webglcontextlost', lostContext); family.dispose(); spiral.dispose(); environment.dispose(); scene.clear(); renderer.dispose(); renderer.forceContextLoss(); canvas.remove();
+      canvas.removeEventListener('webglcontextlost', lostContext); family.dispose(); spiral.dispose(); environment.dispose(); scene.clear(); renderer.dispose(); renderer.forceContextLoss(); canvas.remove();mediaMask.remove();
     },
   };
 }

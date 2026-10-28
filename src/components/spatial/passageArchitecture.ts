@@ -1,556 +1,351 @@
 import * as THREE from 'three';
 import { PASSAGE_CHAPTERS } from '../../services/passageChapters';
+import { passageStationMotion, passagePose } from '../../services/passageJourney';
 
-type PassageArchitectureFrame = {
-  active: number; progress: number; elapsed: number; reducedMotion: boolean;
-  delta?: number;
+type ArchitectureFrame = {
+  active: number; progress: number; elapsed: number; reducedMotion: boolean; delta?: number;
+  pointer?: readonly [number, number]; energy?: number; compact?: boolean;
   inspection: { station: string | null; expanded: boolean; rotation: number };
 };
 type ImageSurface = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
-type ChapterArchitecture = { root: THREE.Group; media: ImageSurface; exhibit: THREE.Group };
-type MovingPart = { node: THREE.Object3D; axis: 'x' | 'y' | 'z'; base: number; amount: number; rate: number; phase: number };
-type InspectionPart = { node: THREE.Object3D; base: THREE.Vector3; offset: THREE.Vector3 };
+type Link = { body: THREE.Mesh; piston: THREE.Mesh; signal: THREE.Mesh };
+type Assembly = {
+  root: THREE.Group; media: ImageSurface; exhibit: THREE.Group; movement: THREE.Group;
+  frames: THREE.Mesh[]; fins: THREE.Group[]; slats: THREE.Group[]; ribs: THREE.InstancedMesh;
+  armRoot: THREE.Group; arms: Link[]; motors: THREE.Group[]; hub: THREE.Group;
+  target: THREE.Vector3; inspection: number; turn: number; ribInspection: number; leafReveal: number;
+};
 
-/** A set of actual rooms, all expressed in the shared chapter's local space.
- * The scene owns the camera, lights and clock; this module never starts a loop. */
+/** One continuous, permanently constructed machine. The scroll controller owns
+ * camera and carrier poses. This module owns only materials and local mechanisms. */
 export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () => void) {
-  const geometries = new Set<THREE.BufferGeometry>();
-  const materials = new Set<THREE.Material>();
-  const textures = new Set<THREE.Texture>();
-  const instances = new Set<THREE.InstancedMesh>();
-  const geometryCache = new Map<string, THREE.BufferGeometry>();
-  const materialCache = new Map<string, THREE.Material>();
-  const secondaryImages: ImageSurface[][] = PASSAGE_CHAPTERS.map(() => []);
-  const posters: (THREE.Texture | null)[] = PASSAGE_CHAPTERS.map(() => null);
-  const activeTextures: (THREE.Texture | null)[] = PASSAGE_CHAPTERS.map(() => null);
+  const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
+  const instances = new Set<THREE.InstancedMesh>(), cache = new Map<string, THREE.BufferGeometry>();
+  const loader = new THREE.TextureLoader(), dummy = new THREE.Object3D();
+  const scratchA = new THREE.Vector3(), scratchB = new THREE.Vector3(), scratchC = new THREE.Vector3(), direction = new THREE.Vector3();
+  const axis = new THREE.Vector3(0, 1, 0), worldTarget = new THREE.Vector3();
+  const posters: (THREE.Texture | null)[] = PASSAGE_CHAPTERS.map(() => null), activeTextures = [...posters];
   const loadVersions = PASSAGE_CHAPTERS.map(() => 0);
-  const motions: MovingPart[][] = PASSAGE_CHAPTERS.map(() => []);
-  const inspectionParts: InspectionPart[][] = PASSAGE_CHAPTERS.map(() => []);
-  const exhibitMotion: THREE.Group[] = [];
-  const exhibitBases: THREE.Vector3[] = [];
-  const inspectionBlend = PASSAGE_CHAPTERS.map(() => 0);
-  const inspectionTurn = PASSAGE_CHAPTERS.map(() => 0);
-  const rearShutters: [THREE.Mesh, THREE.Mesh][] = [];
-  const collectionMounts: THREE.Group[] = [];
-  const collectionSurfaces: ImageSurface[] = [];
-  const collectionTextures: (THREE.Texture | null)[] = [null, null, null];
-  let collectionVersion = 0, collectionKey = '';
-  const entrancePetals: { root: THREE.Group; angle: number }[] = [];
-  const entranceCollars: THREE.Group[] = [];
-  const imageLoader = new THREE.TextureLoader();
-  const dummy = new THREE.Object3D();
-  const black = 0x080909, red = 0xff4d32;
-  let destroyed = false;
-
+  const collectionMounts: THREE.Group[] = [], collectionSurfaces: ImageSurface[] = [], collectionTextures: (THREE.Texture | null)[] = [null, null, null];
+  let destroyed = false, collectionKey = '', collectionVersion = 0, pointerX = 0, pointerY = 0;
   function geometry<T extends THREE.BufferGeometry>(key: string, make: () => T): T {
-    let result = geometryCache.get(key);
-    if (!result) { result = make(); geometryCache.set(key, result); geometries.add(result); }
-    return result as T;
+    if (!cache.has(key)) { const g = make(); cache.set(key, g); geometries.add(g); }
+    return cache.get(key) as T;
   }
-  function standard(key: string, options: THREE.MeshStandardMaterialParameters) {
-    if (!materialCache.has(key)) {
-      const result = new THREE.MeshStandardMaterial(options);
-      materialCache.set(key, result); materials.add(result);
-    }
-    return materialCache.get(key) as THREE.MeshStandardMaterial;
+  function material<T extends THREE.Material>(value: T) { materials.add(value); return value; }
+  const alloy = material(new THREE.MeshStandardMaterial({ color: 0x565e59, metalness: .88, roughness: .29 }));
+  const ribAlloy = material(new THREE.MeshStandardMaterial({ color: 0x222925, metalness: .72, roughness: .48, envMapIntensity: .30 }));
+  const wallAlloy = material(new THREE.MeshStandardMaterial({ color: 0x101513, metalness: .34, roughness: .79, envMapIntensity: .20 }));
+  const graphite = material(new THREE.MeshStandardMaterial({ color: 0x171b19, metalness: .78, roughness: .38 }));
+  const charcoal = material(new THREE.MeshStandardMaterial({ color: 0x0d1110, metalness: .55, roughness: .48 }));
+  const ceramic = material(new THREE.MeshStandardMaterial({ color: 0xa7a194, metalness: .15, roughness: .48 }));
+  const red = material(new THREE.MeshBasicMaterial({ color: 0xff4d32, toneMapped: false }));
+  const ivory = material(new THREE.MeshBasicMaterial({ color: 0xd5d2c6, toneMapped: false }));
+  const darkRed = material(new THREE.MeshBasicMaterial({ color: 0x63251d, toneMapped: false }));
+  const unitBox = geometry('box', () => new THREE.BoxGeometry(1, 1, 1));
+  const cylinder = geometry('cylinder', () => new THREE.CylinderGeometry(1, 1, 1, 10));
+  const sphere = geometry('sphere', () => new THREE.SphereGeometry(1, 20, 12));
+  const tunnel = new THREE.Group(); tunnel.name = 'passage-continuous-tunnel'; scene.add(tunnel);
+  // Small deterministic brushed variation belongs to the broad structural
+  // faces, not the polished carriers or image textures.
+  const grainData = new Uint8Array(64 * 64 * 4); let grainSeed = 38217;
+  for (let i = 0; i < grainData.length; i += 4) { grainSeed = (Math.imul(grainSeed, 1664525) + 1013904223) >>> 0; const v = 112 + (grainSeed % 48); grainData[i] = grainData[i + 1] = grainData[i + 2] = v; grainData[i + 3] = 255; }
+  const grain = new THREE.DataTexture(grainData, 64, 64, THREE.RGBAFormat); grain.wrapS = grain.wrapT = THREE.RepeatWrapping; grain.repeat.set(3, 12); grain.needsUpdate = true; textures.add(grain);
+  ribAlloy.bumpMap = grain; ribAlloy.bumpScale = .025; wallAlloy.bumpMap = grain; wallAlloy.bumpScale = .038;
+  function box(parent: THREE.Object3D, x: number, y: number, z: number, w: number, h: number, depth: number, mat: THREE.Material = alloy) {
+    const mesh = new THREE.Mesh(unitBox, mat); mesh.position.set(x, y, z); mesh.scale.set(w, h, depth); parent.add(mesh); return mesh;
   }
-  function basic(key: string, options: THREE.MeshBasicMaterialParameters) {
-    if (!materialCache.has(key)) {
-      const result = new THREE.MeshBasicMaterial(options);
-      materialCache.set(key, result); materials.add(result);
-    }
-    return materialCache.get(key) as THREE.MeshBasicMaterial;
+  function ring(parent: THREE.Object3D, radius: number, thickness: number, mat: THREE.Material, arc = Math.PI * 2) {
+    const g = geometry(`ring-${radius}-${thickness}-${arc}`, () => new THREE.TorusGeometry(radius, thickness, 6, 64, arc));
+    const mesh = new THREE.Mesh(g, mat); parent.add(mesh); return mesh;
   }
-  const metal = standard('metal', { color: 0x777e7b, metalness: .94, roughness: .25 });
-  const graphite = standard('graphite', { color: 0x171a19, metalness: .57, roughness: .46 });
-  const dark = standard('dark', { color: 0x111414, metalness: .25, roughness: .69 });
-  const ink = standard('ink', { color: black, roughness: .83 });
-  const warm = standard('warm', { color: 0x51514b, roughness: .91, metalness: .03 });
-  const floorMaterial = standard('floor', { color: 0x141615, roughness: .94, metalness: .04 });
-  const warmPlaster = standard('warm-plaster', { color: 0x79766c, roughness: .94, metalness: .02 });
-  const paper = standard('paper', { color: 0xada89a, roughness: .95, side: THREE.DoubleSide });
-  const ceramic = standard('ceramic', { color: 0xbbb8ac, roughness: .37, metalness: .06 });
-  const signal = basic('signal', { color: red, toneMapped: false });
-  const softLight = basic('soft-light', { color: 0xb3afa2, toneMapped: false });
-  const dimSignal = standard('dim-signal', { color: 0x6e251b, emissive: red, emissiveIntensity: .35, roughness: .52 });
-
-  // A shared deterministic microrelief gives the mineral and paper surfaces scale.
-  // It is a small static texture, never regenerated during scroll or inspection.
-  const grainCanvas = document.createElement('canvas'); grainCanvas.width = grainCanvas.height = 128;
-  const grainContext = grainCanvas.getContext('2d');
-  if (grainContext) {
-    const pixels = grainContext.createImageData(128, 128);
-    let seed = 41731;
-    for (let i = 0; i < pixels.data.length; i += 4) {
-      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
-      const value = 125 + (seed % 35);
-      pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = value; pixels.data[i + 3] = 255;
-    }
-    grainContext.putImageData(pixels, 0, 0);
-    const grain = new THREE.CanvasTexture(grainCanvas); grain.wrapS = grain.wrapT = THREE.RepeatWrapping;
-    grain.repeat.set(8, 8); textures.add(grain);
-    warm.bumpMap = grain; warm.bumpScale = .035; paper.bumpMap = grain; paper.bumpScale = .019;
-    warmPlaster.bumpMap = grain; warmPlaster.bumpScale = .035;
-  }
-  const boxGeometry = geometry('unit-box', () => new THREE.BoxGeometry(1, 1, 1));
-  const sphereGeometry = geometry('sphere', () => new THREE.SphereGeometry(1, 24, 16));
-  function box(parent: THREE.Object3D, x: number, y: number, z: number, w: number, h: number, d: number, material: THREE.Material) {
-    const result = new THREE.Mesh(boxGeometry, material); result.position.set(x, y, z); result.scale.set(w, h, d); parent.add(result); return result;
-  }
-  function tube(parent: THREE.Object3D, points: THREE.Vector3[], radius: number, material: THREE.Material, closed = false, segments = 64) {
-    const curve = new THREE.CatmullRomCurve3(points, closed, 'catmullrom', .35);
-    const shape = new THREE.TubeGeometry(curve, segments, radius, 6, closed); geometries.add(shape);
-    const result = new THREE.Mesh(shape, material); parent.add(result); return result;
-  }
-  function ring(parent: THREE.Object3D, radius: number, thickness: number, material: THREE.Material, arc = Math.PI * 2) {
-    const shape = geometry(`torus-${radius}-${thickness}-${arc}`, () => new THREE.TorusGeometry(radius, thickness, 8, 72, arc));
-    const result = new THREE.Mesh(shape, material); parent.add(result); return result;
-  }
-  function frame(parent: THREE.Object3D, w: number, h: number, depth: number, material: THREE.Material, edge = .15) {
-    const group = new THREE.Group(); parent.add(group);
-    box(group, 0, h / 2 + edge / 2, 0, w + edge * 2, edge, depth, material);
-    box(group, 0, -h / 2 - edge / 2, 0, w + edge * 2, edge, depth, material);
-    box(group, -w / 2 - edge / 2, 0, 0, edge, h, depth, material);
-    box(group, w / 2 + edge / 2, 0, 0, edge, h, depth, material);
-    return group;
-  }
-  function repeatedBoxes(parent: THREE.Object3D, list: { position: number[]; scale: number[]; rotation?: number[] }[], material: THREE.Material) {
-    const mesh = new THREE.InstancedMesh(boxGeometry, material, list.length); instances.add(mesh);
-    list.forEach((item, i) => {
-      dummy.position.fromArray(item.position); dummy.scale.fromArray(item.scale);
-      dummy.rotation.set(item.rotation?.[0] || 0, item.rotation?.[1] || 0, item.rotation?.[2] || 0);
-      dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix);
-    });
+  function instanced(parent: THREE.Object3D, mat: THREE.Material, count: number, fill: (i: number, object: THREE.Object3D) => void) {
+    const mesh = new THREE.InstancedMesh(unitBox, mat, count); instances.add(mesh);
+    for (let i = 0; i < count; i++) { dummy.position.set(0, 0, 0); dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); fill(i, dummy); dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix); }
     mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); parent.add(mesh); return mesh;
   }
-  function floor(parent: THREE.Object3D, width: number, depth: number, z: number, material = floorMaterial) {
-    box(parent, 0, -5.1, z, width, .65, depth, material);
-    // Lit joints give the floor a readable scale without reflective post-processing.
-    const joints = [-1, 1].map(side => ({ position: [side * (width / 2 - .8), -4.765, z], scale: [.025, .014, depth - 2] }));
-    repeatedBoxes(parent, joints, dimSignal);
+  // Three instanced draw calls form the entire spiral lining. Tangential ribs
+  // alternate depth; the broad dark inner layers make it feel like a structure.
+  const ringCount = 90, ringSides = 12;
+  function ribTransform(i: number, object: THREE.Object3D, layer: number) {
+    const n = Math.floor(i / ringSides), j = i % ringSides, a = j * Math.PI / 6 + n * .058;
+    const r = 8.8 + Math.sin(n * .46) * .34, span = 2 * r * Math.sin(Math.PI / 12) * .95;
+    const radius = r + (layer === 2 ? .17 : layer === 1 ? -.13 : 0);
+    object.position.set(Math.cos(a) * radius, Math.sin(a) * radius, 18 - n * 3.65 - (layer === 2 ? 1.35 : 0));
+    object.rotation.z = a + Math.PI / 2;
+    if (layer === 0) object.scale.set(span, .19, n % 4 === 0 ? .85 : .36);
+    if (layer === 1) object.scale.set(span * (j % 3 === 0 ? .78 : .24), .026, .035);
+    if (layer === 2) object.scale.set(span, .66, 2.6);
   }
+  const structuralRibs = instanced(tunnel, ribAlloy, ringCount * ringSides, (i, o) => ribTransform(i, o, 0));
+  const conduits = instanced(tunnel, red, ringCount * ringSides, (i, o) => ribTransform(i, o, 1));
+  const whiteColor = new THREE.Color(0xd5d2c6), redColor = new THREE.Color(0xff4d32);
+  for (let i = 0; i < conduits.count; i++) conduits.setColorAt(i, i % 5 === 0 ? whiteColor : redColor);
+  // Use white base material so the per-instance ivory remains neutral.
+  conduits.material = material(new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
+  const wallFaces = instanced(tunnel, wallAlloy, ringCount * ringSides, (i, o) => ribTransform(i, o, 2));
+  const structuralTint = new THREE.Color();
+  for (let i = 0; i < structuralRibs.count; i++) {
+    const level = .48 + ((i * 17 + Math.floor(i / ringSides) * 5) % 13) / 24;
+    structuralTint.setRGB(level * .94, level, level * .97); structuralRibs.setColorAt(i, structuralTint);
+    structuralTint.multiplyScalar(i % 7 === 0 ? .77 : .56); wallFaces.setColorAt(i, structuralTint);
+  }
+
+  // Depth-tested light bleed is attached to real conduits, rather than a
+  // full-screen bloom pass that would wash out footage and typography.
+  const signalUniforms = { uTime: { value: 0 }, uEnergy: { value: 0 }, uPointer: { value: new THREE.Vector2() }, uCameraZ: { value: 14 } };
+  const haloMaterial = material(new THREE.ShaderMaterial({ uniforms: signalUniforms, transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    vertexShader: `varying vec2 vUv;varying vec3 vTint;varying float vDepth;void main(){vUv=uv;vTint=instanceColor;vec4 world=modelMatrix*instanceMatrix*vec4(position,1.);vDepth=world.z;gl_Position=projectionMatrix*viewMatrix*world;}`,
+    fragmentShader: `varying vec2 vUv;varying vec3 vTint;varying float vDepth;uniform float uTime;uniform float uEnergy;void main(){vec2 p=vUv*2.-1.;float glow=exp(-p.y*p.y*5.5)*pow(max(0.,1.-abs(p.x)),.5);float edge=1.-smoothstep(.7,1.,abs(p.y));float charge=.78+.22*sin(vDepth*.12+uTime*.8);gl_FragColor=vec4(vTint,glow*edge*(.10+uEnergy*.045)*charge);}`,
+  }));
+  haloMaterial.forceSinglePass = true;
+  const haloPlane = geometry('signal-halo', () => new THREE.PlaneGeometry(1, 1));
+  const conduitHalos = new THREE.InstancedMesh(haloPlane, haloMaterial, ringCount * ringSides); instances.add(conduitHalos);
+  for (let i = 0; i < conduitHalos.count; i++) {
+    ribTransform(i, dummy, 1); dummy.position.z += .20; dummy.scale.y = .28; dummy.scale.z = 1; dummy.scale.x *= 1.12; dummy.updateMatrix(); conduitHalos.setMatrixAt(i, dummy.matrix); conduitHalos.setColorAt(i, i % 5 === 0 ? whiteColor : redColor);
+  }
+  conduitHalos.instanceMatrix.needsUpdate = true; conduitHalos.computeBoundingSphere(); tunnel.add(conduitHalos);
+
+  const ribbonUniforms = { uTime: { value: 0 }, uEnergy: { value: 0 }, uStation: { value: -36 }, uRead: { value: 0 } };
+  const ribbonMaterial = material(new THREE.ShaderMaterial({
+    uniforms: ribbonUniforms, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    vertexShader: `varying vec2 vUv;varying float vDepth;void main(){vUv=uv;vDepth=position.z;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
+    fragmentShader: `varying vec2 vUv;varying float vDepth;uniform float uTime;uniform float uEnergy;uniform float uStation;uniform float uRead;void main(){float pulse=pow(.5+.5*sin(vUv.y*68.-uTime*1.12),18.);float edge=pow(1.-abs(vUv.x*2.-1.),.6);float calm=1.-(1.-smoothstep(1.,7.,abs(vDepth-uStation)))*uRead*.72;vec3 c=mix(vec3(1.,.08,.025),vec3(.92,.86,.69),pulse*.8);gl_FragColor=vec4(c*(.66+pulse*.7+uEnergy*.18),edge*.36*calm);}`,
+  }));
+  ribbonMaterial.forceSinglePass = true;
+  for (let lane = 0; lane < 7; lane++) {
+    const positions: number[] = [], uv: number[] = [], indices: number[] = [];
+    const steps = 560;
+    for (let n = 0; n <= steps; n++) {
+      const z = 22 - n * .6, angle = lane * Math.PI * 2 / 7 + z * .043 + Math.sin(z * .069 + lane) * .13;
+      const radius = 7.1 + Math.sin(z * .053 + lane * 2) * .55, width = lane % 3 === 0 ? .018 : .008;
+      for (const side of [-1, 1]) { const a = angle + side * width; positions.push(Math.cos(a) * radius, Math.sin(a) * radius, z); uv.push((side + 1) / 2, n / steps); }
+      if (n < steps) { const i = n * 2; indices.push(i, i + 1, i + 2, i + 1, i + 3, i + 2); }
+    }
+    const g = new THREE.BufferGeometry(); geometries.add(g); g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(indices);
+    tunnel.add(new THREE.Mesh(g, ribbonMaterial));
+  }
+  // An inexpensive handful of fixed, broad light sheets gives the rim light
+  // presence. No full-screen bloom, shadow maps or extra render pass is required.
+  const spillMat = material(new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    vertexShader: 'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+    fragmentShader: 'varying vec2 vUv;void main(){float a=pow(1.-abs(vUv.x*2.-1.),2.)*pow(1.-vUv.y,2.);gl_FragColor=vec4(.85,.19,.09,a*.075);}',
+  }));
+  spillMat.forceSinglePass = true;
+  const portals: THREE.Group[] = [];
+  for (let i = 0; i < 16; i++) {
+    const portal = new THREE.Group(); portal.position.z = -10 - i * 20.5; portal.rotation.set(Math.sin(i * 3) * .10, Math.cos(i * 2) * .10, i * .7); tunnel.add(portal); portals.push(portal);
+    for (let layer = 0; layer < 2; layer++) {
+      const radius = (layer ? 7.39 : 7.5) + (i % 3) * .15, thickness = layer ? .016 : .10, arc = Math.PI * (layer ? .34 : .42);
+      const g = geometry(`ring-${radius}-${thickness}-${arc}`, () => new THREE.TorusGeometry(radius, thickness, 6, 64, arc));
+      const mesh = new THREE.InstancedMesh(g, layer ? conduits.material : graphite, 4); instances.add(mesh);
+      for (let j = 0; j < 4; j++) {
+        dummy.position.set(0, 0, 0); dummy.scale.set(1, 1, 1); dummy.rotation.set(0, 0, j * Math.PI / 2 + (layer ? .06 : 0)); dummy.updateMatrix(); mesh.setMatrixAt(j, dummy.matrix);
+        if (layer) mesh.setColorAt(j, j % 3 ? redColor : whiteColor);
+      }
+      mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); portal.add(mesh);
+    }
+  }
+  let seed = 14831; const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  instanced(tunnel, graphite, 180, (_i, o) => { const a = random() * Math.PI * 2, r = 7.5 + random() * 1.5; o.position.set(Math.cos(a) * r, Math.sin(a) * r, 10 - random() * 310); o.rotation.set(random() * 2, random() * 3, random() * 3); o.scale.set(.12 + random() * .6, .06 + random() * .1, .2 + random()); });
+  const mechanismGlow = new THREE.InstancedMesh(haloPlane, haloMaterial, PASSAGE_CHAPTERS.length); instances.add(mechanismGlow); mechanismGlow.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mechanismGlow.frustumCulled = false; tunnel.add(mechanismGlow);
+  for (let i = 0; i < mechanismGlow.count; i++) { mechanismGlow.setColorAt(i, i % 2 ? whiteColor : redColor); dummy.position.set(0, 0, -999); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(0); dummy.updateMatrix(); mechanismGlow.setMatrixAt(i, dummy.matrix); }
+  const contactLight = new THREE.PointLight(0xff4d32, 3, 8, 2); scene.add(contactLight);
+
+  // The entrance is the first thick portal of this same structure, not another
+  // room or a separate scroll animation.
+  const entrance = new THREE.Group(); entrance.name = 'passage-entrance'; entrance.position.z = -7; tunnel.add(entrance);
+  for (let i = 0; i < 3; i++) {
+    const mount = new THREE.Group(); mount.position.z = -i * .7; entrance.add(mount);
+    ring(mount, 7.65 + i * .21, i === 1 ? .29 : .15, i === 1 ? alloy : graphite);
+    const edge = ring(mount, 7.51 + i * .21, .024, i === 0 ? ivory : red, Math.PI * 1.6); edge.rotation.z = i * .9;
+  }
+  instanced(entrance, alloy, 12, (i, o) => { const a = i * Math.PI / 6; o.position.set(Math.cos(a) * 8.05, Math.sin(a) * 8.05, -.7); o.rotation.z = a; o.scale.set(.65, .3, 2.0); });
+
+  function outline(path: THREE.Shape | THREE.Path, w: number, h: number, corner: number) {
+    path.moveTo(-w / 2 + corner, -h / 2); path.lineTo(w / 2 - corner, -h / 2); path.lineTo(w / 2, -h / 2 + corner);
+    path.lineTo(w / 2, h / 2 - corner); path.lineTo(w / 2 - corner, h / 2); path.lineTo(-w / 2 + corner, h / 2);
+    path.lineTo(-w / 2, h / 2 - corner); path.lineTo(-w / 2, -h / 2 + corner); path.closePath();
+  }
+  const chassisShape = new THREE.Shape(); outline(chassisShape, 15.8, 10, 1.12);
+  const chassisHole = new THREE.Path(); outline(chassisHole, 15.48, 9.68, 1.02); chassisShape.holes.push(chassisHole);
+  const chassisGeometry = geometry('chassis', () => new THREE.ExtrudeGeometry(chassisShape, { depth: .24, bevelEnabled: true, bevelSize: .035, bevelThickness: .035, bevelSegments: 1, steps: 1 }));
   function imageSurface(parent: THREE.Object3D, width: number, height: number): ImageSurface {
-    const material = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, fog: false, side: THREE.FrontSide });
-    materials.add(material);
-    const result = new THREE.Mesh(geometry(`image-${width}-${height}`, () => new THREE.PlaneGeometry(width, height)), material);
-    result.material.color.set(0x141819); parent.add(result); return result;
+    const mat = material(new THREE.MeshBasicMaterial({ color: 0x111513, toneMapped: false, fog: false, side: THREE.FrontSide }));
+    const mesh = new THREE.Mesh(geometry(`image-${width}-${height}`, () => new THREE.PlaneGeometry(width, height)), mat); parent.add(mesh); return mesh;
   }
   function containImage(surface: ImageSurface, texture: THREE.Texture | null) {
-    // Fit the actual image geometry inside its architectural aperture. A shared
-    // poster can have several different apertures without mutating texture UVs.
-    const source = texture?.image as {
-      videoWidth?: number; videoHeight?: number; naturalWidth?: number;
-      naturalHeight?: number; width?: number; height?: number;
-    } | undefined;
-    const width = source?.videoWidth || source?.naturalWidth || source?.width || 0;
-    const height = source?.videoHeight || source?.naturalHeight || source?.height || 0;
-    if (!width || !height) { surface.scale.set(1, 1, 1); return; }
-    const imageAspect = width / height;
-    const apertureAspect = surface.geometry.parameters.width / surface.geometry.parameters.height;
-    surface.scale.set(Math.min(1, imageAspect / apertureAspect), Math.min(1, apertureAspect / imageAspect), 1);
+    const source = texture?.image as { videoWidth?: number; videoHeight?: number; naturalWidth?: number; naturalHeight?: number; width?: number; height?: number } | undefined;
+    const w = source?.videoWidth || source?.naturalWidth || source?.width || 0, h = source?.videoHeight || source?.naturalHeight || source?.height || 0;
+    if (!w || !h) { surface.scale.set(1, 1, 1); return; }
+    const imageAspect = w / h, aperture = surface.geometry.parameters.width / surface.geometry.parameters.height;
+    surface.scale.set(Math.min(1, imageAspect / aperture), Math.min(1, aperture / imageAspect), 1);
   }
-  function smallImage(index: number, parent: THREE.Object3D, x: number, y: number, z: number, width: number, yaw: number) {
-    const mount = new THREE.Group(); mount.position.set(x, y, z); mount.rotation.y = yaw; parent.add(mount);
-    const height = width * 9 / 16;
-    box(mount, 0, 0, -.18, width + .3, height + .3, .3, dark);
-    frame(mount, width, height, .25, graphite, .075);
-    const surface = imageSurface(mount, width, height); surface.position.z = .015;
-    secondaryImages[index].push(surface); return mount;
+  function motor(parent: THREE.Object3D, radius: number) {
+    const group = new THREE.Group(); parent.add(group); const body = new THREE.Mesh(cylinder, graphite); body.scale.set(radius, .25, radius); body.rotation.x = Math.PI / 2; group.add(body);
+    const trim = ring(group, radius * .91, .025, ivory); trim.position.z = .15; ring(group, radius * .5, .018, red).position.z = .16; return group;
   }
-  function inspectPiece(index: number, node: THREE.Object3D, offset: THREE.Vector3) {
-    inspectionParts[index].push({ node, base: node.position.clone(), offset });
+  function arm(parent: THREE.Object3D): Link {
+    const body = new THREE.Mesh(cylinder, alloy), piston = new THREE.Mesh(cylinder, graphite), signal = new THREE.Mesh(cylinder, darkRed); parent.add(body, piston, signal); return { body, piston, signal };
   }
-  function sway(index: number, node: THREE.Object3D, axis: 'x' | 'y' | 'z', amount: number, rate: number, phase = 0) {
-    motions[index].push({ node, axis, base: node.rotation[axis], amount, rate, phase });
+  function connect(mesh: THREE.Mesh, a: THREE.Vector3, b: THREE.Vector3, radius: number) {
+    direction.subVectors(b, a); mesh.position.copy(a).add(b).multiplyScalar(.5); mesh.scale.set(radius, Math.max(.001, direction.length()), radius); mesh.quaternion.setFromUnitVectors(axis, direction.normalize());
   }
-
-  const chapters: ChapterArchitecture[] = PASSAGE_CHAPTERS.map((spec, index) => {
-    const root = new THREE.Group(); root.name = `passage-architecture-${spec.id}`;
-    root.position.fromArray(spec.center); root.rotation.y = spec.yaw; scene.add(root);
-    const screen = new THREE.Group(); screen.position.fromArray(spec.media.position); screen.rotation.y = spec.media.yaw;
-    screen.name = `${spec.id}-cultural-window`; root.add(screen);
+  function moveArm(link: Link, a: THREE.Vector3, b: THREE.Vector3) {
+    scratchC.copy(a).lerp(b, .64); connect(link.body, a, scratchC, .17); connect(link.piston, scratchC, b, .105); connect(link.signal, a, b, .018);
+  }
+  const chapters: Assembly[] = PASSAGE_CHAPTERS.map((spec, index) => {
+    const root = new THREE.Group(); root.name = `passage-architecture-${spec.id}`; scene.add(root);
+    const frames: THREE.Mesh[] = [];
+    for (let j = 0; j < 3; j++) { const mesh = new THREE.Mesh(chassisGeometry, j === 1 ? graphite : alloy); root.add(mesh); frames.push(mesh); }
+    const fins: THREE.Group[] = [];
+    for (let j = 0; j < 4; j++) {
+      const fin = new THREE.Group(); root.add(fin); box(fin, 0, 0, 0, .62, .19, .9, graphite); box(fin, 0, .105, 0, .58, .025, .95, j % 2 ? ivory : red); fins.push(fin);
+    }
+    const ribs = instanced(root, graphite, 14, () => {}); ribs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const slats: THREE.Group[] = [];
+    for (let j = 0; j < 12; j++) {
+      const slat = new THREE.Group(); root.add(slat); box(slat, 0, -4.75, 0, 1.22, 9.5, .035, charcoal); box(slat, -.60, -4.75, .025, .014, 9.5, .035, alloy); slats.push(slat);
+    }
+    const screen = new THREE.Group(); screen.name = `${spec.id}-cultural-window`; screen.position.fromArray(spec.media.position); screen.rotation.y = spec.media.yaw; root.add(screen);
     const w = spec.media.width, h = w * 9 / 16;
-    if (index === 0) {
-      // A deep mineral reveal: the image occupies a recess in the observatory.
-      box(screen, 0, 0, -.62, w + .9, h + .9, 1.1, warm);
-      frame(screen, w + .12, h + .12, .72, graphite, .13).position.z = -.22;
-      box(screen, 0, 0, -.015, w, h, .05, ink);
-    } else if (index === 1) {
-      // Offset paper margins disclose depth through parallax between layers.
-      box(screen, 0, 0, -.3, w + .15, h + .15, .45, ink);
-      for (let n = 0; n < 3; n++) {
-        const margin = frame(screen, w + n * .22, h + n * .2, .09, n === 1 ? graphite : paper, .065);
-        margin.position.set(n * .08, n * .06, -.08 - n * .34);
-      }
-    } else if (index === 2) {
-      // Cinema lets the light occupy the room without a monitor-like metal bezel.
-      box(screen, 0, 0, -.04, w + .04, h + .04, .08, ink);
-    } else if (index === 3) {
-      box(screen, 0, 0, -.06, w, h, .12, ink);
-      for (const side of [-1, 1]) {
-        box(screen, 0, side * (h / 2 + .055), 0, w + .38, .09, .16, metal);
-        box(screen, side * (w / 2 - .22), h / 2 + 1.8, -.03, .026, 3.5, .026, metal);
-      }
-    } else if (index === 4) {
-      box(screen, 0, 0, -.14, w + .5, h + .5, .28, paper);
-      frame(screen, w + .05, h + .05, .16, warmPlaster, .16);
-      box(screen, 0, 0, -.01, w, h, .04, ink);
-    } else {
-      box(screen, 0, 0, -.2, w + .2, h + .2, .35, dark);
-      frame(screen, w, h, .28, graphite, .065);
-      box(screen, 0, -h / 2 - .085, .035, w, .02, .045, softLight);
-    }
-    const media = imageSurface(screen, w, h); media.position.z = .035;
-    const leftShutter = box(root, -8, .5, -14, 16.02, 22, .65, ink);
-    const rightShutter = box(root, 8, .5, -14, 16.02, 22, .65, ink);
-    leftShutter.name = `${spec.id}-rear-threshold-left`; rightShutter.name = `${spec.id}-rear-threshold-right`;
-    rearShutters.push([leftShutter, rightShutter]);
+    box(screen, 0, 0, -.10, w + .10, h + .10, .16, charcoal);
+    for (const side of [-1, 1]) { box(screen, 0, side * (h / 2 + .06), -.01, w + .21, .075, .23, alloy); box(screen, side * (w / 2 + .06), 0, -.01, .075, h + .1, .23, graphite); }
+    box(screen, -w / 2 + .66, -h / 2 - .125, .02, 1.25, .025, .025, red);
+    const media = imageSurface(screen, w, h); media.position.z = .015;
+    const spill = new THREE.Mesh(geometry('spill-plane', () => new THREE.PlaneGeometry(5, 3)), spillMat); spill.position.set(spec.media.position[0], -3.8, -.9); spill.rotation.x = -Math.PI * .32; root.add(spill);
     const exhibit = new THREE.Group(); exhibit.name = `${spec.id}-inspection`; exhibit.position.fromArray(spec.exhibit); root.add(exhibit);
-    exhibitBases[index] = exhibit.position.clone();
-    const animated = new THREE.Group(); exhibit.add(animated); exhibitMotion[index] = animated;
-    return { root, media, exhibit };
+    const movement = new THREE.Group(); exhibit.add(movement);
+    const armRoot = new THREE.Group(); armRoot.position.fromArray(spec.center); scene.add(armRoot);
+    const side = index % 2 ? 1 : -1;
+    box(armRoot, side * 8.25, -2.7, -.4, .72, 1.25, 1.0, graphite);
+    const arms = [arm(armRoot), arm(armRoot)], motors = [motor(armRoot, .25), motor(armRoot, .23), motor(armRoot, .19)];
+    const hub = new THREE.Group(); root.add(hub); hub.position.set(side * 7.15, -3.25, .18);
+    ring(hub, .56, .045, alloy, Math.PI * 1.82); ring(hub, .39, .017, red, Math.PI * 1.7).rotation.y = .6;
+    const core = new THREE.Mesh(geometry('hub-core', () => new THREE.IcosahedronGeometry(.18, 1)), ivory); hub.add(core);
+    return { root, media, exhibit, movement, frames, fins, slats, ribs, armRoot, arms, motors, hub, target: new THREE.Vector3(), inspection: 0, turn: 0, ribInspection: -1, leafReveal: -1 };
+  });
+  // Small, recognisable objects remain inspectable. Their movement is below the
+  // camera/assembly transform and can never displace text or playback controls.
+  chapters.forEach((chapter, index) => {
+    const model = chapter.movement;
+    if (index === 0) {
+      const globe = new THREE.Mesh(sphere, graphite); globe.scale.setScalar(.65); model.add(globe);
+      for (let j = 0; j < 5; j++) { const meridian = ring(model, .675, .009, j === 0 ? red : alloy); meridian.rotation.y = j * Math.PI / 5; }
+      ring(model, .78, .012, ivory, Math.PI * 1.6).rotation.x = 1.0;
+    } else if (index === 1) {
+      for (let j = 0; j < 4; j++) { const layer = ring(model, .48 + j * .08, .028, j % 2 ? graphite : alloy, Math.PI * 1.72); layer.rotation.set(j * .38, j * .5, j * .4); }
+      const core = new THREE.Mesh(geometry('archive-core', () => new THREE.OctahedronGeometry(.23)), ceramic); model.add(core);
+    } else if (index === 2) {
+      for (const x of [-.30, .30]) {
+        const wheel = new THREE.Mesh(geometry('reel', () => new THREE.CylinderGeometry(.34, .34, .075, 32)), graphite); wheel.rotation.x = Math.PI / 2; wheel.position.x = x; model.add(wheel);
+        for (let j = 0; j < 5; j++) { const hole = new THREE.Mesh(geometry('reel-hole', () => new THREE.CircleGeometry(.065, 12)), ivory); hole.position.set(x + Math.cos(j * 1.256) * .2, Math.sin(j * 1.256) * .2, .045); model.add(hole); }
+      }
+      box(model, 0, -.43, 0, .95, .2, .25, alloy);
+    } else if (index === 3) {
+      for (let j = 0; j < 5; j++) { const record = ring(model, .25 + j * .09, j === 4 ? .025 : .012, j % 2 ? graphite : alloy); record.rotation.x = .3; }
+      const centre = new THREE.Mesh(geometry('record-label', () => new THREE.CircleGeometry(.19, 24)), red); centre.rotation.x = .3; model.add(centre);
+      ring(model, .73, .012, ivory, Math.PI * 1.4).rotation.y = .55;
+    } else if (index === 4) {
+      const vase = new THREE.Mesh(geometry('vase', () => new THREE.CylinderGeometry(.2, .35, .8, 9)), ceramic); model.add(vase);
+      ring(model, .20, .032, graphite).rotation.x = Math.PI / 2;
+      for (let j = 0; j < 3; j++) { const shard = box(model, .5 + j * .06, -.24 + j * .03, -.04 - j * .07, .45, .025, .6, j === 1 ? alloy : ceramic); shard.rotation.y = .3 + j * .2; }
+    } else {
+      for (let j = 0; j < 4; j++) { const band = ring(model, .45 + j * .07, .033, j === 1 ? red : alloy, Math.PI * 1.6); band.rotation.set(j * .58, j * .4, j * .65); }
+      for (let j = 0; j < 3; j++) {
+        const mount = new THREE.Group(); mount.position.set(1.25 + j * 1.6, -3.1, .7); mount.visible = false; chapter.root.add(mount); collectionMounts.push(mount);
+        box(mount, 0, 0, -.055, 1.42, .85, .09, graphite); const surface = imageSurface(mount, 1.34, .754); surface.position.z = .005; collectionSurfaces.push(surface);
+      }
+    }
   });
 
-  // WORLD — an expansive observatory with high, interrupted meridians.
-  {
-    const { root } = chapters[0], exhibit = exhibitMotion[0];
-    floor(root, 30, 31, -1);
-    const columns: { position: number[]; scale: number[] }[] = [];
-    for (const side of [-1, 1]) for (let n = 0; n < 4; n++) {
-      columns.push({ position: [side * (n % 2 ? 13.8 : 12.8), 3, 11 - n * 7.8], scale: [1.15, 15.7, 1.4] });
-    }
-    repeatedBoxes(root, columns, warm);
-    const columnContacts: { position: number[]; scale: number[] }[] = [];
-    columns.forEach(column => {
-      columnContacts.push({ position: [column.position[0], -4.72, column.position[2]], scale: [1.48, .1, 1.72] });
-      for (const level of [-1.5, 3.5, 8.5]) columnContacts.push({ position: [column.position[0], level, column.position[2]], scale: [1.158, .032, 1.408] });
-    });
-    repeatedBoxes(root, columnContacts, ink);
-    // The large canopy is open between ribs, so the raised ceiling is visible.
-    for (let n = 0; n < 5; n++) {
-      const rib = ring(root, 13.6, n === 0 ? .16 : .065, n === 0 ? metal : graphite, Math.PI);
-      rib.position.set(0, 1.8, 9 - n * 5.9);
-    }
-    const geographic = new THREE.Group(); geographic.position.set(4, -4.7, -3); root.add(geographic);
-    for (let n = 0; n < 3; n++) { const orbit = ring(geographic, 4.8 + n * 2.35, .025, n === 0 ? signal : metal, Math.PI * 1.6); orbit.rotation.x = -Math.PI / 2; orbit.rotation.z = n * .45; }
-    const globe = new THREE.Mesh(sphereGeometry, dark); globe.scale.setScalar(1.42); exhibit.add(globe);
-    for (let n = 0; n < 5; n++) {
-      const meridian = ring(exhibit, 1.49, .019, n === 0 ? signal : metal); meridian.rotation.y = n * Math.PI / 5;
-      inspectPiece(0, meridian, new THREE.Vector3(Math.cos(n) * .2, .12 * n, Math.sin(n) * .18));
-    }
-    for (let n = -1; n <= 1; n++) {
-      const latitude = ring(exhibit, Math.sqrt(1.49 ** 2 - (n * .7) ** 2), .012, metal);
-      latitude.rotation.x = Math.PI / 2; latitude.position.y = n * .7;
-    }
-    // Actual catalogue destinations: Miami, London, New York, Puerto Rico, Tokyo.
-    [[25.76, -80.19], [51.51, -.13], [40.71, -74], [18.46, -66.11], [35.68, 139.69]].forEach(([lat, lon]) => {
-      const a = lat * Math.PI / 180, b = lon * Math.PI / 180;
-      const marker = new THREE.Mesh(sphereGeometry, signal); marker.scale.setScalar(.07);
-      marker.position.set(1.51 * Math.cos(a) * Math.sin(b), 1.51 * Math.sin(a), 1.51 * Math.cos(a) * Math.cos(b)); exhibit.add(marker);
-    });
-    box(root, 2.8, -4.82, 3, 4.6, .2, 3.6, dark);
-    smallImage(0, root, 12.1, 2.7, -10.3, 7.5, -.38);
-    // Behind the entrance this window gives the opening a real inhabited destination.
-    box(root, -11.8, 3.2, -7, .35, 12.5, 12, graphite);
-    box(root, -11.55, 2, -5, .025, 8, .1, softLight);
-    sway(0, exhibit, 'y', .26, .12);
-  }
-
-  // TIME MACHINE — successive deep frames; each opening reveals the next layer.
-  {
-    const { root } = chapters[1], exhibit = exhibitMotion[1]; floor(root, 25, 31, -.5);
-    for (let n = 0; n < 6; n++) {
-      const threshold = frame(root, 21 - n * .65, 12.7 - n * .4, .48, n % 2 === 0 ? paper : graphite, n % 2 === 0 ? .24 : .11);
-      threshold.position.set(n % 2 ? .85 : -.45, .1 + n * .12, 11 - n * 4.1);
-      threshold.rotation.z = (n % 2 ? 1 : -1) * .012;
-    }
-    const shelves: { position: number[]; scale: number[] }[] = [];
-    for (let side = -1; side <= 1; side += 2) for (let n = 0; n < 7; n++) {
-      shelves.push({ position: [side * 11.4, -4.1 + n * 1.8, -3], scale: [1.8, .08, 18] });
-    }
-    repeatedBoxes(root, shelves, paper);
-    const leaves: { position: number[]; scale: number[]; rotation: number[] }[] = [];
-    for (let n = 0; n < 15; n++) leaves.push({ position: [10.5 + (n % 3) * .25, 1.3 + Math.floor(n / 5) * .45, 6 - n * .92], scale: [.08, 3.7 + (n % 3) * .3, 1.7], rotation: [0, -.12 + n * .014, 0] });
-    repeatedBoxes(root, leaves, warm);
-    for (let n = 0; n < 5; n++) {
-      const artifact = frame(exhibit, 2.2 + n * .1, 1.7 + n * .06, .1, n % 2 ? paper : metal, .055);
-      artifact.position.set((n - 2) * .14, n * .07, -(n - 2) * .29); artifact.rotation.z = (n - 2) * .045;
-      inspectPiece(1, artifact, new THREE.Vector3((n - 2) * .19, .1 * n, -(n - 2) * .24));
-    }
-    const rail = tube(root, [new THREE.Vector3(-10, -4.65, 12), new THREE.Vector3(-10.2, -4.65, 1), new THREE.Vector3(-9.1, -4.65, -13)], .025, signal);
-    rail.name = 'archive-continuity';
-    smallImage(1, root, 10.6, 2.3, -8.2, 5.2, -.35);
-    sway(1, exhibit, 'y', .12, .14, .7);
-  }
-
-  // CINEMA — a single large luminous image and a low, stepped dark room.
-  {
-    const { root } = chapters[2], exhibit = exhibitMotion[2]; floor(root, 31, 33, -2, ink);
-    const screen = PASSAGE_CHAPTERS[2].media;
-    const proscenium = frame(root, 15.5, 10.4, 1.2, graphite, .75); proscenium.position.set(3.7, .7, -3.7);
-    const outer = frame(root, 21, 14.5, .6, dark, .4); outer.position.set(1, 1.3, -7.2);
-    box(root, 10.95, .5, 4.8, 2, 12.2, 6, ink);
-    box(root, -12.7, 1, 4, 2.4, 13.5, 7.2, ink);
-    const steps: { position: number[]; scale: number[] }[] = [];
-    for (let n = 0; n < 6; n++) steps.push({ position: [2.5, -5 + n * .105, 8.5 - n * 2], scale: [22, .2, 2.1] });
-    repeatedBoxes(root, steps, graphite);
-    const aisle: { position: number[]; scale: number[] }[] = [];
-    for (let n = 0; n < 6; n++) for (const side of [-1, 1]) aisle.push({ position: [side === -1 ? -7.7 : 12.7, -4.87 + n * .105, 9.4 - n * 2], scale: [.3, .018, .035] });
-    repeatedBoxes(root, aisle, dimSignal);
-    // Static, economical illumination from the screen; no dynamic shadows or bloom.
-    const spillMaterial = basic('cinema-spill', { color: 0xd9d2bc, transparent: true, opacity: .045, depthWrite: false, side: THREE.DoubleSide });
-    const spill = new THREE.Mesh(geometry('cinema-spill-plane', () => new THREE.PlaneGeometry(13.5, 10)), spillMaterial);
-    spill.rotation.x = -Math.PI / 2; spill.position.set(screen.position[0], -4.7, 2.6); root.add(spill);
-    for (let n = 0; n < 2; n++) {
-      const reel = new THREE.Group(); reel.position.set((n - .5) * 1.65, .05, n * -.12); exhibit.add(reel);
-      ring(reel, .82, .105, metal); ring(reel, .23, .085, metal);
-      const spokes: { position: number[]; scale: number[]; rotation: number[] }[] = [];
-      for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; spokes.push({ position: [Math.cos(a) * .5, Math.sin(a) * .5, 0], scale: [.58, .08, .07], rotation: [0, 0, a] }); }
-      repeatedBoxes(reel, spokes, graphite); inspectPiece(2, reel, new THREE.Vector3((n - .5) * .5, .1, n * .3));
-      sway(2, reel, 'z', .25, .16, n);
-    }
-    box(root, 4.3, -4.75, 3, 4.8, .3, 2, dark);
-  }
-
-  /** A true dimensional sheet, with an authored cross-section and thickness-like
-   * folded rim. The three music surfaces have different spatial phrasing. */
-  function ribbon(parent: THREE.Object3D, points: THREE.Vector3[], width: number, material: THREE.Material, twist: number) {
-    const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', .5);
-    const segments = 72, positions: number[] = [], uv: number[] = [], indices: number[] = [];
-    const tangent = new THREE.Vector3(), across = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments, p = curve.getPoint(t); tangent.copy(curve.getTangent(t));
-      across.crossVectors(tangent, up).normalize(); across.applyAxisAngle(tangent, Math.sin(t * Math.PI * 2) * twist);
-      for (const side of [-1, 1]) { const v = p.clone().addScaledVector(across, side * width / 2); positions.push(v.x, v.y, v.z); uv.push(t, side > 0 ? 1 : 0); }
-      if (i < segments) { const a = i * 2; indices.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
-    }
-    const shape = new THREE.BufferGeometry(); shape.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); shape.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); shape.setIndex(indices); shape.computeVertexNormals(); geometries.add(shape);
-    const mesh = new THREE.Mesh(shape, material); parent.add(mesh); return mesh;
-  }
-  // MUSIC — three expressive acoustic ribbons with substantial, open space.
-  {
-    const { root } = chapters[3], exhibit = exhibitMotion[3]; floor(root, 29, 33, -1);
-    const ribbonMaterial = standard('ribbon', { color: 0x777d79, metalness: .83, roughness: .33, side: THREE.DoubleSide });
-    const ribbonWarm = standard('ribbon-warm', { color: 0xaaa69a, metalness: .47, roughness: .5, side: THREE.DoubleSide });
-    const paths = [
-      [[-12, 5.5, 13], [-8, 9.2, 5], [1, 8.3, -3], [11, 5.8, -8], [13, 2, -13]],
-      [[14, -2.9, 11], [13, 2.8, 4], [12, 6.2, -3], [4, 8, -9], [-8, 6.1, -14]],
-      [[-12, -3.9, 9], [-13, 1, 1], [-12, 5.1, -5], [-3, 6.2, -11], [9, 4.9, -15]],
-    ];
-    paths.forEach((points, n) => {
-      const group = new THREE.Group(); root.add(group);
-      const vectors = points.map(p => new THREE.Vector3(...p as [number, number, number]));
-      ribbon(group, vectors, 1.2 + n * .25, n === 1 ? ribbonWarm : ribbonMaterial, .55 + n * .1);
-      tube(group, vectors, .045, n === 0 ? metal : graphite, false, 72);
-      sway(3, group, n === 0 ? 'z' : 'y', .014, .37 + n * .07, n * 1.3);
-    });
-    const hangers: { position: number[]; scale: number[] }[] = [];
-    for (let n = 0; n < 4; n++) hangers.push({ position: [11.6, 8.5, 7 - n * 6], scale: [.025, 7.5, .025] });
-    repeatedBoxes(root, hangers, metal);
-    for (let n = 0; n < 3; n++) {
-      const shell = new THREE.Group(); exhibit.add(shell);
-      const a = n * Math.PI / 3, path: THREE.Vector3[] = [];
-      for (let k = 0; k <= 16; k++) { const t = k / 16 * Math.PI * 1.65; path.push(new THREE.Vector3(Math.cos(t) * (1.25 + n * .15), Math.sin(t) * .7, Math.sin(t * 1.5 + a) * .33 + n * .13)); }
-      ribbon(shell, path, .28, ribbonMaterial, .5);
-      inspectPiece(3, shell, new THREE.Vector3(0, (n - 1) * .35, (n - 1) * .2));
-    }
-    sway(3, exhibit, 'z', .045, .46);
-    box(root, 3, -4.8, 3, 4.6, .25, 2.6, graphite);
-  }
-
-  // CULTURE — the scale contracts into plaster, thick paper, fabric and a table.
-  {
-    const { root } = chapters[4], exhibit = exhibitMotion[4]; floor(root, 25, 29, -1);
-    box(root, 12.15, -.2, -3, .8, 9.2, 19, warmPlaster);
-    box(root, -12.5, -.2, -5, .8, 9.2, 15, warmPlaster);
-    box(root, 2, 5.4, -3, 23.5, .6, 21, warmPlaster);
-    // Slim roof cuts suggest daylight, while the foreground stays calm for text.
-    const skylights: { position: number[]; scale: number[] }[] = [];
-    for (let n = 0; n < 4; n++) skylights.push({ position: [8.7 - n * 3.2, 5.07, -4], scale: [.09, .025, 15] });
-    repeatedBoxes(root, skylights, softLight);
-    const clothGeometry = geometry('atelier-cloth', () => {
-      const result = new THREE.PlaneGeometry(3.8, 7.3, 12, 16), pos = result.getAttribute('position');
-      for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i); pos.setZ(i, Math.sin(x * 4.2) * .1 + Math.sin(y * .8 + x) * .06); }
-      result.computeVertexNormals(); return result;
-    });
-    const cloth = new THREE.Mesh(clothGeometry, paper); cloth.position.set(10.7, .7, 5.1); cloth.rotation.y = -.36; root.add(cloth);
-    box(root, 10.7, 4.55, 5.1, 4.4, .07, .07, metal);
-    sway(4, cloth, 'y', .018, .21, .6);
-    const table = new THREE.Group(); table.position.set(4, -3.8, 4.6); table.rotation.y = -.14; root.add(table);
-    box(table, 0, 0, 0, 6.5, .28, 2.35, warm);
-    for (const side of [-1, 1]) box(table, side * 2.25, -.5, 0, .3, 1.08, 1.75, graphite);
-    const vesselGeometry = geometry('ceramic-vessel', () => new THREE.LatheGeometry([
-      new THREE.Vector2(.32, -.5), new THREE.Vector2(.4, -.45), new THREE.Vector2(.47, -.1), new THREE.Vector2(.5, .25), new THREE.Vector2(.45, .42), new THREE.Vector2(.4, .45), new THREE.Vector2(.39, .4), new THREE.Vector2(.43, .2), new THREE.Vector2(.4, -.1), new THREE.Vector2(.31, -.4),
-    ], 28));
-    const vessel = new THREE.Mesh(vesselGeometry, ceramic); vessel.position.set(-.65, .02, .2); exhibit.add(vessel);
-    const folded = new THREE.Group(); folded.position.set(.65, -.49, 0); exhibit.add(folded);
-    for (let n = 0; n < 4; n++) { const leaf = box(folded, .05 * n, n * .07, 0, 1.3, .035, .9, paper); leaf.rotation.y = n * .15; }
-    inspectPiece(4, vessel, new THREE.Vector3(-.3, .2, .1)); inspectPiece(4, folded, new THREE.Vector3(.3, .3, 0));
-    // A slim side recess is an authored material detail, not another fake content card.
-    frame(root, 2.2, 4.5, .45, graphite, .1).position.set(-10.7, .1, -6.8);
-  }
-
-  // MY WORLD — a quiet collecting room, incorporating earlier material memories.
-  {
-    const { root } = chapters[5], exhibit = exhibitMotion[5]; floor(root, 28, 30, -1);
-    const shelfParts: { position: number[]; scale: number[] }[] = [];
-    for (let n = 0; n < 4; n++) {
-      shelfParts.push({ position: [12, -3.8 + n * 2.6, -5], scale: [2.4, .12, 20] });
-      shelfParts.push({ position: [-12.5, -3.8 + n * 2.6, -5], scale: [1.5, .12, 18] });
-    }
-    repeatedBoxes(root, shelfParts, paper);
-    const uprights: { position: number[]; scale: number[] }[] = [];
-    for (let n = 0; n < 5; n++) for (const side of [-1, 1]) uprights.push({ position: [side === -1 ? -13.1 : 13.1, .2, 4 - n * 4.5], scale: [.15, 10.6, .16] });
-    repeatedBoxes(root, uprights, graphite);
-    // Empty dimensional sleeves leave room for genuine saved content in the product.
-    const sleeves: { position: number[]; scale: number[]; rotation: number[] }[] = [];
-    for (let n = 0; n < 9; n++) sleeves.push({ position: [11.55, -3.05 + (n % 3) * 2.6, 3 - Math.floor(n / 3) * 5.7], scale: [.08, 1.6, 1.25], rotation: [0, -.12, 0] });
-    repeatedBoxes(root, sleeves, warm);
-    const canopy = ring(root, 12, .07, metal, Math.PI); canopy.position.set(0, 1.2, -8);
-    for (let n = 0; n < 3; n++) {
-      const band = ring(exhibit, 1.1 + n * .27, .105, n === 1 ? warm : metal, Math.PI * 1.65);
-      band.rotation.set(n * .42, (n - 1) * .65, n * .55);
-      inspectPiece(5, band, new THREE.Vector3((n - 1) * .28, n * .2, .1 * n));
-    }
-    box(root, 3, -4.62, 3, 5.6, .55, 3.6, warm);
-    box(root, 3, -4.32, 3, 5.6, .025, 3.6, graphite);
-    const landing = frame(root, 22, 12.5, .35, graphite, .13); landing.position.set(0, .5, -13);
-    smallImage(5, root, 11.25, 1, -10, 4.5, -.4);
-    // Actual saved posters, supplied by the shared viewer store, occupy a quiet
-    // shelf. Nothing is invented or shown as saved when the collection is empty.
-    for (let n = 0; n < 3; n++) {
-      const mount = new THREE.Group(); mount.name = `saved-story-${n + 1}`;
-      mount.position.set(.5 + n * 3, 4.55, -2); mount.visible = false; root.add(mount); collectionMounts.push(mount);
-      box(mount, 0, 0, -.11, 2.42, 1.44, .18, dark);
-      frame(mount, 2.3, 1.3, .16, graphite, .045);
-      box(mount, 0, -.76, .02, 2.65, .07, .6, paper);
-      const surface = imageSurface(mount, 2.3, 1.3); surface.position.z = .01; collectionSurfaces.push(surface);
-    }
-    sway(5, exhibit, 'y', .12, .12, .8);
-  }
-
-  // OPENING — a deep, layered iris with real thickness and a framed destination.
-  const entrance = new THREE.Group(); entrance.name = 'passage-entrance'; entrance.position.set(3.3, .2, -8); scene.add(entrance);
-  const entranceBase = new THREE.Group(); entrance.add(entranceBase);
-  // A continuous load-bearing housing makes the iris a threshold rather than
-  // floating ornaments. Its deep inner return remains visible during approach.
-  const housingShape = new THREE.Shape(); housingShape.absarc(0, 0, 6.2, 0, Math.PI * 2, false);
-  const apertureHole = new THREE.Path(); apertureHole.absarc(0, 0, 5.15, 0, Math.PI * 2, true); housingShape.holes.push(apertureHole);
-  const housingGeometry = geometry('entrance-housing', () => new THREE.ExtrudeGeometry(housingShape, { depth: 1.35, bevelEnabled: true, bevelSize: .07, bevelThickness: .06, bevelSegments: 2, curveSegments: 64, steps: 1 }));
-  const housing = new THREE.Mesh(housingGeometry, graphite); housing.position.z = -1.28; entranceBase.add(housing);
-  const portalRadii = [5.45, 5.75, 6.15];
-  portalRadii.forEach((radius, n) => {
-    const collar = new THREE.Group(); collar.position.z = -n * .62; entranceBase.add(collar); entranceCollars.push(collar);
-    ring(collar, radius, n === 1 ? .22 : .14, n === 1 ? metal : graphite);
-    const edge = ring(collar, radius - .14, .022, n === 0 ? signal : softLight, Math.PI * 1.1); edge.rotation.z = n * 1.5;
-  });
-  const petalShape = new THREE.Shape();
-  petalShape.moveTo(4.94, -.58); petalShape.bezierCurveTo(5.18, -.97, 5.7, -1.2, 6.08, -1.07);
-  petalShape.bezierCurveTo(6.29, -.45, 6.33, .37, 6.17, .98);
-  petalShape.bezierCurveTo(5.9, .66, 5.51, .38, 5.04, .43);
-  petalShape.bezierCurveTo(4.99, .1, 4.92, -.23, 4.94, -.58); petalShape.closePath();
-  const petalGeometry = geometry('entrance-petal', () => new THREE.ExtrudeGeometry(petalShape, { depth: .22, bevelEnabled: true, bevelSize: .035, bevelThickness: .045, bevelSegments: 2, steps: 1, curveSegments: 18 }));
-  for (let n = 0; n < 12; n++) {
-    const group = new THREE.Group(); const angle = n / 12 * Math.PI * 2; group.rotation.z = angle;
-    entranceBase.add(group); const blade = new THREE.Mesh(petalGeometry, n % 4 === 0 ? metal : graphite); blade.position.z = .11; group.add(blade);
-    const mechanism = box(group, 6.25, 0, -.5, .8, .18, 1.1, dark); mechanism.rotation.z = -.16;
-    entrancePetals.push({ root: group, angle });
-  }
-  // Asymmetric near edges establish a human-scale foreground, while the iris is the middle ground.
-  box(entrance, 7.8, 0, 3.5, 1.8, 17, 3.2, warm);
-  box(entrance, -9.4, 0, 1, 1.25, 17.5, 5, graphite);
-  box(entrance, 0, -6.5, 1, 18, .7, 12, floorMaterial);
-  box(entrance, 7.8, -6.1, 3.5, 2.1, .1, 3.5, ink);
-  for (const level of [-2.5, 1.9, 6.3]) box(entrance, 7.8, level, 3.5, 1.81, .028, 3.21, ink);
-  box(entrance, 7, 1, 5.12, .025, 11, .035, softLight);
-  const apertureRibs = ring(entrance, 6.5, .045, graphite, Math.PI * 1.6); apertureRibs.position.z = -2; apertureRibs.rotation.z = -.8;
-
+  function configureTexture(texture: THREE.Texture) { texture.colorSpace = THREE.SRGBColorSpace; texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter; texture.generateMipmaps = false; textures.add(texture); }
   function setPoster(index: number, url: string) {
     if (destroyed || !chapters[index] || !url) return;
     const version = ++loadVersions[index];
-    imageLoader.load(url, texture => {
+    loader.load(url, texture => {
       if (destroyed || version !== loadVersions[index]) { texture.dispose(); return; }
-      texture.colorSpace = THREE.SRGBColorSpace; texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter;
-      texture.generateMipmaps = false; textures.add(texture);
-      const old = posters[index]; posters[index] = texture;
-      if (!activeTextures[index]) {
-        chapters[index].media.material.map = texture; chapters[index].media.material.color.set(0xffffff); chapters[index].media.material.needsUpdate = true;
-        containImage(chapters[index].media, texture);
-      }
-      secondaryImages[index].forEach(surface => { surface.material.map = texture; surface.material.color.set(0xffffff); surface.material.needsUpdate = true; containImage(surface, texture); });
-      if (old) { textures.delete(old); old.dispose(); }
-      onInvalidate();
+      configureTexture(texture); const previous = posters[index]; posters[index] = texture;
+      if (!activeTextures[index]) { const surface = chapters[index].media; surface.material.map = texture; surface.material.color.set(0xffffff); surface.material.needsUpdate = true; containImage(surface, texture); }
+      if (previous) { textures.delete(previous); previous.dispose(); } onInvalidate();
     }, undefined, () => { if (!destroyed) onInvalidate(); });
   }
   function setActiveTexture(index: number, texture: THREE.Texture | null) {
     if (destroyed || !chapters[index]) return;
-    activeTextures[index] = texture;
-    const material = chapters[index].media.material, map = texture || posters[index];
-    containImage(chapters[index].media, map);
-    if (material.map === map) return;
-    material.map = map; material.color.set(map ? 0xffffff : 0x141819); material.needsUpdate = true; onInvalidate();
+    activeTextures[index] = texture; const surface = chapters[index].media, map = texture || posters[index]; containImage(surface, map);
+    if (surface.material.map === map) return;
+    surface.material.map = map; surface.material.color.set(map ? 0xffffff : 0x111513); surface.material.needsUpdate = true; onInvalidate();
   }
-  function setCollection(posterUrls: string[]) {
+  function setCollection(urlsInput: string[]) {
     if (destroyed) return;
-    const urls = posterUrls.filter(Boolean).slice(0, 3), key = JSON.stringify(urls);
-    if (key === collectionKey) return;
+    const urls = urlsInput.filter(Boolean).slice(0, 3), key = JSON.stringify(urls); if (key === collectionKey) return;
     collectionKey = key; const version = ++collectionVersion;
-    collectionMounts.forEach((mount, index) => {
-      mount.visible = false;
-      const previous = collectionTextures[index];
-      collectionTextures[index] = null; collectionSurfaces[index].material.map = null;
-      collectionSurfaces[index].material.needsUpdate = true;
-      if (previous) { textures.delete(previous); previous.dispose(); }
-    });
-    urls.forEach((url, index) => imageLoader.load(url, texture => {
+    collectionMounts.forEach((mount, i) => { mount.visible = false; collectionSurfaces[i].material.map = null; collectionSurfaces[i].material.needsUpdate = true; const previous = collectionTextures[i]; collectionTextures[i] = null; if (previous) { textures.delete(previous); previous.dispose(); } });
+    urls.forEach((url, i) => loader.load(url, texture => {
       if (destroyed || version !== collectionVersion) { texture.dispose(); return; }
-      texture.colorSpace = THREE.SRGBColorSpace; texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter;
-      texture.generateMipmaps = false; textures.add(texture); collectionTextures[index] = texture;
-      const surface = collectionSurfaces[index]; surface.material.map = texture; surface.material.color.set(0xffffff); surface.material.needsUpdate = true;
-      containImage(surface, texture); collectionMounts[index].visible = true; onInvalidate();
+      configureTexture(texture); collectionTextures[i] = texture; const surface = collectionSurfaces[i]; surface.material.map = texture; surface.material.color.set(0xffffff); surface.material.needsUpdate = true; containImage(surface, texture); collectionMounts[i].visible = true; onInvalidate();
     }, undefined, () => { if (!destroyed && version === collectionVersion) onInvalidate(); }));
     onInvalidate();
   }
-  function update(frameState: PassageArchitectureFrame) {
+
+  function update(state: ArchitectureFrame) {
     if (destroyed) return;
-    const { active, progress, elapsed, reducedMotion, inspection } = frameState;
-    const entryProgress = active < 0 ? THREE.MathUtils.smoothstep(progress, .12, 1) : 1;
-    entrance.visible = active <= 0;
-    entrancePetals.forEach(({ root, angle }) => {
-      root.rotation.z = angle + entryProgress * .085;
-      root.position.set(Math.cos(angle) * entryProgress * .68, Math.sin(angle) * entryProgress * .68, -entryProgress * .12);
+    const { active, elapsed, reducedMotion, inspection } = state;
+    const time = reducedMotion ? 0 : elapsed, dt = Math.min(.05, Math.max(0, state.delta ?? 1 / 60));
+    const pointerRate = reducedMotion ? 1 : 1 - Math.exp(-dt * 8);
+    pointerX += ((reducedMotion ? 0 : THREE.MathUtils.clamp(state.pointer?.[0] || 0, -1, 1)) - pointerX) * pointerRate;
+    pointerY += ((reducedMotion ? 0 : THREE.MathUtils.clamp(state.pointer?.[1] || 0, -1, 1)) - pointerY) * pointerRate;
+    const approach = passagePose(state), cameraZ = approach.position[2];
+    signalUniforms.uTime.value = time; signalUniforms.uEnergy.value = Math.min(1, state.energy || 0); signalUniforms.uPointer.value.set(pointerX, pointerY); signalUniforms.uCameraZ.value = cameraZ;
+    ribbonUniforms.uTime.value = time; ribbonUniforms.uEnergy.value = Math.min(1, state.energy || 0);
+    ribbonUniforms.uStation.value = PASSAGE_CHAPTERS[Math.max(0, active)]?.center[2] ?? -36;
+    ribbonUniforms.uRead.value = state.progress > .36 && state.progress < .76 && active >= 0 ? 1 : 0;
+    portals.forEach((portal, i) => { const distance = cameraZ - portal.position.z; portal.visible = distance > -12 && distance < 130; if (portal.visible) portal.rotation.z = i * .7 + time * (i % 2 ? -.018 : .022); });
+    entrance.visible = cameraZ > -18;
+    chapters.forEach((chapter, i) => {
+      const pose = passageStationMotion(i, state), spec = PASSAGE_CHAPTERS[i], side = i % 2 ? 1 : -1;
+      chapter.root.visible = pose.visible&&!state.compact; chapter.armRoot.visible = pose.visible&&!state.compact;
+      if (!chapter.root.visible) { dummy.scale.setScalar(0); dummy.updateMatrix(); mechanismGlow.setMatrixAt(i, dummy.matrix); return; }
+      chapter.root.position.fromArray(pose.position); chapter.root.rotation.set(...pose.rotation);
+      const selected = inspection.expanded && inspection.station === spec.id, rate = reducedMotion ? 1 : 1 - Math.exp(-dt * 12);
+      chapter.inspection += ((selected ? 1 : 0) - chapter.inspection) * rate; chapter.turn += ((selected ? inspection.rotation : 0) - chapter.turn) * rate;
+      const ex = chapter.inspection;
+      chapter.exhibit.rotation.y = chapter.turn; chapter.exhibit.scale.setScalar(1 + ex * .17);
+      // Freeze the authored orientation progressively; multiplying an absolute
+      // elapsed angle would unwind several revolutions when Inspect opens.
+      const objectYaw = reducedMotion ? 0 : (chapter.movement.rotation.y + dt * .055 * (1 - ex)) % (Math.PI * 2);
+      chapter.movement.rotation.set(Math.sin(time * .18 + i) * .06 * (1 - ex), objectYaw, Math.sin(time * .15 + i) * .04 * (1 - ex));
+      // Frames open outside the editorial aperture; the front image and controls
+      // retain their exact authored position, including during inspection.
+      chapter.frames.forEach((frame, j) => { const stretch = 1 + j * .035 + ex * j * .035; frame.scale.set(stretch, stretch, 1); frame.position.set((j - 1) * ex * .16, (j - 1) * ex * .08, -.34 - j * (.52 + ex * .48)); frame.rotation.set(pointerY * j * .007, pointerX * j * .009, (j - 1) * (.012 + ex * .025)); });
+      chapter.fins.forEach((fin, j) => { const sx = j % 2 ? 1 : -1, sy = j < 2 ? -1 : 1; fin.position.set(sx * (7.05 + ex * .25), sy * (4.25 + ex * .18), -.2); fin.rotation.set(sy * (.1 + ex * .25) + pointerY * .045, sx * (.25 + ex * .35) + pointerX * .055, sx * sy * .4); });
+      if (Math.abs(chapter.ribInspection - ex) > .0001) {
+        for (let j = 0; j < 14; j++) { const sx = j < 7 ? -1 : 1; dummy.position.set(sx * (7.92 + ex * .15), ((j % 7) - 3) * .88, -.85); dummy.scale.set(.13, .06, .5 + ex * .7); dummy.rotation.set(0, sx * (.2 + ex * .2), 0); dummy.updateMatrix(); chapter.ribs.setMatrixAt(j, dummy.matrix); }
+        chapter.ribs.instanceMatrix.needsUpdate = true; chapter.ribInspection = ex;
+      }
+      if (Math.abs(chapter.leafReveal - pose.reveal) > .0001) {
+        chapter.slats.forEach((slat, j) => { const fold = THREE.MathUtils.smoothstep(pose.reveal, j * .014, .83 + j * .014); slat.position.set(((j + .5) / 12 - .5) * 14.8, 4.76, -.05); slat.rotation.x = fold * Math.PI / 2; slat.visible = fold < .999; });
+        chapter.leafReveal = pose.reveal;
+      }
+      // A tethered elbow follows the actual shared station transform. The arm
+      // never assumes the panel is still on the original straight-axis plane.
+      chapter.root.updateMatrixWorld(true); worldTarget.set(side * 7.15, -3.25, -.1).applyMatrix4(chapter.root.matrixWorld);
+      dummy.position.copy(worldTarget); dummy.position.z += .48; dummy.rotation.set(0, 0, 0); dummy.scale.set(2.8, 2.2, 1); dummy.updateMatrix(); mechanismGlow.setMatrixAt(i, dummy.matrix);
+      if (i === Math.max(0, active)) { contactLight.position.copy(worldTarget); contactLight.position.z += 1.1; contactLight.intensity = 2.4 + signalUniforms.uEnergy.value * 1.5 + Math.abs(pointerX) * .6; }
+      chapter.target.copy(worldTarget).sub(chapter.armRoot.position);
+      scratchA.set(side * 8.25, -2.7, .1); scratchB.copy(scratchA).lerp(chapter.target, .5); scratchB.y -= .58; scratchB.z += 1.1;
+      moveArm(chapter.arms[0], scratchA, scratchB); moveArm(chapter.arms[1], scratchB, chapter.target);
+      chapter.motors[0].position.copy(scratchA); chapter.motors[1].position.copy(scratchB); chapter.motors[2].position.copy(chapter.target);
+      chapter.hub.rotation.set(pointerY * .09, pointerX * .11, time * .13);
     });
-    entranceCollars.forEach((collar, index) => { collar.rotation.z = entryProgress * (index % 2 ? -.045 : .04); });
-    chapters.forEach((chapter, index) => {
-      chapter.root.visible = Math.abs(index - Math.max(0, active)) <= 1;
-      // These are physical rear partitions: they conceal the next room during
-      // reading, then open with scroll before the camera crosses the threshold.
-      const rearOpen = index < active ? 1 : index === active ? THREE.MathUtils.smoothstep(progress, .74, .96) : 0;
-      rearShutters[index][0].position.x = -8 - rearOpen * 17;
-      rearShutters[index][1].position.x = 8 + rearOpen * 17;
-      const selected = inspection.expanded && inspection.station === PASSAGE_CHAPTERS[index].id;
-      const blendRate = reducedMotion ? 1 : 1 - Math.exp(-Math.min(.05, Math.max(0, frameState.delta ?? 1 / 60)) * 10);
-      inspectionBlend[index] += ((selected ? 1 : 0) - inspectionBlend[index]) * blendRate;
-      inspectionTurn[index] += ((selected ? inspection.rotation : 0) - inspectionTurn[index]) * blendRate;
-      if (!chapter.root.visible) return;
-      // Inspection and environmental motion live on different transform owners.
-      chapter.exhibit.position.copy(exhibitBases[index]); chapter.exhibit.rotation.y = inspectionTurn[index];
-      chapter.exhibit.scale.setScalar(1 + inspectionBlend[index] * .14);
-      inspectionParts[index].forEach(part => part.node.position.copy(part.base).addScaledVector(part.offset, inspectionBlend[index]));
-      motions[index].forEach(part => {
-        // The outer inspection transform is exclusively controlled by the user;
-        // authored sway belongs to child groups or environmental surfaces.
-        if (part.node === chapter.exhibit) return;
-        part.node.rotation[part.axis] = part.base + (reducedMotion ? 0 : Math.sin(elapsed * part.rate + part.phase) * part.amount * (1 - inspectionBlend[index]));
-      });
-    });
+    mechanismGlow.instanceMatrix.needsUpdate = true;
+    contactLight.visible=!state.compact;
   }
   function destroy() {
     if (destroyed) return; destroyed = true;
-    chapters.forEach(chapter => scene.remove(chapter.root)); scene.remove(entrance);
-    instances.forEach(item => item.dispose()); instances.clear();
-    geometries.forEach(item => item.dispose()); materials.forEach(item => item.dispose()); textures.forEach(item => item.dispose());
-    geometries.clear(); materials.clear(); textures.clear(); geometryCache.clear(); materialCache.clear();
+    scene.remove(tunnel, contactLight); chapters.forEach(chapter => { scene.remove(chapter.root, chapter.armRoot); });
+    instances.forEach(mesh => mesh.dispose()); geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
+    instances.clear(); geometries.clear(); materials.clear(); textures.clear(); cache.clear();
   }
   return { chapters, entrance, update, setPoster, setActiveTexture, setCollection, destroy };
 }

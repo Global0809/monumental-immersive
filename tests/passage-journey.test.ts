@@ -1,17 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PASSAGE_CHAPTERS, passageLocalToWorld, type PassageVector } from '../src/services/passageChapters.ts';
-import { passagePose, passageContentOpacity, passageReading, PASSAGE_READING_START, PASSAGE_READING_END } from '../src/services/passageJourney.ts';
-import { TUNNEL_STATION_IDS } from '../src/services/tunnelJourney.ts';
+import { PASSAGE_CHAPTERS, type PassageVector } from '../src/services/passageChapters.ts';
+import { passagePose, passageStationMotion, passageWeaveMask, passageContentOpacity, passageReading, PASSAGE_READING_START, PASSAGE_READING_END } from '../src/services/passageJourney.ts';
+import { TUNNEL_STATION_IDS, tunnelReadingZ } from '../src/services/tunnelJourney.ts';
 import { spatialPortals } from '../src/services/spatial.ts';
 import { videos } from '../src/data/catalogue.ts';
 import { getPassageMedia } from '../src/services/passageMedia.ts';
 
 const distance = (a: PassageVector, b: PassageVector) => Math.hypot(...a.map((value, index) => value - b[index]));
 const near = (a: PassageVector, b: PassageVector, epsilon = 1e-8) => assert.ok(distance(a, b) < epsilon, `${a.join(',')} != ${b.join(',')}`);
-function local(index: number, position: PassageVector): PassageVector {
-  const chapter = PASSAGE_CHAPTERS[index], x = position[0] - chapter.center[0], z = position[2] - chapter.center[2];
-  return [x * Math.cos(chapter.yaw) - z * Math.sin(chapter.yaw), position[1] - chapter.center[1], x * Math.sin(chapter.yaw) + z * Math.cos(chapter.yaw)];
+function carrierLocal(index: number, frame: {active: number; progress: number}, position: PassageVector): PassageVector {
+  const carrier = passageStationMotion(index, frame), x = position[0] - carrier.position[0], z = position[2] - carrier.position[2];
+  return [x * Math.cos(carrier.rotation[1]) - z * Math.sin(carrier.rotation[1]), position[1] - carrier.position[1], x * Math.sin(carrier.rotation[1]) + z * Math.cos(carrier.rotation[1])];
 }
 
 test('Passage specifications preserve six existing routes, catalogue actions and media relationships', () => {
@@ -41,10 +41,10 @@ test('Camera position and look target are continuous from entrance through all f
 
 test('Every reading interval holds the exact authored position, target and field of view', () => {
   for (let active = 0; active < PASSAGE_CHAPTERS.length; active++) {
-    const chapter = PASSAGE_CHAPTERS[active];
     const reference = passagePose({ active, progress: PASSAGE_READING_START });
-    near(reference.position, passageLocalToWorld(chapter, chapter.camera.read));
-    near(reference.target, passageLocalToWorld(chapter, chapter.camera.target));
+    assert.equal(reference.position[2], tunnelReadingZ(active));
+    assert.equal(reference.target[2], reference.position[2] - 24);
+    assert.ok(Math.abs(reference.position[0]) <= .16 && Math.abs(reference.position[1] - .12) <= .08);
     for (let step = 0; step <= 100; step++) {
       const progress = PASSAGE_READING_START + (PASSAGE_READING_END - PASSAGE_READING_START) * step / 100;
       assert.deepEqual(passagePose({ active, progress }), reference);
@@ -71,27 +71,69 @@ test('Finite and out-of-range scroll progress always yields a finite, comfortabl
       const pose = passagePose({ active, progress });
       assert.ok([...pose.position, ...pose.target, pose.fov].every(Number.isFinite), `Invalid pose at ${active}/${progress}`);
       assert.ok(distance(pose.position, pose.target) > 1, 'Look target cannot coincide with the camera');
-      assert.ok(pose.fov >= 40 && pose.fov <= 55);
+      assert.ok(pose.fov >= 40 && pose.fov <= 65);
     }
   }
 });
 
-test('Every departure clears its media screen laterally before crossing the footage plane', () => {
+test('Permanent carriers fold out of the centerline before their media planes can meet the camera', () => {
   for (let active = 0; active < PASSAGE_CHAPTERS.length - 1; active++) {
     const chapter = PASSAGE_CHAPTERS[active];
-    let crossings = 0;
     for (let step = 0; step <= 10000; step++) {
       const progress = PASSAGE_READING_END + (1 - PASSAGE_READING_END) * step / 10000;
-      const position = local(active, passagePose({ active, progress }).position);
+      const frame = { active, progress }, camera = passagePose(frame), carrier = passageStationMotion(active, frame);
+      const position = carrierLocal(active, frame, camera.position);
+      assert.ok(Math.abs(camera.position[0]) <= .16, 'The camera stays in the tunnel rather than swerving around panels');
+      if (camera.position[2] - chapter.center[2] <= 3.5) assert.equal(carrier.extend, 0, 'The carrier is fully retracted before the camera arrives');
       const x = position[0] - chapter.media.position[0], z = position[2] - chapter.media.position[2];
       const planeX = x * Math.cos(chapter.media.yaw) - z * Math.sin(chapter.media.yaw);
       const planeZ = x * Math.sin(chapter.media.yaw) + z * Math.cos(chapter.media.yaw);
       if (Math.abs(planeZ) > .2) continue;
-      crossings++;
       assert.ok(Math.abs(planeX) > chapter.media.width / 2 + .25,
         `${chapter.id} enters screen at progress ${progress.toFixed(5)} / local ${position.map(value => value.toFixed(3))}`);
     }
-    assert.ok(crossings > 0, `${chapter.id} departure must actually pass its screen plane`);
+  }
+});
+
+test('Carrier mechanisms remain anchored to physical stations, with reversible finite poses', () => {
+  for (let index = 0; index < PASSAGE_CHAPTERS.length; index++) {
+    const frames = Array.from({ length: 7 * 101 }, (_, step) => ({ active: Math.floor(step / 101) - 1, progress: (step % 101) / 100 }));
+    const motions = frames.map(frame => passageStationMotion(index, frame));
+    for (let step = frames.length - 1; step >= 0; step--) {
+      const motion = passageStationMotion(index, frames[step]);
+      assert.deepEqual(motion, motions[step]);
+      assert.ok([...motion.position, ...motion.rotation, motion.extend, motion.reveal, motion.latch].every(Number.isFinite));
+      assert.ok(motion.position[2] >= PASSAGE_CHAPTERS[index].center[2] && motion.position[2] <= PASSAGE_CHAPTERS[index].center[2] + .5);
+      assert.ok([motion.extend, motion.reveal, motion.latch].every(value => value >= 0 && value <= 1));
+    }
+    const reading = passageStationMotion(index, { active: index, progress: .5 });
+    assert.equal(reading.extend, 1); assert.equal(reading.reveal, 1); assert.equal(reading.visible, true);
+    near(reading.rotation, [0, index % 2 === 0 ? -.07 : .07, 0]);
+  }
+});
+
+test('Camera travels monotonically forward through a continuous tunnel and reverses exactly', () => {
+  let priorZ = Infinity;
+  for (let active = -1; active < PASSAGE_CHAPTERS.length; active++) {
+    for (let step = 0; step <= 500; step++) {
+      const pose = passagePose({ active, progress: step / 500 });
+      assert.ok(pose.position[2] <= priorZ + 1e-8, 'No unintended backward camera recoil');
+      assert.ok(Math.abs(pose.target[0] - pose.position[0]) < .2, 'Comfortable centered horizon');
+      assert.equal(pose.target[2], pose.position[2] - 24);
+      priorZ = pose.position[2];
+    }
+  }
+});
+
+test('Editorial weave is deterministic, finite, fully hidden at zero and clean at arrival', () => {
+  assert.equal(passageWeaveMask(1), 'none');
+  const hidden = passageWeaveMask(0);
+  assert.ok(hidden.startsWith('polygon('));
+  assert.ok([...hidden.matchAll(/([\d.]+)% ([\d.]+)%/g)].every(match => Number(match[2]) === 100));
+  for (let step = 0; step <= 100; step++) {
+    const reveal = step / 100, mask = passageWeaveMask(reveal);
+    assert.equal(mask, passageWeaveMask(reveal));
+    assert.doesNotMatch(mask, /NaN|Infinity/);
   }
 });
 

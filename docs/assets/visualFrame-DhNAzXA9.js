@@ -1,1 +1,0 @@
-let e=0,s=0;const a=new Map;function i(n){e=0;const c=[...a.values()];a.clear();for(const t of c)t(n)}function l(n){const c=++s;return a.set(c,n),e||(e=requestAnimationFrame(i)),c}function r(n){a.delete(n),!a.size&&e&&(cancelAnimationFrame(e),e=0)}export{r as c,l as r};

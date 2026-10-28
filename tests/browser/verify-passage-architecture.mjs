@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 
 const base = process.env.SITE_URL || 'http://127.0.0.1:5184/';
-const output = process.env.PASSAGE_OUTPUT || 'output/passage-review';
+const output = process.env.PASSAGE_OUTPUT || 'output/playwright/reference-tunnel-review';
 const chapters = [
   ['world', 'The World'], ['time-machine', 'Time Machine'], ['movies', 'The Cinema'],
   ['music', 'Music'], ['culture', 'Culture'], ['my-world', 'My World'],
@@ -83,6 +83,11 @@ async function station(page, index, compact = false) {
       const host = document.querySelector('[data-passage-chapter]'), mount = document.querySelector(`[data-tunnel-station="${id}"]`);
       return host?.dataset.passageChapter === id && host.dataset.passageReading === 'true' && mount?.getAttribute('aria-hidden') === 'false' && !mount.inert;
     }, chapters[index][0]);
+    await page.waitForFunction(index => {
+      const section = document.querySelectorAll('.tunnel-checkpoint')[index];
+      const target = Math.min(section.getBoundingClientRect().top + scrollY + section.offsetHeight * .46, document.documentElement.scrollHeight - innerHeight);
+      return Math.abs(scrollY - target) < 2;
+    }, index);
   }
   await page.mouse.move(1400, 90).catch(() => {});
 }
@@ -97,10 +102,13 @@ async function swipe(page, context) {
   await page.waitForTimeout(450); await session.detach();
 }
 async function progress(page, index, amount) {
-  await page.evaluate(({ index, amount }) => {
+  const target = await page.evaluate(({ index, amount }) => {
     const section = document.querySelectorAll('.tunnel-checkpoint')[index];
-    window.scrollTo({ top: section.getBoundingClientRect().top + scrollY + section.offsetHeight * amount, behavior: 'instant' });
+    const top = section.getBoundingClientRect().top + scrollY + section.offsetHeight * amount;
+    window.scrollTo({ top, behavior: 'instant' });
+    return Math.min(top, document.documentElement.scrollHeight - innerHeight);
   }, { index, amount });
+  await page.waitForFunction(target => Math.abs(scrollY - target) < 2, target);
   await page.waitForFunction(id => document.querySelector('[data-passage-chapter]')?.dataset.passageChapter === id, chapters[index][0]);
   await page.waitForTimeout(80);
 }
@@ -147,6 +155,7 @@ try {
     await ambient(page, 'world');
     await page.screenshot({ path: `${output}/00-opening.png` });
     const baseline = await resourceSnapshot(page);
+    let readingMediaMask = '';
     for (let index = 0; index < chapters.length; index++) {
       const [id, title] = chapters[index]; await station(page, index); await ambient(page, id);
       const state = await page.evaluate(id => ({ readable: [...document.querySelectorAll('[data-tunnel-station]')].filter(node => node.getAttribute('aria-hidden') === 'false' && !node.inert).map(node => node.dataset.tunnelStation),
@@ -158,9 +167,31 @@ try {
       check(`${title}: CSS3D content holds exactly still through the reading range`, delta < .75, `${delta.toFixed(4)} px`);
       await progress(page, index, .5); await page.screenshot({ path: `${output}/${String(index + 1).padStart(2, '0')}-${id}.png` });
       await frameMeasurement(page, title, 650);
+      if (index === 0) {
+        const protection = await page.locator('.flight-media-mask').evaluate(element => ({ enabled: element.dataset.protected === 'true', clip: element.style.clipPath, supported: CSS.supports('clip-path', element.style.clipPath), actual: getComputedStyle(element).clipPath }));
+        readingMediaMask = protection.clip;
+        check('Projected 3D footage has a supported active exclusion mask for decorative drones', protection.enabled && protection.supported && protection.clip.startsWith('path(evenodd,') && protection.actual !== 'none', JSON.stringify(protection));
+      }
     }
     for (const index of [0, 5, 1, 4, 2]) await progress(page, index, .5);
     check('Fast forward/reverse scroll settles on the final requested chapter', await page.locator('[data-passage-chapter]').getAttribute('data-passage-chapter') === 'movies' && await panel(page, 'movies').getByRole('link', { name: 'Enter the cinema', exact: true }).isVisible());
+    const keyboardY = await page.evaluate(() => { document.activeElement?.blur(); return scrollY; });
+    await page.keyboard.press('PageDown');
+    await page.waitForFunction(previous => scrollY > previous + 100, keyboardY);
+    check('Keyboard PageDown keeps native control of journey scroll', await page.evaluate(previous => scrollY > previous + 100, keyboardY));
+    await page.evaluate(() => new Promise(resolve => {
+      let previous = scrollY, stable = 0;
+      function sample() { stable = scrollY === previous ? stable + 1 : 0; previous = scrollY; if (stable > 4) resolve(); else requestAnimationFrame(sample); }
+      requestAnimationFrame(sample);
+    }));
+    for (const [index, amount, label] of [[0, .2, '07-world-approach'], [3, .9, '08-music-departure']]) {
+      await progress(page, index, amount);
+      await page.screenshot({ path: `${output}/${label}.png` });
+    }
+    await progress(page, 0, .3);
+    const travellingMediaMask = await page.locator('.flight-media-mask').evaluate(element => ({ enabled: element.dataset.protected === 'true', clip: element.style.clipPath }));
+    check('Media exclusion follows the projected carrier during scroll instead of retaining reading bounds', travellingMediaMask.enabled && travellingMediaMask.clip !== readingMediaMask && !/NaN|Infinity/.test(travellingMediaMask.clip), JSON.stringify(travellingMediaMask));
+    await station(page, 2);
     const cinema = panel(page, 'movies'), inspect = cinema.getByRole('button', { name: 'Inspect The Cinema exhibit', exact: true });
     await inspect.click();
     await cinema.getByRole('button', { name: 'Rotate The Cinema sculpture right', exact: true }).click();
@@ -230,10 +261,44 @@ try {
       }
       check('Phone content stays within the viewport', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await station(page, 3, true); await page.screenshot({ path: `${output}/phone-music.png` });
+      check('Compact presentation clears the WebGL-only media exclusion mask', await page.locator('.flight-media-mask').getAttribute('data-protected') === 'false' && await page.locator('.flight-media-mask').evaluate(element => element.style.clipPath === ''));
       await page.waitForTimeout(550);
       const y = await page.evaluate(() => scrollY); await swipe(page, phoneContext);
       check('Compact page retains native scrolling', await page.evaluate(old => scrollY > old + 100, y));
     } finally { await phoneContext.close(); }
+  });
+
+  await scenario('presentation-resize', async context => {
+    const page = await context.newPage(); observe(page, 'resize');
+    await page.goto(address('/'), { waitUntil: 'domcontentloaded' }); await ready(page);
+    await station(page, 3); await ambient(page, 'music');
+    const originalNodes = await panel(page, 'music').evaluate(element => {
+      element.dataset.resizeIdentity = 'original-music-interface';
+      return document.querySelectorAll('[data-tunnel-station]').length;
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForFunction(() => document.querySelector('.tunnel-journey')?.dataset.compact === 'true' && document.querySelector('.tunnel-mobile-station')?.value === '3');
+    await ambient(page, 'music');
+    const compact = await panel(page, 'music').evaluate(element => ({
+      same: element.dataset.resizeIdentity === 'original-music-interface',
+      top: element.getBoundingClientRect().top,
+      bottom: element.getBoundingClientRect().bottom,
+      viewport: innerHeight,
+      readable: !element.closest('[inert]') && element.closest('[data-tunnel-station]')?.getAttribute('aria-hidden') !== 'true',
+    }));
+    check('Desktop-to-phone resizing preserves the selected chapter and its actual DOM interface', compact.same && compact.readable && compact.bottom > 140 && compact.top < compact.viewport, JSON.stringify(compact));
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.waitForFunction(() => document.querySelector('.tunnel-mobile-station')?.value === '3');
+    await page.waitForTimeout(250);
+    check('Phone rotation preserves the active chapter with no horizontal overflow', await page.locator('.tunnel-mobile-station').inputValue() === '3' && await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForFunction(() => document.querySelector('.tunnel-journey')?.dataset.compact === 'false' && document.querySelector('[data-passage-chapter]')?.dataset.passageChapter === 'music' && document.querySelector('[data-passage-reading]')?.dataset.passageReading === 'true');
+    const desktop = await panel(page, 'music').evaluate(element => ({
+      same: element.dataset.resizeIdentity === 'original-music-interface',
+      mounted: element.closest('[data-tunnel-station]')?.dataset.tunnelMounted === 'true',
+      count: document.querySelectorAll('[data-tunnel-station]').length,
+    }));
+    check('Phone-to-desktop resizing restores the same interface to the 3D scene without duplication', desktop.same && desktop.mounted && desktop.count === originalNodes, JSON.stringify(desktop));
   });
 
   await scenario('short-landscape', async context => {
@@ -252,12 +317,48 @@ try {
     await page.screenshot({ path: `${output}/landscape-culture-action.png` });
   });
 
+  await scenario('portrait-tablet', async context => {
+    const page = await context.newPage(); observe(page, 'tablet'); await page.setViewportSize({ width: 1024, height: 1366 });
+    await page.goto(address('/'), { waitUntil: 'domcontentloaded' }); await ready(page);
+    await station(page, 4, true); await ambient(page, 'culture');
+    const bounds = await panel(page, 'culture').evaluate(element => {
+      const heading = element.querySelector('h2').getBoundingClientRect(), action = element.querySelector('.tunnel-enter-room').getBoundingClientRect();
+      return { heading: { left: heading.left, right: heading.right, top: heading.top }, action: { left: action.left, right: action.right, bottom: action.bottom }, width: innerWidth, navTop: document.querySelector('.tunnel-wayfinder').getBoundingClientRect().top, overflow: document.documentElement.scrollWidth > innerWidth };
+    });
+    check('Portrait tablet uses native-flow chapter content with readable text and reachable action', await page.locator('.tunnel-journey').getAttribute('data-compact') === 'true' && bounds.heading.left >= 0 && bounds.heading.right <= bounds.width && bounds.heading.top >= 75 && bounds.action.left >= 0 && bounds.action.right <= bounds.width && bounds.action.bottom <= bounds.navTop && !bounds.overflow, JSON.stringify(bounds));
+    await page.screenshot({ path: `${output}/tablet-culture.png` });
+    const y = await page.evaluate(() => scrollY); await page.mouse.wheel(0, 380);
+    await page.waitForFunction(previous => scrollY > previous + 100, y);
+    check('Portrait tablet retains native scrolling through the collection', await page.evaluate(previous => scrollY > previous + 100, y));
+  });
+
+  await scenario('small-desktop', async context => {
+    const page = await context.newPage(); observe(page, 'small-desktop'); await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(address('/'), { waitUntil: 'domcontentloaded' }); await ready(page);
+    await station(page, 0); await ambient(page, 'world');
+    const bounds = await panel(page, 'world').evaluate(element => {
+      const heading = element.querySelector('h2').getBoundingClientRect(), action = element.querySelector('.tunnel-enter-room').getBoundingClientRect();
+      return { heading: { left: heading.left, right: heading.right, top: heading.top }, action: { left: action.left, right: action.right, bottom: action.bottom }, width: innerWidth, headerBottom: document.querySelector('.site-header').getBoundingClientRect().bottom, navTop: document.querySelector('.tunnel-wayfinder').getBoundingClientRect().top };
+    });
+    check('1280 × 720 desktop preserves spatial mode and readable headline/action', await page.locator('.tunnel-journey').getAttribute('data-compact') === 'false' && bounds.heading.left >= 0 && bounds.heading.right <= bounds.width && bounds.heading.top >= bounds.headerBottom && bounds.action.left >= 0 && bounds.action.right <= bounds.width && bounds.action.bottom <= bounds.navTop, JSON.stringify(bounds));
+    await page.screenshot({ path: `${output}/desktop-1280-world.png` });
+    await page.evaluate(() => { window.__originalFlightCanvas = document.querySelector('.flight-canvas'); });
+    await page.getByRole('button', { name: /^Flight crew/ }).click(); await page.locator('.flight-dialog:modal').waitFor();
+    check('Passage crew viewer reuses its canvas and removes the footage exclusion inside the dialog', await page.evaluate(() => document.querySelector('.flight-view .flight-canvas') === window.__originalFlightCanvas && document.querySelector('.flight-view .flight-media-mask')?.dataset.protected === 'false'));
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.querySelector('.flight-dialog:modal') && document.querySelector('.flight-environment .flight-media-mask')?.dataset.protected === 'true');
+    check('Closing the crew viewer restores the same masked canvas and trigger focus', await page.evaluate(() => document.querySelector('.flight-environment .flight-canvas') === window.__originalFlightCanvas && document.activeElement?.classList.contains('flight-invitation')));
+  });
+
   await scenario('reduced-motion', async context => {
     const page = await context.newPage(); observe(page, 'reduced'); await page.emulateMedia({ reducedMotion: 'reduce' });
+    const ambientRequests = [];
+    page.on('request', request => { if (/\/media\/[^?]*\.mp4(?:\?|$)/.test(request.url())) ambientRequests.push(request.url()); });
     await page.goto(address('/'), { waitUntil: 'domcontentloaded' }); await ready(page);
     await station(page, 2, true);
     check('Reduced motion retains all six single DOM chapters and poster presentation', await page.locator('.tunnel-panel').count() === 6 && await page.locator('.tunnel-journey').getAttribute('data-compact') === 'true' && await panel(page, 'movies').locator('.tunnel-compact-window img').isVisible());
     check('Reduced motion plays no ambient decoders', await page.evaluate(() => window.__passageAudit.videos().every(video => video.paused)));
+    check('Reduced motion requests no ambient video data', ambientRequests.length === 0, JSON.stringify(ambientRequests));
     // Poster textures legitimately demand a frame as remote images arrive.
     // Wait for a bounded quiet window; an actual continuous loop cannot pass.
     await page.waitForLoadState('networkidle', { timeout: 4000 }).catch(() => {});

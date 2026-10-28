@@ -5,22 +5,23 @@ import { createFrameCadence } from '../../services/frameCadence';
 import { requestVisualFrame, cancelVisualFrame } from '../../services/visualFrame';
 import { getSpatialPreferences, subscribeSpatialPreferences } from '../../services/spatialPreferences';
 import { getTunnelFrame, getTunnelPanels, getTunnelInspection, subscribeTunnelFrame, subscribeTunnelPanels, subscribeTunnelInspection, tunnelCompact, type TunnelPanelBinding } from '../../services/tunnelJourney';
-import { PASSAGE_CHAPTERS, passageLocalToWorld } from '../../services/passageChapters';
-import { passagePose, passageContentOpacity } from '../../services/passageJourney';
+import { PASSAGE_CHAPTERS } from '../../services/passageChapters';
+import { passagePose, passageContentOpacity, passageStationMotion, passageWeaveMask, passageReading } from '../../services/passageJourney';
 import { acquirePassageMedia, PASSAGE_MEDIA } from '../../services/passageMedia';
 import { getViewer, subscribeViewer } from '../../services/viewer';
 import { videos } from '../../data/catalogue';
+import { setPassageMediaBounds } from '../../services/passageProtection';
 import { createPassageArchitecture } from './passageArchitecture';
-import { createAtmosphere } from './atmosphere';
+import { createTunnelAtmosphere } from './tunnelAtmosphere';
 import { cameraEase } from './cameraPath';
 import type { SpatialSceneController, SpatialSceneOptions, SpatialSceneState } from './scene';
 
-type Panel={binding:TunnelPanelBinding;object:CSS3DObject;attached:boolean;style:string|null;inert:boolean;aria:string|null;transform:string};
+type Panel={binding:TunnelPanelBinding;object:CSS3DObject;attached:boolean;style:string|null;inert:boolean;aria:string|null;transform:string;reveal:number};
 type Travel={from:THREE.Vector3;to:THREE.Vector3;fromLook:THREE.Vector3;toLook:THREE.Vector3;start:number;duration:number;done:(()=>void)|null;settled:boolean};
 const clamp=THREE.MathUtils.clamp;
 
-/** One authored camera renders the building and its single accessible DOM.
- * Rooms use local coordinates; visibility and activation use journey progress. */
+/** One native-scroll camera renders the tunnel and its accessible DOM.
+ * Physical carriers and editorial plates share the same reversible pose. */
 export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):SpatialSceneController {
   let renderer:THREE.WebGLRenderer;
   try { renderer=new THREE.WebGLRenderer({alpha:false,antialias:innerWidth>=980,powerPreference:'high-performance'}); }
@@ -30,6 +31,8 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   let frame=getTunnelFrame(),inspection=getTunnelInspection(),preferences=getSpatialPreferences();
   let width=1,height=1,compact=false,ratio=1,request=0,lastTime=0,elapsed=0;
   let average=16.7,samples=0,reduction=0,travel:Travel|null=null;
+  const pointer:[number,number]=[0,0],pointerTarget:[number,number]=[0,0];
+  let previousZ=frame.z,scrollEnergy=0;
   let activeTexture:THREE.VideoTexture|null=null,textureEpoch=-1,textureChapter=-1;
   const cadence=createFrameCadence(),canvas=renderer.domElement;
   canvas.className='spatial-world-canvas';canvas.setAttribute('aria-hidden','true');
@@ -37,7 +40,8 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.06;
   renderer.setClearColor(0x080909,1);
   const scene=new THREE.Scene();scene.background=new THREE.Color(0x080909);scene.fog=new THREE.FogExp2(0x080909,.009);
-  const camera=new THREE.PerspectiveCamera(46,1,.16,100),look=new THREE.Vector3();
+  const camera=new THREE.PerspectiveCamera(59,1,.16,165),look=new THREE.Vector3();
+  const projectedCorner=new THREE.Vector3();
   const cssScene=new THREE.Scene(),css=new CSS3DRenderer();
   css.domElement.className='tunnel-css-world';
   Object.assign(css.domElement.style,{position:'fixed',inset:'0',pointerEvents:'none',overflow:'clip',zIndex:'1'});
@@ -49,7 +53,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const key=new THREE.DirectionalLight(0xffeee0,1.4);key.position.set(-5,9,12);scene.add(key,key.target);
   const fill=new THREE.PointLight(0xe5edf0,35,32,2),accent=new THREE.PointLight(0xff4d32,11,24,2);scene.add(fill,accent);
   const architecture=createPassageArchitecture(scene,wake);
-  const atmosphere=createAtmosphere();scene.add(atmosphere.points);
+  const atmosphere=createTunnelAtmosphere();scene.add(atmosphere.points);
   const mediaLease=acquirePassageMedia(),media=mediaLease.controller;
   const panels=new Map<string,Panel>(),loadedPosters=new Set<number>();
   let collectionKey='';
@@ -72,7 +76,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
       Object.assign(el.style,{position:'absolute',pointerEvents:'auto',userSelect:'text',width:`${spec.panel.width}px`});
       if(panel.transform)el.style.transform=panel.transform;
       panel.object.scale.setScalar(spec.panel.scale);
-      panel.object.position.set(...passageLocalToWorld(spec,spec.panel.position));panel.object.rotation.y=spec.yaw;
+      panel.reveal=-1;
       cssScene.add(panel.object);panel.attached=true;
     }
     css.domElement.style.display=spatial?'':'none';
@@ -82,7 +86,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     for(const binding of bindings){
       if(panels.has(binding.id))continue;
       const el=binding.element,original={style:el.getAttribute('style'),inert:el.inert,aria:el.getAttribute('aria-hidden')};
-      const panel={binding,object:new CSS3DObject(el),attached:false,transform:'',...original};panels.set(binding.id,panel);
+      const panel={binding,object:new CSS3DObject(el),attached:false,transform:'',reveal:-1,...original};panels.set(binding.id,panel);
       if(compact||state.reducedMotion)restorePanel(panel);
     }
     syncPanels();wake();
@@ -91,12 +95,30 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     if(state.paused||compact||unavailable)return;
     for(const panel of panels.values()){
       if(!panel.attached)continue;
+      const motion=passageStationMotion(panel.binding.index,frame),spec=PASSAGE_CHAPTERS[panel.binding.index];
+      const [x,y,z]=spec.panel.position,s=Math.sin(motion.rotation[1]),c=Math.cos(motion.rotation[1]);
+      panel.object.position.set(motion.position[0]+x*c+z*s,motion.position[1]+y,motion.position[2]-x*s+z*c);
+      panel.object.rotation.set(...motion.rotation);
       const opacity=state.room==='atrium'?passageContentOpacity(panel.binding.index,frame):0;
-      const readable=opacity>.55&&!travel&&document.documentElement.dataset.spatialPassage!=='departing';
+      const readable=opacity>.99&&motion.reveal>=.999&&!travel&&document.documentElement.dataset.spatialPassage!=='departing';
       const el=panel.binding.element;el.style.visibility=opacity>.001?'visible':'hidden';el.style.opacity=String(opacity);
+      if(panel.reveal!==motion.reveal){el.style.clipPath=passageWeaveMask(motion.reveal);panel.reveal=motion.reveal;}
       if(el.inert!==!readable)el.inert=!readable;
       const aria=String(!readable);if(el.getAttribute('aria-hidden')!==aria)el.setAttribute('aria-hidden',aria);
     }
+  }
+  function updateMediaProtection(){
+    if(compact||state.reducedMotion||unavailable||state.room!=='atrium'||frame.active<0||passageStationMotion(frame.active,frame).reveal<.01){setPassageMediaBounds(null);return;}
+    const screen=architecture.chapters[frame.active].media;
+    screen.updateWorldMatrix(true,false);
+    const w=screen.geometry.parameters.width/2,h=screen.geometry.parameters.height/2;
+    let left=Infinity,top=Infinity,right=-Infinity,bottom=-Infinity;
+    for(const x of [-w,w])for(const y of [-h,h]){
+      projectedCorner.set(x,y,0).applyMatrix4(screen.matrixWorld).project(camera);
+      const px=(projectedCorner.x+1)*width/2,py=(1-projectedCorner.y)*height/2;
+      left=Math.min(left,px);right=Math.max(right,px);top=Math.min(top,py);bottom=Math.max(bottom,py);
+    }
+    setPassageMediaBounds({left:Math.max(0,left-5),top:Math.max(0,top-5),right:Math.min(width,right+5),bottom:Math.min(height,bottom+5)});
   }
   function preparePosters(){
     const active=Math.max(0,frame.active);
@@ -157,19 +179,21 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
       if(camera.fov!==pose.fov){camera.fov=pose.fov;camera.updateProjectionMatrix();}
     }
     camera.lookAt(look);camera.updateMatrixWorld();
+    const response=1-Math.exp(-dt*10);
+    pointer[0]+=(pointerTarget[0]-pointer[0])*response;pointer[1]+=(pointerTarget[1]-pointer[1])*response;
+    scrollEnergy+=(Math.min(1,Math.abs(camera.position.z-previousZ)/Math.max(dt,1/120)/45)-scrollEnergy)*(1-Math.exp(-dt*7));previousZ=camera.position.z;
     const chapter=PASSAGE_CHAPTERS[Math.max(0,frame.active)];
     key.position.copy(camera.position);key.position.x-=5;key.position.y+=9;key.position.z-=7;key.target.position.copy(look);
     fill.position.copy(look);fill.position.x+=3;fill.position.y+=2;fill.position.z+=5;
     accent.position.copy(look);accent.position.x+=7;accent.position.y-=2;accent.position.z-=5;
     scene.environmentIntensity=preferences.cutaway?.95:.4+preferences.light*.003;
-    architecture.update({active:frame.active,progress:frame.progress,elapsed,delta:dt,reducedMotion:state.reducedMotion||compact,inspection});
-    atmosphere.points.position.set(...passageLocalToWorld(chapter,[0,-3,0]));atmosphere.points.rotation.y=chapter.yaw;
+    architecture.update({active:frame.active,progress:frame.progress,elapsed,delta:dt,reducedMotion:state.reducedMotion||compact,compact,inspection,pointer,energy:scrollEnergy});
     atmosphere.points.visible=inPassage&&!compact&&!state.reducedMotion;
     if(atmosphere.points.visible&&!inspection.expanded)atmosphere.update(elapsed,dt,false);
-    updateMediaTexture();updatePanels();renderer.render(scene,camera);
+    updateMediaTexture();updatePanels();updateMediaProtection();renderer.render(scene,camera);
     if(!compact&&!state.reducedMotion)css.render(cssScene,camera);
     host.dataset.passageChapter=frame.active<0?'entrance':chapter.id;
-    host.dataset.passageReading=String(frame.active>=0&&frame.progress>=.38&&(frame.progress<=.74||frame.active===5));
+    host.dataset.passageReading=String(passageReading(frame));
     host.dataset.passageDrawCalls=String(renderer.info.render.calls);
     if(!ready){ready=true;options.onProject?.([]);options.onReady();}
     done?.();
@@ -179,15 +203,18 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   function pointerMove(event:PointerEvent){
     if(state.room!=='atrium'||state.paused||state.reducedMotion||compact||inspection.expanded)return;
     const target=event.target instanceof Element?event.target:null;
-    if(target?.closest('button,a,video,input,select,textarea,[role="dialog"]')){atmosphere.input.leave();return;}
-    atmosphere.input.move(event.clientX/width*2-1,1-event.clientY/height*2,event.timeStamp,event.pointerType==='touch');
+    if(target?.closest('button,a,video,input,select,textarea,[role="dialog"]')){atmosphere.input.leave();pointerTarget[0]=pointerTarget[1]=0;return;}
+    pointerTarget[0]=event.clientX/width*2-1;pointerTarget[1]=1-event.clientY/height*2;
+    atmosphere.input.move(pointerTarget[0],pointerTarget[1],event.timeStamp,event.pointerType==='touch');
   }
-  function resetPointer(){atmosphere.input.reset();}
+  function pointerDown(event:PointerEvent){if(event.button!==0||event.target instanceof Element&&event.target.closest('button,a,video,input,select,textarea,[role="dialog"],.tunnel-panel'))return;atmosphere.input.press();}
+  function pointerUp(){atmosphere.input.release();}
+  function resetPointer(){atmosphere.input.reset();pointerTarget[0]=pointerTarget[1]=pointer[0]=pointer[1]=0;}
   function visibility(){lastTime=0;cadence.reset();resetPointer();if(document.hidden){cancelVisualFrame(request);request=0;}else wake();}
   function contextLost(event:Event){
     event.preventDefault();unavailable=true;cancelVisualFrame(request);request=0;
     const done=travel?.done;travel=null;panels.forEach(restorePanel);css.domElement.style.display='none';
-    options.onUnavailable();done?.();
+    setPassageMediaBounds(null);options.onUnavailable();done?.();
   }
   const offFrame=subscribeTunnelFrame(next=>{frame=next;syncMedia();wake();});
   const offPanels=subscribeTunnelPanels(registerPanels);
@@ -196,7 +223,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const offMedia=media.subscribe(()=>{updateMediaTexture();wake();});
   const offViewer=subscribeViewer(syncCollection);
   const observer=new ResizeObserver(resize);observer.observe(host);
-  document.addEventListener('visibilitychange',visibility);window.addEventListener('pointermove',pointerMove,{passive:true});window.addEventListener('blur',resetPointer);
+  document.addEventListener('visibilitychange',visibility);window.addEventListener('pointermove',pointerMove,{passive:true});window.addEventListener('pointerdown',pointerDown,{passive:true});window.addEventListener('pointerup',pointerUp,{passive:true});window.addEventListener('blur',resetPointer);
   canvas.addEventListener('webglcontextlost',contextLost);
   resize();registerPanels(getTunnelPanels());syncMedia();
 
@@ -206,7 +233,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
       let finish:(()=>void)|null=null;
       if(next.reducedMotion&&!state.reducedMotion&&travel&&!travel.settled&&!next.paused&&next.room===state.room){finish=travel.done;travel.done=null;}
       if(next.paused||next.room!==state.room||next.entered!==state.entered||next.reducedMotion!==state.reducedMotion){if(travel)travel.done=null;travel=null;}
-      state={...next};syncMedia();
+      state={...next};if(state.room!=='atrium')setPassageMediaBounds(null);syncMedia();
       if(next.paused){cancelVisualFrame(request);request=0;}else{cadence.reset();lastTime=0;resize();}
       finish?.();
     },
@@ -223,9 +250,9 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
         start:performance.now(),duration:Math.max(1,duration),done,settled:false};resetPointer();wake();
     },cancelTravel,
     destroy(){
-      if(disposed)return;disposed=true;if(travel)travel.done=null;travel=null;
+      if(disposed)return;disposed=true;if(travel)travel.done=null;travel=null;setPassageMediaBounds(null);
       cancelVisualFrame(request);observer.disconnect();offFrame();offPanels();offInspection();offPreferences();offMedia();offViewer();
-      panels.forEach(restorePanel);panels.clear();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('pointermove',pointerMove);window.removeEventListener('blur',resetPointer);
+      panels.forEach(restorePanel);panels.clear();document.removeEventListener('visibilitychange',visibility);window.removeEventListener('pointermove',pointerMove);window.removeEventListener('pointerdown',pointerDown);window.removeEventListener('pointerup',pointerUp);window.removeEventListener('blur',resetPointer);
       canvas.removeEventListener('webglcontextlost',contextLost);
       activeTexture?.dispose();architecture.destroy();atmosphere.dispose();environment.dispose();
       media.setSuspended('passage-scene-route',false);media.setSuspended('passage-scene-paused',false);media.setSuspended('passage-scene-reduced',false);mediaLease.release();

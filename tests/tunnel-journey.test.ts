@@ -98,6 +98,8 @@ test('out-of-range chapter progress clamps at its physical endpoints', () => {
 test('compact mode responds independently to width, height and reduced motion', () => {
   assert.equal(tunnelCompact(980, 660), false, 'the desktop boundary remains desktop');
   assert.equal(tunnelCompact(979, 1080), true, 'narrow screens receive the compact layout');
+  assert.equal(tunnelCompact(1024, 1366), true, 'portrait tablets keep both text and footage in native flow');
+  assert.equal(tunnelCompact(1280, 1024), true, 'narrow aspect ratios do not crop the physical display');
   assert.equal(tunnelCompact(1920, 659), true, 'short screens receive the compact layout');
   assert.equal(tunnelCompact(979, 659), true);
   assert.equal(tunnelCompact(1920, 1080), false);
