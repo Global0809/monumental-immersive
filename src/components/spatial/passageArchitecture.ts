@@ -5,6 +5,8 @@ import { samplePassageAssembly } from '../../services/passageAssembly';
 import { createChapterAssemblyKit, type ChapterAssembly } from './chapterAssembly';
 import { createPassageThresholds } from './passageThresholds';
 import { createPassageInstruments } from './passageInstruments';
+import { createCinematicMaterials } from '../../services/cinematicMaterials';
+import { sampleCinematicLight } from '../../services/cinematicLight';
 
 type ArchitectureFrame = {
   active: number; progress: number; elapsed: number; reducedMotion: boolean; delta?: number;
@@ -26,6 +28,7 @@ type Assembly = {
 export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () => void) {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
   const instances = new Set<THREE.InstancedMesh>(), cache = new Map<string, THREE.BufferGeometry>();
+  const finishes = createCinematicMaterials();
   const loader = new THREE.TextureLoader(), dummy = new THREE.Object3D();
   const scratchA = new THREE.Vector3(), scratchB = new THREE.Vector3(), scratchC = new THREE.Vector3(), direction = new THREE.Vector3();
   const axis = new THREE.Vector3(0, 1, 0), worldTarget = new THREE.Vector3();
@@ -44,6 +47,11 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   wallAlloy.userData.passageShell = true;
   const graphite = material(new THREE.MeshStandardMaterial({ color: 0x171b19, metalness: .78, roughness: .38 }));
   const charcoal = material(new THREE.MeshStandardMaterial({ color: 0x0d1110, metalness: .55, roughness: .48 }));
+  finishes.apply(alloy, 'metal', .85);
+  finishes.apply(ribAlloy, 'metal', 1.15);
+  finishes.apply(wallAlloy, 'paint', 1.15);
+  finishes.apply(graphite, 'paint', .9);
+  finishes.apply(charcoal, 'paint', .7);
   const red = material(new THREE.MeshBasicMaterial({ color: 0xff4d32, toneMapped: false }));
   const ivory = material(new THREE.MeshBasicMaterial({ color: 0xd5d2c6, toneMapped: false }));
   const darkRed = material(new THREE.MeshBasicMaterial({ color: 0x63251d, toneMapped: false }));
@@ -51,12 +59,6 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   const cylinder = geometry('cylinder', () => new THREE.CylinderGeometry(1, 1, 1, 10));
   const tunnel = new THREE.Group(); tunnel.name = 'passage-continuous-tunnel'; scene.add(tunnel);
   const thresholds = createPassageThresholds(scene);
-  // Small deterministic brushed variation belongs to the broad structural
-  // faces, not the polished carriers or image textures.
-  const grainData = new Uint8Array(64 * 64 * 4); let grainSeed = 38217;
-  for (let i = 0; i < grainData.length; i += 4) { grainSeed = (Math.imul(grainSeed, 1664525) + 1013904223) >>> 0; const v = 112 + (grainSeed % 48); grainData[i] = grainData[i + 1] = grainData[i + 2] = v; grainData[i + 3] = 255; }
-  const grain = new THREE.DataTexture(grainData, 64, 64, THREE.RGBAFormat); grain.wrapS = grain.wrapT = THREE.RepeatWrapping; grain.repeat.set(3, 12); grain.needsUpdate = true; textures.add(grain);
-  ribAlloy.bumpMap = grain; ribAlloy.bumpScale = .025; wallAlloy.bumpMap = grain; wallAlloy.bumpScale = .038;
   function box(parent: THREE.Object3D, x: number, y: number, z: number, w: number, h: number, depth: number, mat: THREE.Material = alloy) {
     const mesh = new THREE.Mesh(unitBox, mat); mesh.position.set(x, y, z); mesh.scale.set(w, h, depth); parent.add(mesh); return mesh;
   }
@@ -87,7 +89,8 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   const whiteColor = new THREE.Color(0xd5d2c6), redColor = new THREE.Color(0xff4d32);
   for (let i = 0; i < conduits.count; i++) conduits.setColorAt(i, redColor);
   // Use white base material so the per-instance ivory remains neutral.
-  conduits.material = material(new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
+  const conduitMaterial = material(new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
+  conduits.material = conduitMaterial;
   const wallFaces = instanced(tunnel, wallAlloy, ringCount * ringSides, (i, o) => ribTransform(i, o, 2));
   const structuralTint = new THREE.Color();
   for (let i = 0; i < structuralRibs.count; i++) {
@@ -98,10 +101,10 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
 
   // Depth-tested light bleed is attached to real conduits, rather than a
   // full-screen bloom pass that would wash out footage and typography.
-  const signalUniforms = { uTime: { value: 0 }, uEnergy: { value: 0 }, uRead: { value: 0 }, uPointer: { value: new THREE.Vector2() }, uCameraZ: { value: 14 } };
+  const signalUniforms = { uTime: { value: 0 }, uEnergy: { value: 0 }, uRead: { value: 0 }, uBreath: { value: 1 }, uPointer: { value: new THREE.Vector2() }, uCameraZ: { value: 14 } };
   const haloMaterial = material(new THREE.ShaderMaterial({ uniforms: signalUniforms, transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     vertexShader: `varying vec2 vUv;varying vec3 vTint;varying float vDepth;void main(){vUv=uv;vTint=instanceColor;vec4 world=modelMatrix*instanceMatrix*vec4(position,1.);vDepth=world.z;gl_Position=projectionMatrix*viewMatrix*world;}`,
-    fragmentShader: `varying vec2 vUv;varying vec3 vTint;varying float vDepth;uniform float uTime;uniform float uEnergy;uniform float uCameraZ;uniform float uRead;void main(){vec2 p=vUv*2.-1.;float glow=exp(-p.y*p.y*5.5)*pow(max(0.,1.-abs(p.x)),.5);float edge=1.-smoothstep(.7,1.,abs(p.y));float charge=.78+.22*sin(vDepth*.12+uTime*.8);float depth=max(0.,uCameraZ-vDepth);float atmosphere=exp(-depth*depth*.00065);gl_FragColor=vec4(vTint,glow*edge*(.085+uEnergy*.035)*charge*atmosphere*(1.-uRead*.48));}`,
+    fragmentShader: `varying vec2 vUv;varying vec3 vTint;varying float vDepth;uniform float uEnergy;uniform float uCameraZ;uniform float uRead;uniform float uBreath;void main(){vec2 p=vUv*2.-1.;float glow=exp(-p.y*p.y*5.5)*pow(max(0.,1.-abs(p.x)),.5);float edge=1.-smoothstep(.7,1.,abs(p.y));float charge=(.90+.10*sin(vDepth*.12))*uBreath;float depth=max(0.,uCameraZ-vDepth);float atmosphere=exp(-depth*depth*.00065);gl_FragColor=vec4(vTint,glow*edge*(.085+uEnergy*.035)*charge*atmosphere*(1.-uRead*.48));}`,
   }));
   haloMaterial.forceSinglePass = true;
   const haloPlane = geometry('signal-halo', () => new THREE.PlaneGeometry(1, 1));
@@ -192,6 +195,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     scratchC.copy(a).lerp(b, .64); connect(link.body, a, scratchC, .17); connect(link.piston, scratchC, b, .105); connect(link.signal, a, b, .018);
   }
   const machined = material(new THREE.MeshStandardMaterial({ color: 0xadb5b1, metalness: .9, roughness: .24, envMapIntensity: 1.05 }));
+  finishes.apply(machined, 'metal', .65);
   const mechanismKit = createChapterAssemblyKit({ steel: machined, graphite, charcoal, red, ivory });
   const chapters: Assembly[] = PASSAGE_CHAPTERS.map((spec, index) => {
     const root = new THREE.Group(); root.name = `passage-architecture-${spec.id}`; scene.add(root);
@@ -277,6 +281,13 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     thresholds.update(cameraZ, time, Boolean(state.compact), reducedMotion);
     instruments.update({ elapsed: time, delta: dt, reducedMotion, active, inspecting: inspection.expanded, audio: state.audio });
     const reading = passageReading(state);
+    const light = sampleCinematicLight(time, reducedMotion, readingAmount);
+    // Breathing belongs to the built light strips, not a changing exposure or
+    // particle wash. Shared clock and a narrow amplitude keep the floor steady.
+    const signalBreath = 1 + (light.signal - 1) * .42;
+    conduitMaterial.color.setScalar(signalBreath);
+    red.color.copy(redColor).multiplyScalar(signalBreath);
+    signalUniforms.uBreath.value = signalBreath;
     signalUniforms.uTime.value = time; signalUniforms.uEnergy.value = Math.min(1, state.energy || 0); signalUniforms.uPointer.value.set(pointerX, pointerY); signalUniforms.uCameraZ.value = cameraZ;
     readingAmount += ((reading ? 1 : 0) - readingAmount) * (reducedMotion ? 1 : 1 - Math.exp(-dt * 8));
     signalUniforms.uRead.value = readingAmount;
@@ -320,7 +331,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
       // never assumes the panel is still on the original straight-axis plane.
       chapter.root.updateMatrixWorld(true); worldTarget.set(side * 7.15, -3.25, -.1).applyMatrix4(chapter.root.matrixWorld);
       dummy.position.copy(worldTarget); dummy.position.z += .48; dummy.rotation.set(0, 0, 0); dummy.scale.set(2.8, 2.2, 1); dummy.updateMatrix(); mechanismGlow.setMatrixAt(i, dummy.matrix);
-      if (i === Math.max(0, active)) { contactLight.position.copy(worldTarget); contactLight.position.z += 1.1; contactLight.intensity = 2.4 + signalUniforms.uEnergy.value * 1.5 + Math.abs(pointerX) * .6; }
+      if (i === Math.max(0, active)) { contactLight.position.copy(worldTarget); contactLight.position.z += 1.1; contactLight.intensity = (2.4 + signalUniforms.uEnergy.value * 1.5 + Math.abs(pointerX) * .6) * (1 + (light.breath - 1) * .5); }
       chapter.target.copy(worldTarget).sub(chapter.armRoot.position);
       scratchA.set(side * 8.25, -2.7, .1); scratchB.copy(scratchA).lerp(chapter.target, .5); scratchB.y -= .58; scratchB.z += 1.1;
       moveArm(chapter.arms[0], scratchA, scratchB); moveArm(chapter.arms[1], scratchB, chapter.target);
@@ -332,7 +343,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   }
   function destroy() {
     if (destroyed) return; destroyed = true;
-    instruments.destroy(); thresholds.destroy(); mechanismKit.dispose(); scene.remove(tunnel, contactLight); chapters.forEach(chapter => { scene.remove(chapter.root, chapter.armRoot); });
+    instruments.destroy(); thresholds.destroy(); mechanismKit.dispose(); finishes.dispose(); scene.remove(tunnel, contactLight); chapters.forEach(chapter => { scene.remove(chapter.root, chapter.armRoot); });
     instances.forEach(mesh => mesh.dispose()); geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
     instances.clear(); geometries.clear(); materials.clear(); textures.clear(); cache.clear();
   }

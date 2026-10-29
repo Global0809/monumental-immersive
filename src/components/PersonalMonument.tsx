@@ -11,6 +11,8 @@ import { getViewer, removeJourney, restoreJourney, togglePlace, toggleSaved, upd
 import { href } from '../services/router';
 import { playSound } from '../services/audio';
 import { createFrameCadence } from '../services/frameCadence';
+import { sampleCinematicLight } from '../services/cinematicLight';
+import { getSpatialPreferences } from '../services/spatialPreferences';
 import { notify } from '../services/feedback';
 import { filmFormat } from './FilmCard';
 import './personal-monument.css';
@@ -98,7 +100,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
     let cleanup = () => {};
     setReady(false); setFallback(false);
     void (async () => {
-      const [THREE, { RoomEnvironment }, { attachXray }] = await Promise.all([import('three'), import('three/addons/environments/RoomEnvironment.js'), import('../services/xrayMaterial')]);
+      const [THREE, { RoomEnvironment }, { attachXray }, { createCinematicMaterials }, { createCinematicRenderer }] = await Promise.all([import('three'), import('three/addons/environments/RoomEnvironment.js'), import('../services/xrayMaterial'), import('../services/cinematicMaterials'), import('../services/cinematicRenderer')]);
       if (disposed) return;
       let renderer: InstanceType<typeof THREE.WebGLRenderer>;
       try { renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: 'low-power' }); }
@@ -109,6 +111,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
       renderer.setClearColor(0x080909, 0);
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.3;
+      const cinematic = createCinematicRenderer(renderer), surfaceFinish = createCinematicMaterials();
       renderer.domElement.setAttribute('aria-hidden', 'true');
       element.prepend(renderer.domElement);
       const scene = new THREE.Scene();
@@ -123,6 +126,8 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
       const red = new THREE.MeshStandardMaterial({ color: 0xff4d32, metalness: .55, roughness: .24, emissive: 0x6b0b03, emissiveIntensity: .35 });
       const thread = new THREE.MeshStandardMaterial({ color: 0xb0b6b3, metalness: .85, roughness: .3 });
       const activeMaterial = new THREE.MeshStandardMaterial({ color: 0xff4d32, metalness: .68, roughness: .15, emissive: 0x6b0b03, emissiveIntensity: .45 });
+      [chrome, thread].forEach(material => surfaceFinish.apply(material, 'metal', .55));
+      [red, activeMaterial].forEach(material => surfaceFinish.apply(material, 'paint', .35));
       const group = new THREE.Group();
       group.rotation.set(.12, -.38, -.08);
       scene.add(group);
@@ -175,7 +180,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
         mesh.userData.key = part.key;
         group.add(mesh); meshes.push({ part, mesh, index, kindIndex });
       }
-      let frame = 0, lastTime = 0, width = 1, height = 1, dirty = true, contextLost = false;
+      let frame = 0, lastTime = 0, illuminationTime = 0, width = 1, height = 1, dirty = true, contextLost = false;
       let playingFilm = Boolean(document.querySelector('.ms-player-dialog[open]'));
       let targetX = .12, targetY = -.38;
       let dragging = false, moved = false, startX = 0, startY = 0, lastX = 0, lastY = 0;
@@ -193,6 +198,11 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
         const dt = Math.min((time - lastTime) / 1000 || 0, .04); lastTime = time;
         const { preferences: prefs, paused: stopped, reducedMotion: reduced } = state.current;
         const moving = !stopped && !reduced && !dragging;
+        if (moving) illuminationTime += dt;
+        const illumination = sampleCinematicLight(illuminationTime, reduced);
+        light.intensity = 3 * illumination.breath;
+        accentLight.intensity = 5 * illumination.signal;
+        light.position.x = 2 + illumination.drift * .18;
         if (moving) targetY += dt * .09;
         const blend = reduced ? 1 : 1 - Math.exp(-dt * 11);
         group.rotation.x += (targetX - group.rotation.x) * blend;
@@ -216,7 +226,11 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
           if (part.kind !== 'place') mesh.rotation.set(part.kind === 'journey' ? .5 + kindIndex * .16 : .15, kindIndex * .73, prefs.arrangement === 'column' ? .05 : fraction * .75);
           mesh.material = selectedPart ? activeMaterial : part.kind === 'place' ? red : part.kind === 'film' ? chrome : thread;
         }
-        if (dirty || moving || settling) { xray.update(!reduced); renderer.render(scene, camera); dirty = false; }
+        if (dirty || moving || settling) {
+          xray.update(!reduced);
+          cinematic.render(scene, camera, { enabled: !reduced && window.innerWidth >= 980 && window.innerHeight >= 660 && getSpatialPreferences().quality !== 'light', strength: .1, lens: 0 });
+          dirty = false;
+        }
         if (moving || settling) frame = requestAnimationFrame(render);
       }
       function redraw() { dirty = true; if (!frame && canRender()) { cadence.reset(); lastTime = performance.now() - 16; frame = requestAnimationFrame(render); } }
@@ -275,7 +289,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
         renderer.domElement.removeEventListener('pointerdown', down); renderer.domElement.removeEventListener('pointermove', move);
         renderer.domElement.removeEventListener('pointerup', up); renderer.domElement.removeEventListener('pointercancel', up); renderer.domElement.removeEventListener('webglcontextlost', lost);
         geometries.forEach(geometry => geometry.dispose()); [chrome, red, thread, activeMaterial].forEach(material => material.dispose());
-        environment.dispose(); renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); actions.current = null;
+        cinematic.dispose(); surfaceFinish.dispose(); environment.dispose(); renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove(); actions.current = null;
       };
     })().catch(() => { cleanup(); if (!disposed) setFallback(true); });
     return () => { disposed = true; cleanup(); };

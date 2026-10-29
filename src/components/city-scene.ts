@@ -4,6 +4,10 @@ import gsap from 'gsap';
 import { attachXray } from '../services/xrayMaterial';
 import { createFrameCadence } from '../services/frameCadence';
 import { resolveDragAxis, type DragAxis } from '../services/exploreInteraction';
+import { createCinematicMaterials } from '../services/cinematicMaterials';
+import { createCinematicRenderer } from '../services/cinematicRenderer';
+import { sampleCinematicLight } from '../services/cinematicLight';
+import { getSpatialPreferences } from '../services/spatialPreferences';
 
 export interface CitySceneController { select: (index: number | null, immediate?: boolean) => void; dispose: () => void }
 interface CityOptions { reducedMotion: boolean; onSelect: (index: number) => void; onProject: (index: number, x: number, y: number, visible: boolean) => void; onUnavailable: () => void }
@@ -16,6 +20,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   renderer.setPixelRatio(Math.min(devicePixelRatio, window.innerWidth < 700 ? 1.25 : 1.5));
   renderer.setClearColor(0x090a0a); renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+  const cinematic = createCinematicRenderer(renderer), surfaceFinish = createCinematicMaterials();
   host.appendChild(renderer.domElement);
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(0x090a0a, 30, 70);
@@ -35,6 +40,8 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   const red = new THREE.MeshStandardMaterial({ color: 0xff4d32, metalness: .42, roughness: .38, emissive: 0x260500 });
   const signal = new THREE.MeshBasicMaterial({ color: 0xff4d32 });
   const glass = new THREE.MeshStandardMaterial({ color: 0x18332f, metalness: .8, roughness: .23 });
+  surfaceFinish.apply(chrome, 'metal', .6); surfaceFinish.apply(pale, 'stone', .55);
+  surfaceFinish.apply(black, 'paint', .5); surfaceFinish.apply(red, 'paint', .45);
   const lineMaterial = new THREE.LineBasicMaterial({ color: 0x56605a, transparent: true, opacity: .38 });
   const miniature = new THREE.Group(); scene.add(miniature);
   const boxes = new THREE.BoxGeometry(1, 1, 1);
@@ -50,7 +57,9 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   function zone(index: number) { const group = new THREE.Group(); group.userData.location = index; miniature.add(group); locationGroups.push(group); return group; }
   box(miniature, 0, -.25, 0, 17.2, .5, 8.2, black);
   box(miniature, 0, -.53, 0, 16.7, .06, 7.7, chrome);
-  box(miniature, 0, .02, 0, 16.5, .045, 7.5, new THREE.MeshStandardMaterial({ color: 0x0e1511, roughness: .7 }));
+  const ground = new THREE.MeshStandardMaterial({ color: 0x0e1511, roughness: .7 });
+  surfaceFinish.apply(ground, 'stone', .65);
+  box(miniature, 0, .02, 0, 16.5, .045, 7.5, ground);
   // A narrow promenade is the connecting route; the moving signal follows this exact path.
   const route = new THREE.CatmullRomCurve3([new THREE.Vector3(-7, .09, 2.5), new THREE.Vector3(-4, .09, 2.5), new THREE.Vector3(-2, .09, 1.8), new THREE.Vector3(1, .09, 1.8), new THREE.Vector3(3, .09, 2.5), new THREE.Vector3(6.8, .09, 2.5)]);
   miniature.add(new THREE.Mesh(new THREE.TubeGeometry(route, 48, .035, 5, false), red));
@@ -118,6 +127,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   const projected = new THREE.Vector3(), raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
   const canRender = () => !disposed && contextAvailable && inView && !document.hidden && !playingFilm;
   const cadence = createFrameCadence();
+  let illuminationTime = 0, previousTime = 0;
   function updateCamera() {
     target.set(cameraState.x, cameraState.y, cameraState.z);
     camera.position.set(target.x + Math.sin(cameraState.azimuth) * Math.cos(cameraState.elevation) * cameraState.radius, target.y + Math.sin(cameraState.elevation) * cameraState.radius, target.z + Math.cos(cameraState.azimuth) * Math.cos(cameraState.elevation) * cameraState.radius);
@@ -127,10 +137,17 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
     raf = 0;
     if (!canRender()) return;
     if (!cadence.ready(time)) { raf = requestAnimationFrame(frame); return; }
+    const delta = previousTime ? Math.max(0, Math.min(.05, (time - previousTime) / 1000)) : 0;
+    previousTime = time;
+    if (!options.reducedMotion) illuminationTime += delta;
+    const illumination = sampleCinematicLight(illuminationTime, options.reducedMotion);
+    light.intensity = 3 * illumination.breath;
+    redLight.intensity = 22 * illumination.signal;
+    light.position.x = -5 + illumination.drift * .32;
     updateCamera();
     if (!options.reducedMotion) { pulse.position.copy(route.getPointAt((time * .000065) % 1)); pulses.forEach((ring, index) => { const scale = 1 + Math.sin(time * .002 + index) * .08; ring.scale.setScalar(active === index ? scale * 1.6 : scale); }); }
     xray.update(!options.reducedMotion && !playingFilm);
-    renderer.render(scene, camera);
+    cinematic.render(scene, camera, { enabled: !options.reducedMotion && window.innerWidth >= 980 && window.innerHeight >= 660 && getSpatialPreferences().quality !== 'light', strength: .12, lens: 0 });
     markers.forEach((position, index) => { projected.copy(position).project(camera); options.onProject(index, (projected.x + 1) * width / 2, (1 - projected.y) * height / 2, projected.z < 1 && Math.abs(projected.x) < .93 && Math.abs(projected.y) < .85); });
     dirty = false;
     if (!options.reducedMotion || tween?.isActive()) raf = requestAnimationFrame(frame);
@@ -167,7 +184,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   };
   const cancel = () => { drag = null; };
   canvas.addEventListener('pointerdown', down); canvas.addEventListener('pointermove', move); canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', cancel);
-  const visibility = () => { if (!canRender()) { cancelAnimationFrame(raf); raf = 0; } else if (dirty || !options.reducedMotion) invalidate(); };
+  const visibility = () => { if (!canRender()) { cancelAnimationFrame(raf); raf = 0; previousTime = 0; } else if (dirty || !options.reducedMotion) invalidate(); };
   const playback = (event: Event) => { playingFilm = Boolean((event as CustomEvent).detail?.active); visibility(); };
   const contextLost = (event: Event) => { event.preventDefault(); contextAvailable = false; tween?.kill(); options.onUnavailable(); cancelAnimationFrame(raf); raf = 0; };
   canvas.addEventListener('webglcontextlost', contextLost);
@@ -177,6 +194,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   return { select, dispose() {
     disposed = true; cancelAnimationFrame(raf); tween?.kill(); observer.disconnect(); resize.disconnect();
     xray.dispose();
+    cinematic.dispose(); surfaceFinish.dispose();
     canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerup', up); canvas.removeEventListener('pointercancel', cancel); canvas.removeEventListener('webglcontextlost', contextLost);
     document.removeEventListener('visibilitychange', visibility); window.removeEventListener('monumental:playback', playback);
     const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();

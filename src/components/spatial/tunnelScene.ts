@@ -3,6 +3,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import { createFrameCadence } from '../../services/frameCadence';
 import { requestVisualFrame, cancelVisualFrame } from '../../services/visualFrame';
+import { createCinematicRenderer } from '../../services/cinematicRenderer';
+import { sampleCinematicLight, type CinematicRect } from '../../services/cinematicLight';
 import { getSpatialPreferences, subscribeSpatialPreferences } from '../../services/spatialPreferences';
 import { getTunnelFrame, getTunnelPanels, getTunnelInspection, subscribeTunnelFrame, subscribeTunnelPanels, subscribeTunnelInspection, tunnelCompact, type TunnelPanelBinding } from '../../services/tunnelJourney';
 import { PASSAGE_CHAPTERS } from '../../services/passageChapters';
@@ -39,12 +41,14 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   let width=1,height=1,compact=false,ratio=1,request=0,lastTime=0,elapsed=0;
   let average=16.7,samples=0,reduction=0,travel:Travel|null=null;
   const pointer:[number,number]=[0,0],pointerTarget:[number,number]=[0,0];
-  let previousZ=frame.z,scrollEnergy=0;
+  let previousZ=frame.z,scrollEnergy=0,lightCalm=Number(passageReading(frame));
   let scanHold=0,scanPlayed=false,lastScan=-Infinity;
   let life=getTunnelLife(),relayHovered=false,pointerPresent=false,pointerPress:{x:number;y:number;id:number;part:number|null;dragged:boolean}|null=null;
   const pulse=createTunnelPulse(),raycaster=new THREE.Raycaster(),rayPoint=new THREE.Vector2();
   let activeTexture:THREE.VideoTexture|null=null,textureEpoch=-1,textureChapter=-1;
   const cadence=createFrameCadence(),canvas=renderer.domElement;
+  const cinematic=createCinematicRenderer(renderer),protectedSurfaces:CinematicRect[]=[];
+  const protectedMedia:CinematicRect={left:0,top:0,right:0,bottom:0};
   canvas.className='spatial-world-canvas';canvas.setAttribute('aria-hidden','true');
   Object.assign(canvas.style,{width:'100%',height:'100%',display:'block',touchAction:'pan-y',pointerEvents:'none'});host.appendChild(canvas);
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.06;
@@ -59,7 +63,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const roomEnvironment=new RoomEnvironment(),pmrem=new THREE.PMREMGenerator(renderer);
   const environment=pmrem.fromScene(roomEnvironment,.025);roomEnvironment.dispose();pmrem.dispose();
   scene.environment=environment.texture;scene.environmentIntensity=.9;
-  const hemisphere=new THREE.HemisphereLight(0xeee9df,0x171c1c,.7);scene.add(hemisphere);
+  const hemisphere=new THREE.HemisphereLight(0xeee9df,0x171c1c,.58);scene.add(hemisphere);
   const key=new THREE.DirectionalLight(0xffeee0,1.4);key.position.set(-5,9,12);scene.add(key,key.target);
   const fill=new THREE.PointLight(0xe5edf0,35,32,2),accent=new THREE.PointLight(0xff4d32,11,24,2);scene.add(fill,accent);
   const architecture=createPassageArchitecture(scene,wake);
@@ -205,8 +209,14 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     pointer[0]+=(pointerTarget[0]-pointer[0])*response;pointer[1]+=(pointerTarget[1]-pointer[1])*response;
     scrollEnergy+=(Math.min(1,Math.abs(camera.position.z-previousZ)/Math.max(dt,1/120)/45)-scrollEnergy)*(1-Math.exp(-dt*7));previousZ=camera.position.z;
     const chapter=PASSAGE_CHAPTERS[Math.max(0,frame.active)];
+    const reading=passageReading(frame);
+    lightCalm+=(Number(reading)-lightCalm)*(1-Math.exp(-dt*3.5));
+    const illumination=sampleCinematicLight(elapsed,state.reducedMotion||compact,lightCalm);
+    // Slow overlapping light cycles describe real surfaces. Exposure and the
+    // ambient floor stay constant; reading holds are deliberately quieter.
+    key.intensity=1.5*illumination.breath;fill.intensity=30*illumination.breath;accent.intensity=14*illumination.signal;
     key.position.copy(camera.position);key.position.x-=5;key.position.y+=9;key.position.z-=7;key.target.position.copy(look);
-    fill.position.copy(look);fill.position.x+=3;fill.position.y+=2;fill.position.z+=5;
+    fill.position.copy(look);fill.position.x+=3+illumination.drift*.24;fill.position.y+=2;fill.position.z+=5;
     accent.position.copy(look);accent.position.x+=7;accent.position.y-=2;accent.position.z-=5;
     scene.environmentIntensity=preferences.cutaway?.95:.4+preferences.light*.003;
     studySound.setActive(inPassage&&frame.active===3&&media.getSnapshot().ready&&!compact&&!state.reducedMotion&&!state.paused);
@@ -233,7 +243,20 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     host.dataset.passageCutaway=String(cutawayVisible);
     atmosphere.points.visible=inPassage&&!compact&&!state.reducedMotion;
     if(atmosphere.points.visible&&!inspection.expanded)atmosphere.update(elapsed,dt,false,scrollEnergy,pulse.value);
-    updateMediaTexture();updatePanels();renderer.render(scene,camera);
+    updateMediaTexture();updatePanels();
+    protectedSurfaces.length=0;
+    if(imageBounds){
+      protectedMedia.left=imageBounds.left/width;protectedMedia.top=imageBounds.top/height;
+      protectedMedia.right=imageBounds.right/width;protectedMedia.bottom=imageBounds.bottom/height;
+      protectedSurfaces.push(protectedMedia);
+    }
+    cinematic.render(scene,camera,{
+      enabled:inPassage&&!compact&&!state.reducedMotion&&preferences.quality!=='light'&&reduction<.3,
+      strength:cutawayVisible?.08:reading?.16:.24,
+      lens:reading||inspection.expanded||cutawayVisible?0:.25+scrollEnergy*.35,
+      protectedRects:protectedSurfaces,
+    });
+    canvas.dataset.cinematicBreath=illumination.breath.toFixed(4);
     if(!compact&&!state.reducedMotion)css.render(cssScene,camera);
     host.dataset.passageChapter=frame.active<0?'entrance':chapter.id;
     host.dataset.passageReading=String(passageReading(frame));
@@ -340,7 +363,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
       canvas.removeEventListener('webglcontextlost',contextLost);
       activeTexture?.dispose();cutaway.destroy();architecture.destroy();atmosphere.dispose();signals.destroy();relays.destroy();pulse.reset();environment.dispose();
       studySound.destroy();media.setSuspended('passage-scene-route',false);media.setSuspended('passage-scene-paused',false);media.setSuspended('passage-scene-reduced',false);mediaLease.release();
-      scene.clear();cssScene.clear();renderer.dispose();renderer.forceContextLoss();canvas.remove();css.domElement.remove();
+      cinematic.dispose();scene.clear();cssScene.clear();renderer.dispose();renderer.forceContextLoss();canvas.remove();css.domElement.remove();
     },
   };
 }

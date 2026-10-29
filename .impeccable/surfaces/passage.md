@@ -1,6 +1,8 @@
 # Passage — continuous mechanical tunnel
 
-Mode: Experience. Scope: the existing homepage Passage only.
+Mode: Experience. Scope: the existing homepage Passage and its shared 3D material/light finish.
+
+CINEMATIC FINISH: Preserve the continuous tunnel and camera. Fine brushed alloy and powder-coat roughness catch slow breathing key/rim light. Architectural signal strips and their spill breathe together. During travel only, bright edges diffuse and peripheral geometry softens slightly; film pixels and DOM content remain protected. Supporting scenes share the materials and light rhythm with a quieter finish. No stronger particle bloom, new scroll authority, new rendering loop or dependency. See `docs/cinematic-rendering.md`.
 
 ## Direction contract
 

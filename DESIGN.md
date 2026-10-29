@@ -69,6 +69,8 @@ components:
 
 The implemented world combines assertive editorial typography with physical, interactive objects. A dark stage and bright signal accent frame the content; the continuous mechanical Passage, geographic globe and overlapping era frames supply depth. Inspectable construction, precise instruments and connected story windows extend that world while preserving its reading surfaces and catalogue truth. This records the implemented design rather than prescribing a new direction.
 
+The cinematic finish adds fine material roughness, slow architectural light breathing and restrained highlight diffusion. Peripheral lens softness is limited to Passage travel; reading holds, semantic text and active film pixels remain clear. Supporting objects use quieter optics, with native rendering for compact, reduced-motion and Light quality modes. See `docs/cinematic-rendering.md` for the shared implementation and performance boundaries.
+
 **Key Characteristics:**
 - Monumental condensed headlines with occasional outlined words.
 - Thin rules, square media, deliberate negative space and visible content provenance.

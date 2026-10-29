@@ -10,6 +10,8 @@ import { passageReading } from '../../services/passageJourney';
 import { getPassageMediaBounds, subscribePassageMediaBounds } from '../../services/passageProtection';
 import { droneActivity, type DroneActivity } from '../../services/droneBehaviour';
 import { createDroneDock } from './droneDock';
+import { createCinematicMaterials } from '../../services/cinematicMaterials';
+import { sampleCinematicLight } from '../../services/cinematicLight';
 
 export type FlightFormation = 'escort' | 'orbit';
 type FlightState = { home: boolean; reducedMotion: boolean; paused: boolean; inspecting: boolean; docked: boolean; formation: FlightFormation; selected: string };
@@ -50,6 +52,14 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
   const fill = new THREE.DirectionalLight(0xb7c6c1, 1.3); fill.position.set(5, 1, 4); scene.add(fill);
   const rim = new THREE.DirectionalLight(0xff7658, .7); rim.position.set(1, -3, -2); scene.add(rim);
   const family = createDroneFamily(); scene.add(family.root);
+  const surfaceFinish = createCinematicMaterials(), finished = new Set<THREE.Material>();
+  family.root.traverse(object => {
+    if (!(object instanceof THREE.Mesh)) return;
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      if (!(material instanceof THREE.MeshStandardMaterial) || finished.has(material) || material.roughness < .16 || material.emissiveIntensity > 0 && material.emissive.getHex() !== 0) continue;
+      finished.add(material); surfaceFinish.apply(material, material.metalness > .75 ? 'metal' : 'paint', .5);
+    }
+  });
   const serviceDock = createDroneDock(scene), dockPosition = new THREE.Vector3();
   const activities: DroneActivity[] = Array.from({ length: 4 }, () => ({ perch: 0, inspect: 0, signal: 0, state: 'fly' }));
   const rotorTurns = [0, 0, 0, 0];
@@ -113,6 +123,10 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
     const dt = Math.min(rawDt, .035); last = time;
     const still = state.reducedMotion || state.docked;
     if (!still) elapsed += dt;
+    const illumination = sampleCinematicLight(elapsed, state.reducedMotion);
+    key.intensity = 3.6 * illumination.breath;
+    rim.intensity = .7 * illumination.signal;
+    key.position.x = -3 + illumination.drift * .24;
     if (!still && rawDt > .026 && rawDt < .12) slowFrames++; else slowFrames = Math.max(0, slowFrames - 1);
     if (slowFrames > 100 && qualityPenalty < .3) { qualityPenalty += .15; slowFrames = 0; resize(); }
     const smooth = 1 - Math.exp(-dt * 4.5);
@@ -262,7 +276,7 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
       cancelVisualFrame(request); cancelAnimationFrame(protectionRequest); resizeObserver.disconnect(); contentObserver.disconnect(); unsubscribe();unsubscribeMedia();
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerout', leave); window.removeEventListener('blur', resetPointer);
       window.removeEventListener('scroll', scroll); document.removeEventListener('visibilitychange', visibility); document.removeEventListener('load', collectProtection, true);
-      canvas.removeEventListener('webglcontextlost', lostContext); family.dispose(); serviceDock.destroy(); spiral.dispose(); environment.dispose(); scene.clear(); renderer.dispose(); renderer.forceContextLoss(); canvas.remove();mediaMask.remove();
+      canvas.removeEventListener('webglcontextlost', lostContext); surfaceFinish.dispose(); family.dispose(); serviceDock.destroy(); spiral.dispose(); environment.dispose(); scene.clear(); renderer.dispose(); renderer.forceContextLoss(); canvas.remove();mediaMask.remove();
     },
   };
 }

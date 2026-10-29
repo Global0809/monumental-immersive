@@ -1,5 +1,7 @@
 import { attachXray } from '../services/xrayMaterial';
 import { createFrameCadence } from '../services/frameCadence';
+import { createCinematicMaterials } from '../services/cinematicMaterials';
+import { sampleCinematicLight } from '../services/cinematicLight';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArrowsInSimple } from '@phosphor-icons/react/dist/csr/ArrowsInSimple';
 import { ArrowsOutSimple } from '@phosphor-icons/react/dist/csr/ArrowsOutSimple';
@@ -295,6 +297,9 @@ export default function CultureSculpture({ active, onSelect, reducedMotion, onWa
       color: 0x32372f, metalness: 1, roughness: 0.2, clearcoat: 0.7,
     });
     const orange = new THREE.MeshStandardMaterial({ color: 0xff4d32, emissive: 0xff3010, emissiveIntensity: 1.5, roughness: 0.45, metalness: 0.25 });
+    const surfaceFinish = createCinematicMaterials();
+    [chrome, paleChrome, darkChrome].forEach(material => surfaceFinish.apply(material, 'metal', .65));
+    surfaceFinish.apply(orange, 'paint', .35);
     const signalMaterial = new THREE.MeshBasicMaterial({ color: 0xff4d32 });
 
     // Three differently canted continuous metal bands make the silhouette.
@@ -516,6 +521,9 @@ export default function CultureSculpture({ active, onSelect, reducedMotion, onWa
       const frozen = pointHoveredRef.current;
       const idle = !reduced && !pausedRef.current;
       if (idle && !frozen) time += dt;
+      const illumination = sampleCinematicLight(time, reduced);
+      key.intensity = 2.2 * illumination.breath;
+      rim.intensity = 1.8 * illumination.signal;
       const ease = reduced ? 1 : 1 - Math.exp(-dt * 4.5);
       const morphEase = reduced ? 1 : 1 - Math.exp(-dt * 3.8);
       const instrument = instrumentRef.current;
@@ -573,7 +581,7 @@ export default function CultureSculpture({ active, onSelect, reducedMotion, onWa
       });
       core.scale.set(1 - pressure * 0.035, 1.12 - pressure * 0.035, 1 - pressure * 0.035);
       orange.emissiveIntensity = 1.25 + opening * 0.4 + pressure * 1.5 + energy * 2.2;
-      ember.intensity = 5 + pressure * 3 + energy * 4;
+      ember.intensity = 5 * illumination.signal + pressure * 3 + energy * 4;
       ember.position.x = -2.4 + rotationY * 3.5;
       ember.position.y = -1.8 - rotationX * 3.5;
       key.position.x = -3 + rotationY * 5;
@@ -823,6 +831,7 @@ export default function CultureSculpture({ active, onSelect, reducedMotion, onWa
       renderer.domElement.removeEventListener('webglcontextlost', contextLost);
       const geometries = new Set<THREE.BufferGeometry>();
       xray.dispose();
+      surfaceFinish.dispose();
       const materials = new Set<THREE.Material>();
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.Line) {

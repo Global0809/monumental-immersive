@@ -1,5 +1,9 @@
 import { attachXray } from '../services/xrayMaterial';
 import { createFrameCadence } from '../services/frameCadence';
+import { createCinematicMaterials } from '../services/cinematicMaterials';
+import { createCinematicRenderer } from '../services/cinematicRenderer';
+import { sampleCinematicLight } from '../services/cinematicLight';
+import { getSpatialPreferences } from '../services/spatialPreferences';
 /**
  * Land geometry: Natural Earth, 1:110m land, public domain.
  * https://www.naturalearthdata.com/about/terms-of-use/
@@ -134,6 +138,8 @@ export default function Atlas({
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, window.innerWidth < 700 ? 1.35 : 1.6));
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
+    const cinematic = createCinematicRenderer(renderer);
+    const surfaceFinish = createCinematicMaterials();
     const canvas = renderer.domElement;
     canvas.setAttribute("aria-hidden", "true");
     element.prepend(canvas);
@@ -170,6 +176,7 @@ export default function Atlas({
       }),
     );
     globe.add(body);
+    surfaceFinish.apply(body.material, 'metal', .35);
     const xray = attachXray(renderer, [body.material], [body]);
     const haloMaterial = new THREE.ShaderMaterial({
       uniforms: { tint: { value: new THREE.Color("#e9eee2") } },
@@ -230,6 +237,7 @@ export default function Atlas({
       transparent: true,
       opacity: 0.7,
     });
+    surfaceFinish.apply(ringMaterial, 'metal', .45);
     assembly.add(
       new THREE.Mesh(
         new THREE.TorusGeometry(1.26, 0.0035, 5, 200),
@@ -247,6 +255,7 @@ export default function Atlas({
       metalness: 0.82,
       roughness: 0.4,
     });
+    surfaceFinish.apply(arcMaterial, 'metal', .5);
     for (let i = 0; i < 5; i++) {
       const segment = new THREE.Mesh(
         new THREE.TorusGeometry(1.275, 0.009, 5, 22, 0.17),
@@ -280,6 +289,7 @@ export default function Atlas({
     const connectionPaths: { line: THREE.Line; points: THREE.Vector3[]; bead: THREE.Mesh }[] = [];
     let connectionReveal = 1;
     let connectionClock = 0;
+    let illuminationTime = 0;
     const setConnections = (from: string, targets: string[], enabled: boolean) => {
       connectionGroup.traverse(object => {
         const item = object as THREE.Mesh;
@@ -417,6 +427,11 @@ export default function Atlas({
       camera.position.z = motionRef.current ? cameraTarget : THREE.MathUtils.lerp(camera.position.z, cameraTarget, 1 - Math.exp(-delta * 7));
       connectionReveal = Math.min(1, connectionReveal + (motionRef.current ? 1 : delta * 1.6));
       if (!motionRef.current && !pauseRef.current) connectionClock += delta;
+      if (!motionRef.current && !pauseRef.current) illuminationTime += delta;
+      const illumination = sampleCinematicLight(illuminationTime, motionRef.current);
+      key.intensity = 2.6 * illumination.breath;
+      fill.intensity = 1.1 * illumination.signal;
+      key.position.x = -3 + illumination.drift * .18;
       connectionPaths.forEach(({ line, points, bead }, index) => {
         const visiblePoints = Math.max(2, Math.round(connectionReveal * points.length));
         line.geometry.setDrawRange(0, visiblePoints);
@@ -451,7 +466,7 @@ export default function Atlas({
       camera.updateMatrixWorld(true);
       updateLabels();
       xray.update(!motionRef.current);
-      renderer.render(scene, camera);
+      cinematic.render(scene, camera, { enabled: !motionRef.current && window.innerWidth >= 980 && window.innerHeight >= 660 && getSpatialPreferences().quality !== 'light', strength: .1, lens: 0 });
       if (targetRotation || zooming || connectionReveal < 1 || (!motionRef.current && !pauseRef.current))
         frame = window.requestAnimationFrame(draw);
     };
@@ -697,6 +712,7 @@ export default function Atlas({
     return () => {
       disposed = true;
       xray.dispose();
+      cinematic.dispose(); surfaceFinish.dispose();
       abort.abort();
       cancelAnimationFrame(frame);
       cancelAnimationFrame(resizeFrame);
