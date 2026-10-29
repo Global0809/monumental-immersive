@@ -1,29 +1,29 @@
-# Monumental sound score
+# Monumental sound score II
 
-The score treats the website as an instrument built from chrome bands, felted mechanisms and film transport. Short contacts make small actions certain; larger gestures carry weight and depth. Silence is part of the arrangement. There is no musical success jingle, perpetual hover chatter or scroll soundtrack.
+The sonic identity follows the physical website: magnetic contacts, pressure through a portal, articulated chrome, optical inspection and signals moving through space. Twenty-five original stereo cues replace the heavily damped palette. Eight optional room fields give Home, World, Time, Cinema, Music, Culture, Collection and the wider catalogue distinct atmospheres. Source recipes and mastering evidence are in [Sonic palette](sonic-palette.md).
 
-## Materials and meaning
+## Interaction and mix
 
-- **Detent:** a dry, damped mechanical contact for selections.
-- **Keepsake:** a clasp followed by a small ceramic resonance for saving; removal releases the clasp instead.
-- **Transit:** low structural weight, narrow friction and a small spatial landing for destinations.
-- **Splice:** uneven film perforations decelerating into a stop for era changes.
-- **Chrome:** inharmonic metal modes for sculpture opening, closing, turning, alignment and resonance. Each is separately authored.
-- **Confluence:** two contacts approach from opposite stereo positions, then join into one resonant body for the Culture Collider.
-- **Signature:** a single latch opening into Monumental's metal resonance when the visitor enables sound.
+Small actions have short contacts; portals, destinations, memory and mechanisms receive fuller gestures. Cues pan toward the action. Opening and folding are separate sounds. Deliberate X-ray hover has a restrained scan with 6.5-second spacing. Card/navigation hover waits 90 milliseconds and is spaced at least 450 milliseconds. Semantic handlers own their sounds, preventing duplicate generic clicks.
 
-Twenty-one original cues share a modal family but have distinct envelopes, contacts, space and duration. Five subtle repeatable pitch/gain variations prevent identical repetition. Four optional six-second room textures change with the existing Home/World/Time/library scene state; these are authored synthesis, not location recordings.
+passageSonic.ts subscribes to the existing journey samples; it never moves the camera or scroll. Chapters select their room, travel opens the atmosphere's spectral range and stereo image, and settled reading positions receive arrivals. Fast jumps skip intermediate arrivals. Restored positions, layout changes and hidden pages do not announce phantom travel. No additional animation loop is introduced.
 
-## Implementation
+audio.ts retains one consent-gated AudioContext. Authored 32 kHz WAV buffers load separately and cache on demand. The bank totals 10.26 MiB, with no audio requests before opt-in. Initial activation warms six common cues; optional rooms load only when needed. The old score-v1 assets are removed from the shipping tree and remain in backup/audio-before-20261030.
 
-`scripts/sonic-materials.ts` is the offline instrument builder. Damped inharmonic bodies, filtered contact noise, granular bearings and short asymmetric reflections are rendered as 32 kHz stereo PCM WAV files. Run `node --import tsx scripts/render-sonic-score.ts` after changing the score. It also exports a listening reel under `.impeccable/review/sonic-score/`.
+Master calibration preserves body and transient detail, with final compression. At most five effects play simultaneously. Rooms retain the prior atmosphere while loading, then crossfade over 650 milliseconds; only one incoming and one outgoing loop are retained. Travel updates use smoothed AudioParams, bounded writes and a short decay. Motion cannot allocate audio or leave stale energy while sound is unavailable. Meaningful cues briefly duck the room field.
 
-`src/services/sonicScore.ts` names the materials and resolves assets with Vite's base path, including GitHub Pages. `audio.ts` loads and decodes only after opt-in, caches each buffer, and plays one source/gain/panner chain per cue. No runtime sample synthesis, convolution, new audio dependency or per-frame audio work is added. All files total about 4.4 MiB; optional room loops account for most of it. Initial opt-in warms only four small everyday contacts after the signature; the rest load on demand.
+## Controls and lifecycle
 
-Main cues suppress incidental contacts, at most five voices overlap, stale downloads never replay old actions, and ordinary cues expire after 450 ms if a network request takes too long. The atmosphere gently recedes beneath meaningful cues. The existing master volume, compressor, hidden-tab suspension, idle suspension and film-priority gate remain authoritative. Muting or opening a film invalidates pending decodes as well as stopping active cues. Fast off/on toggles cancel obsolete suspension timers.
+Sound stays off until enabled. Existing mute, volume and atmosphere preferences remain intact. Sound Studio offers six named auditions, a real waveform, room identity and Quiet, Balanced and Immersive mixes. Immersive enables optional atmosphere at 35 percent with 55 percent master volume. Ordinary sound enablement does not silently change atmosphere preferences. Settings stay in this browser.
 
-`ExperienceLayer` keeps major-card/navigation hover cues behind a 90 ms dwell and 450 ms spacing. Semantic handlers own their audio explicitly, including save/remove/Undo, city selection, collider and sculpture controls. Keyboard and touch activation use the same action cues; hover is mouse-only. There is no sound on scrolling or ordinary text.
+Films and explicitly enabled local music studies own output: cues and rooms stop, including pending decodes. Hidden tabs suspend; returning to visibility alone does not resume audio. A supported gesture can resume an enabled score. Idle audio suspends. Cleanup closes the context, aborts requests, stops sources and removes listeners and timers. Asset failure is silent and never blocks navigation.
 
-## Verification
+## Verification and limits
 
-The material tests compare every shipped WAV with the deterministic renderer and check finite samples, headroom, endpoint silence, low DC and loop continuity. Lifecycle tests exercise opt-in, zero-volume behavior, fast mute toggles, movie priority, async cancellation and cache reuse. Browser verification must also check Sound Studio auditions, volume/mute controls and native playback on a real device. Speaker/headphone loudness remains dependent on the listener's hardware volume.
+- 194 unit checks pass, covering deterministic PCM, headroom/DC/seams, consent, cancellation, room handoffs, media priority and Passage state.
+- Production TypeScript and Vite build passes.
+- 86 focused Chromium checks pass with zero page errors: real output measurements, six pads, eight rooms, travel filter/pan, relay/inspection actions, six chapter portal/arrival pairs, film priority, volume, mute, hidden-tab recovery, mobile/reduced-motion controls, all 33 audio endpoints and disposal.
+- Audition peaks at 45 percent master range from 0.184 to 0.334 full scale. Five overlapping cues at full master peak at 0.875. These are measured browser levels, not claims about physical speaker loudness.
+- UI captures and a browser-recorded audio reel: output/playwright/sonic-v2/. Authored audition reel and cue sheet: .impeccable/review/sonic-score-v2/.
+
+No new runtime dependency, synthesis loop, convolution or visual renderer is added. Browser checks cover Chromium with mobile-sized emulation. Physical iOS/Android devices and subjective headphone preference were not independently auditioned.

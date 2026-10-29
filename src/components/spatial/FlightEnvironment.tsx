@@ -66,7 +66,7 @@ export default function FlightEnvironment({ path, reducedMotion, paused, onInspe
 
   return <>
     <div ref={host} className="flight-environment" data-route={path} data-drone-count="4" data-available={available} aria-hidden="true"/>
-    {available && <button ref={trigger} className="flight-invitation" onClick={meet} aria-haspopup="dialog" hidden={paused}>
+    {available && <button ref={trigger} className="flight-invitation" data-sound="open" onClick={meet} aria-haspopup="dialog" hidden={paused}>
       <svg viewBox="0 0 32 22" aria-hidden="true"><ellipse cx="7" cy="11" rx="5" ry="3"/><ellipse cx="25" cy="11" rx="5" ry="3"/><path d="M10 10 13 5h6l3 5v5l-6 3-6-3z"/><circle cx="16" cy="12" r="1.5"/></svg>
       <span>Flight crew <small>04</small></span>
     </button>}
@@ -75,7 +75,7 @@ export default function FlightEnvironment({ path, reducedMotion, paused, onInspe
       <div className="flight-view" ref={stage} aria-label="Interactive view of the four drone companions">
         <span className="flight-view-caption">{reducedMotion ? 'STILL PORTRAIT / REDUCED MOTION' : 'MOVE NEAR THEM. THEY NOTICE.'}</span>
       </div>
-      <div className="flight-crew-list" role="group" aria-label="Meet the four companions">{crew.map(member => <button key={member.id} aria-pressed={selected === member.id} onClick={() => setSelected(member.id)}><strong>{member.name}</strong><span>{member.role}</span></button>)}</div>
+      <div className="flight-crew-list" role="group" aria-label="Meet the four companions">{crew.map(member => <button key={member.id} data-sound="signal" aria-pressed={selected === member.id} onClick={() => setSelected(member.id)}><strong>{member.name}</strong><span>{member.role}</span></button>)}</div>
       <div className="flight-detail"><p aria-live="polite"><strong>{active.name}. </strong>{active.copy}</p><div className="flight-commands"><div role="group" aria-label="Flight formation">{(['escort','orbit'] as const).map(mode => <button key={mode} aria-pressed={formation === mode} onClick={() => setFormation(mode)}>{mode === 'escort' ? 'Fly together' : 'Play in orbit'}</button>)}</div><button className="flight-dock" aria-pressed={docked} onClick={toggleDock}>{docked ? 'Resume flight' : 'Pause flight'}</button></div></div>
     </dialog>
   </>;

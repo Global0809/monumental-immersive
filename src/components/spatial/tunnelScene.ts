@@ -39,6 +39,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   let average=16.7,samples=0,reduction=0,travel:Travel|null=null;
   const pointer:[number,number]=[0,0],pointerTarget:[number,number]=[0,0];
   let previousZ=frame.z,scrollEnergy=0;
+  let scanHold=0,scanPlayed=false,lastScan=-Infinity;
   let life=getTunnelLife(),relayHovered=false,pointerPresent=false,pointerPress:{x:number;y:number;id:number;part:number|null;dragged:boolean}|null=null;
   const pulse=createTunnelPulse(),raycaster=new THREE.Raycaster(),rayPoint=new THREE.Vector2();
   let activeTexture:THREE.VideoTexture|null=null,textureEpoch=-1,textureChapter=-1;
@@ -214,6 +215,14 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     const imageBounds=getPassageMediaBounds(),cursorX=(pointerTarget[0]+1)*width/2,cursorY=(1-pointerTarget[1])*height/2;
     const overImage=!!imageBounds&&cursorX>=imageBounds.left&&cursorX<=imageBounds.right&&cursorY>=imageBounds.top&&cursorY<=imageBounds.bottom;
     const cutawayVisible=cutaway.update(pointerTarget,lifeEnabled&&pointerPresent&&!overImage&&!inspection.expanded&&!travel,width,height,dt);
+    if(cutawayVisible){
+      scanHold+=dt;
+      if(!scanPlayed&&scanHold>.22){
+        scanPlayed=true;
+        const now=performance.now();
+        if(now-lastScan>6500){lastScan=now;playSound('scan',{intensity:.42,pan:pointerTarget[0]*.45});}
+      }
+    }else{scanHold=0;scanPlayed=false;}
     host.dataset.passageCutaway=String(cutawayVisible);
     atmosphere.points.visible=inPassage&&!compact&&!state.reducedMotion;
     if(atmosphere.points.visible&&!inspection.expanded)atmosphere.update(elapsed,dt,false,scrollEnergy,pulse.value);
@@ -265,12 +274,14 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     if(press?.dragged){relays.setPartPull(null);playSound('sculpture-turn');return;}
     if(press&&event.pointerId===press.id&&Math.hypot(press.x-event.clientX,press.y-event.clientY)<6&&!isInterface(event.target)&&relayHit(event.clientX,event.clientY)){
       const current=getTunnelLife();
-      if(current.relayOpen){const part=relays.hitPart(raycaster);if(part!==null)selectTunnelRelayPart(current.relayPart===part?null:part);else setTunnelRelay(false);}
-      else setTunnelRelay(true);
-      playSound('sculpture-turn');
+      if(current.relayOpen){
+        const part=relays.hitPart(raycaster);
+        if(part!==null){selectTunnelRelayPart(current.relayPart===part?null:part);playSound(current.relayPart===part?'close':'scan',{pan:(part/5-.5)*.8});}
+        else{setTunnelRelay(false);playSound('sculpture-fold');}
+      }else{setTunnelRelay(true);playSound('sculpture-unfold');}
     }
   }
-  function clearCutaway(){pointerPresent=false;cutaway.reset();host.dataset.passageCutaway='false';}
+  function clearCutaway(){pointerPresent=false;scanHold=0;scanPlayed=false;cutaway.reset();host.dataset.passageCutaway='false';}
   function resetPointer(){atmosphere.input.reset();relays.setPartPull(null);clearCutaway();pointerPress=null;relayHovered=false;host.dataset.passageRelayHover='false';pointerTarget[0]=pointerTarget[1]=pointer[0]=pointer[1]=0;}
   function visibility(){lastTime=0;cadence.reset();resetPointer();if(document.hidden){cancelVisualFrame(request);request=0;}else wake();}
   function contextLost(event:Event){

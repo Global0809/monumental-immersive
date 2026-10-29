@@ -35,14 +35,22 @@ const activeCues = new Set<() => void>();
 let ambientSources: AudioBufferSourceNode[] = [];
 let ambientNodes: AudioNode[] = [];
 let ambientRoot: GainNode | null = null;
+let ambientFilter: BiquadFilterNode | null = null;
+let ambientPan: StereoPannerNode | GainNode | null = null;
+let playingScene: AmbientScene | null = null;
+let travelEnergy = 0, travelPan = 0, lastMotionWrite = -Infinity, lastMotionActivity = -Infinity;
+let travelTimer: ReturnType<typeof setTimeout> | undefined;
+const retiringRooms = new Map<() => void, ReturnType<typeof setTimeout>>();
+// The score is mastered with headroom; preserve its body before final peak control.
+const MASTER_GAIN = .72, ATMOSPHERE_GAIN = .8;
 let preferences = '';
 const clamp = (value: number | undefined, min: number, max: number, fallback: number) => Number.isFinite(value) ? Math.max(min, Math.min(max, value!)) : fallback;
 const now = () => typeof performance === 'undefined' ? 0 : performance.now();
 
 function emitState() {
   const status = unsupported ? 'unavailable' : !getViewer().sound ? 'off' : !context ? 'waiting' : context.state === 'running' ? 'running' : 'suspended';
-  if (snapshot.status === status && snapshot.playback === playbackActive && snapshot.scene === scene) return;
-  snapshot = { status, playback: playbackActive, scene };
+  if (snapshot.status === status && snapshot.playback === mediaOwnsSound() && snapshot.scene === scene) return;
+  snapshot = { status, playback: mediaOwnsSound(), scene };
   listeners.forEach(listener => listener());
 }
 export const getSonicState = () => snapshot;
@@ -63,14 +71,22 @@ function spatialNode(value: number): StereoPannerNode | GainNode {
   return context!.createGain();
 }
 function stopCues() { cueEpoch++; activeCues.forEach(stop => stop()); activeCues.clear(); pendingCue = null; }
+function retireRoom(sources: AudioBufferSourceNode[], nodes: AudioNode[], root: GainNode | null, fade: number) {
+  if (!sources.length || !context) return;
+  if (root) ramp(root.gain, 0, fade / 5);
+  sources.forEach(source => { try { source.stop(context!.currentTime + fade); } catch { /* Already ended. */ } });
+  const cleanup = () => {
+    sources.forEach(source => { try { source.stop(); } catch { /* Already ended. */ } source.disconnect(); });
+    nodes.forEach(node => node.disconnect()); retiringRooms.delete(cleanup);
+  };
+  retiringRooms.set(cleanup, setTimeout(cleanup, (fade + .03) * 1000));
+}
 function stopAmbient() {
+  clearTimeout(travelTimer); travelEnergy = 0; travelPan = 0;
   roomEpoch++; roomPending = false;
   const sources = ambientSources; const nodes = ambientNodes; const root = ambientRoot;
-  ambientSources = []; ambientNodes = []; ambientRoot = null;
-  if (!sources.length || !context) return;
-  if (root) ramp(root.gain, 0, 0.025);
-  sources.forEach(source => { try { source.stop(context!.currentTime + 0.12); } catch { /* Already ended. */ } });
-  setTimeout(() => { sources.forEach(source => source.disconnect()); nodes.forEach(node => node.disconnect()); }, 150);
+  ambientSources = []; ambientNodes = []; ambientRoot = null; ambientFilter = null; ambientPan = null; playingScene = null;
+  retireRoom(sources, nodes, root, .12);
 }
 function loadBuffer(name: SoundType | `room-${AmbientScene}`): Promise<AudioBuffer | null> {
   if (!context || !getViewer().sound || getViewer().masterVolume === 0 || document.hidden || mediaOwnsSound()) return Promise.resolve(null);
@@ -87,16 +103,24 @@ function loadBuffer(name: SoundType | `room-${AmbientScene}`): Promise<AudioBuff
 }
 function startAmbient() {
   const viewer = getViewer();
-  if (!context || !ambience || context.state !== 'running' || !viewer.sound || !viewer.ambient || !viewer.masterVolume || mediaOwnsSound() || document.hidden || ambientSources.length || roomPending) return;
-  const epoch = roomEpoch, audio = context; roomPending = true;
-  void loadBuffer(`room-${scene}`).then(buffer => {
+  if (!context || !ambience || context.state !== 'running' || !viewer.sound || !viewer.ambient || !viewer.masterVolume || mediaOwnsSound() || document.hidden || (ambientSources.length && playingScene === scene) || roomPending) return;
+  const epoch = roomEpoch, audio = context, requestedScene = scene; roomPending = true;
+  void loadBuffer(`room-${requestedScene}`).then(buffer => {
     if (epoch !== roomEpoch || context !== audio) return;
     roomPending = false;
     const current = getViewer();
     if (!buffer || !ambience || audio.state !== 'running' || !current.sound || !current.ambient || !current.masterVolume || mediaOwnsSound() || document.hidden) return;
+    // Keep the previous room audible while this buffer loads, then crossfade.
+    // Rapid chapter jumps retain at most one outgoing room, never a pile of loops.
+    retiringRooms.forEach((timer, cleanup) => { clearTimeout(timer); cleanup(); });
+    retireRoom(ambientSources, ambientNodes, ambientRoot, .65);
     const root = audio.createGain(); root.gain.value = 0; root.connect(ambience); ambientRoot = root;
-    const source = audio.createBufferSource(); source.buffer = buffer; source.loop = true; source.connect(root);
-    ambientSources = [source]; ambientNodes = [root]; source.start(); ramp(root.gain, .8, .7);
+    const filter = audio.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 1800 + travelEnergy * 5000; filter.Q.value = .4;
+    const pan = spatialNode(travelPan * .35);
+    const source = audio.createBufferSource(); source.buffer = buffer; source.loop = true;
+    source.connect(filter); filter.connect(pan); pan.connect(root);
+    ambientFilter = filter; ambientPan = pan; playingScene = requestedScene;
+    ambientSources = [source]; ambientNodes = [root, filter, pan]; source.start(); ramp(root.gain, .85 + travelEnergy * .3, .22);
   });
 }
 function scheduleSuspend() {
@@ -108,8 +132,8 @@ function syncPreferences() {
   const next = [viewer.sound, viewer.masterVolume, viewer.ambient, viewer.ambientMix].join('/');
   if (next === preferences) { emitState(); return; }
   preferences = next;
-  if (master) ramp(master.gain, viewer.sound && !mediaOwnsSound() && !document.hidden ? viewer.masterVolume * 0.36 : 0);
-  if (ambience) ramp(ambience.gain, viewer.ambientMix * 0.5, 0.15);
+  if (master) ramp(master.gain, viewer.sound && !mediaOwnsSound() && !document.hidden ? viewer.masterVolume * MASTER_GAIN : 0);
+  if (ambience) ramp(ambience.gain, viewer.ambientMix * ATMOSPHERE_GAIN, 0.15);
   if (!viewer.sound || !viewer.ambient || viewer.masterVolume === 0) stopAmbient(); else startAmbient();
   if (!viewer.sound || viewer.masterVolume === 0) { stopCues(); scheduleSuspend(); }
   emitState();
@@ -128,7 +152,7 @@ function visibility() {
   void context?.suspend().then(emitState).catch(() => {});
 }
 function gesture(event: Event) {
-  if (!event.isTrusted || (event instanceof KeyboardEvent && !['Enter', ' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key))) return;
+  if (!event.isTrusted || (event instanceof KeyboardEvent && !['Enter', ' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageDown', 'PageUp', 'Home', 'End'].includes(event.key))) return;
   trustedGestureUntil = now() + 700;
   if (getViewer().sound && !document.hidden) { activity(); prepareAudio(); }
 }
@@ -146,9 +170,9 @@ function buildGraph() {
   try {
     context = new Context({ latencyHint: 'interactive' });
     master = context.createGain(); master.gain.value = 0;
-    effects = context.createGain(); ambience = context.createGain(); ambience.gain.value = getViewer().ambientMix * 0.5;
+    effects = context.createGain(); ambience = context.createGain(); ambience.gain.value = getViewer().ambientMix * ATMOSPHERE_GAIN;
     const highpass = context.createBiquadFilter(); highpass.type = 'highpass'; highpass.frequency.value = 35; highpass.Q.value = 0.3;
-    const limiter = context.createDynamicsCompressor(); limiter.threshold.value = -18; limiter.knee.value = 14; limiter.ratio.value = 8; limiter.attack.value = 0.004; limiter.release.value = 0.13;
+    const limiter = context.createDynamicsCompressor(); limiter.threshold.value = -10; limiter.knee.value = 8; limiter.ratio.value = 6; limiter.attack.value = 0.003; limiter.release.value = 0.18;
     analyser = context.createAnalyser(); analyser.fftSize = 256; analyser.smoothingTimeConstant = 0.65;
     analyserData = new Float32Array(analyser.fftSize);
     effects.connect(master); ambience.connect(master); master.connect(highpass); highpass.connect(limiter); limiter.connect(analyser); analyser.connect(context.destination);
@@ -170,13 +194,13 @@ function prepareAudio(): boolean {
       if (context !== resuming || !master) return;
       resumePromise = null;
       if (!getViewer().sound || mediaOwnsSound() || document.hidden) { if (master) ramp(master.gain, 0); return; }
-      ramp(master.gain, getViewer().masterVolume * 0.36);
+      ramp(master.gain, getViewer().masterVolume * MASTER_GAIN);
       startAmbient(); emitState();
       const queued = pendingCue; pendingCue = null; if (queued) playSound(queued.type, queued.options);
     }).catch(() => { resumePromise = null; emitState(); });
     return false;
   }
-  clearTimeout(suspendTimer); ramp(master.gain, getViewer().masterVolume * 0.36);
+  clearTimeout(suspendTimer); ramp(master.gain, getViewer().masterVolume * MASTER_GAIN);
   startAmbient(); emitState(); return context.state === 'running';
 }
 export function setSoundEnabled(enabled: boolean): void {
@@ -189,12 +213,27 @@ export function setAmbientEnabled(enabled: boolean) { installLifecycle(); update
 export function setAmbientMix(mix: number) { installLifecycle(); updateViewer({ ambientMix: clamp(mix, 0, 1, 0.2) }); activity(); prepareAudio(); }
 export function setAmbientScene(next: AmbientScene) {
   if (!sonicScenes.includes(next) || next === scene) return;
-  scene = next; stopAmbient(); startAmbient(); emitState();
+  scene = next; roomEpoch++; roomPending = false; startAmbient(); emitState();
+}
+/** Passage-owned motion changes the optional room's air and stereo image only.
+ * It neither unlocks audio nor starts voices, and needs no rendering loop. */
+export function setSonicMotion(energy: number, pan = 0): void {
+  travelEnergy = clamp(energy, 0, 1, 0); travelPan = clamp(pan, -1, 1, 0);
+  clearTimeout(travelTimer);
+  if (!context || context.state !== 'running' || !ambientRoot || mediaOwnsSound() || document.hidden) { travelEnergy = 0; travelPan = 0; return; }
+  if (travelEnergy > .01) travelTimer = setTimeout(() => setSonicMotion(0, 0), 180);
+  const time = now();
+  if (travelEnergy > .01 && time - lastMotionActivity > 1000) { lastMotionActivity = time; activity(); }
+  if (travelEnergy > .01 && time - lastMotionWrite < 32) return;
+  lastMotionWrite = time;
+  ramp(ambientRoot.gain, .85 + travelEnergy * .3, .12);
+  if (ambientFilter) ramp(ambientFilter.frequency, 1800 + travelEnergy * 5000, .16);
+  if (ambientPan && 'pan' in ambientPan) ramp(ambientPan.pan, travelPan * .35, .18);
 }
 export function setPlaybackActive(active: boolean): void {
   playbackActive = active;
   if (active) { stopCues(); stopAmbient(); }
-  if (master) ramp(master.gain, mediaOwnsSound() || !getViewer().sound || document.hidden ? 0 : getViewer().masterVolume * 0.36, 0.015);
+  if (master) ramp(master.gain, mediaOwnsSound() || !getViewer().sound || document.hidden ? 0 : getViewer().masterVolume * MASTER_GAIN, 0.015);
   if (!active) startAmbient();
   emitState();
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('monumental:playback', { detail: { active } }));
@@ -204,8 +243,9 @@ export function setPlaybackActive(active: boolean): void {
 export function setStudyAudioActive(active: boolean): void {
   studyPlaybackActive = active;
   if (active) { stopCues(); stopAmbient(); }
-  if (master) ramp(master.gain, mediaOwnsSound() || !getViewer().sound || document.hidden ? 0 : getViewer().masterVolume * .36, .015);
+  if (master) ramp(master.gain, mediaOwnsSound() || !getViewer().sound || document.hidden ? 0 : getViewer().masterVolume * MASTER_GAIN, .015);
   if (!mediaOwnsSound()) startAmbient();
+  emitState();
 }
 /** Reads the real post-dynamics output. It is silent before opt-in and during media. */
 export function readSoundLevel() {
@@ -225,13 +265,13 @@ export function readSoundWaveform(): Float32Array<ArrayBuffer> | null {
 export function playSound(type: SoundType = 'select', options: SoundOptions = {}): void {
   if (!Object.hasOwn(sonicScore, type) || typeof document === 'undefined' || mediaOwnsSound() || document.hidden || !getViewer().sound || getViewer().masterVolume === 0) return;
   const time = now(), quiet = ['hover', 'tick', 'drag', 'sculpture-turn'].includes(type);
-  const cooldown = type === 'hover' ? 450 : quiet ? 110 : 140;
+  const cooldown = type === 'hover' ? 450 : ['arrival', 'scan', 'signal', 'portal'].includes(type) ? 900 : quiet ? 150 : 140;
   if (time - (lastCue.get(type) ?? -Infinity) < cooldown || (!quiet && time - lastMain < 65) || (quiet && time - lastMain < 220) || activeCues.size >= 5) return;
   if (!prepareAudio() || !context || !effects) { if (resumePromise) pendingCue = { type, options }; return; }
   activity(); lastCue.set(type, time); if (!quiet) lastMain = time;
   const epoch = cueEpoch, serial = ++cueSerial, audio = context;
   if (!quiet) mainSerial = serial;
-  const intensity = clamp(options.intensity, .08, 1, quiet ? .38 : .78);
+  const intensity = clamp(options.intensity, .08, 1, quiet ? .5 : .86);
   const panValue = clamp(options.pan, -.65, .65, 0);
   // Tiny, repeatable contact changes avoid machine-gun repetition.
   const take = variations.get(type) ?? 0; variations.set(type, (take + 1) % 5);
@@ -253,18 +293,20 @@ export function playSound(type: SoundType = 'select', options: SoundOptions = {}
     source.start(audio.currentTime + .003);
     timer = setTimeout(cleanup, (buffer.duration / rate + .1) * 1000);
     if (ambience && !quiet) {
-      const t = audio.currentTime, level = getViewer().ambientMix * .5;
+      const t = audio.currentTime, level = getViewer().ambientMix * ATMOSPHERE_GAIN;
       ambience.gain.cancelScheduledValues(t); ambience.gain.setTargetAtTime(level * .38, t, .015);
       ambience.gain.setTargetAtTime(level, t + Math.min(buffer.duration, .55), .22);
     }
     window.dispatchEvent(new CustomEvent<SonicPulse>('monumental:sonic-pulse', { detail: { type, intensity, pan: panValue, scene, timestamp: time } }));
     // Warm only everyday contacts after opt-in, never the entire library.
-    if (type === 'activate') ['hover','select','navigate','save'].forEach(cue => { void loadBuffer(cue as SoundType); });
+    if (type === 'activate') ['hover','select','navigate','save','portal','scan'].forEach(cue => { void loadBuffer(cue as SoundType); });
   });
 }
 /** Complete HMR / embedded-app teardown. A later gesture can rebuild the graph. */
 export function disposeAudio() {
-  clearTimeout(idleTimer); clearTimeout(suspendTimer); stopCues(); stopAmbient(); unsubscribe?.(); unsubscribe = undefined;
+  clearTimeout(idleTimer); clearTimeout(suspendTimer); clearTimeout(travelTimer); stopCues(); stopAmbient(); unsubscribe?.(); unsubscribe = undefined;
+  retiringRooms.forEach((timer, cleanup) => { clearTimeout(timer); cleanup(); });
+  travelEnergy = 0; travelPan = 0; lastMotionWrite = -Infinity; lastMotionActivity = -Infinity;
   if (typeof window !== 'undefined') {
     document.removeEventListener('pointerdown', gesture, true); document.removeEventListener('keydown', gesture, true); document.removeEventListener('click', gesture, true);
     document.removeEventListener('visibilitychange', visibility); window.removeEventListener('pagehide', pageExit);

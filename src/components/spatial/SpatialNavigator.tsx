@@ -101,7 +101,7 @@ export default function SpatialNavigator({ path, reducedMotion, paused, controll
           gsap.fromTo(passage.current.querySelector('.spatial-passage-progress i'), { scaleX: 0 }, { scaleX: 1, duration: plan.duration / 1000, ease: 'none' });
         }
       }, passage);
-      playSound('destination');
+      playSound(plan.crossRoom ? 'portal' : 'navigate', { intensity: .84 });
       if (plan.crossRoom && controller.current && getSpatialState().ready) {
         controller.current.travelTo(plan.room, commit, plan.duration);
         timeout.current = window.setTimeout(commit, plan.duration + 450);

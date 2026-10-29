@@ -9,7 +9,7 @@ test('every shipped cue matches its authored PCM, has headroom, zero endpoints a
   for (const type of Object.keys(sonicScore) as SoundType[]) {
     const channels = renderCue(type);
     const bytes = wav(channels);
-    assert.deepEqual(Buffer.from(bytes), readFileSync(new URL(`../public/audio/score-v1/${type}.wav`, import.meta.url)), `${type}: stale rendered file`);
+    assert.deepEqual(Buffer.from(bytes), readFileSync(new URL(`../public/audio/score-v2/${type}.wav`, import.meta.url)), `${type}: stale rendered file`);
     let peak = 0, energy = 0;
     for (const data of channels) {
       assert.equal(data.length, Math.ceil(sonicScore[type].duration * SAMPLE_RATE));
@@ -19,7 +19,9 @@ test('every shipped cue matches its authored PCM, has headroom, zero endpoints a
       assert.ok(Math.abs(sum / data.length) < .001, `${type}: DC offset`);
     }
     assert.ok(peak <= .651 && peak > .1, `${type}: clipping or silent`);
-    assert.ok(energy > .02, `${type}: useful audible energy`);
+    assert.ok(Math.sqrt(energy / (channels[0].length * 2)) > .025, `${type}: useful audible body`);
+    let monoEnergy = 0; for (let i = 0; i < channels[0].length; i++) monoEnergy += ((channels[0][i] + channels[1][i]) * .5) ** 2;
+    assert.ok(monoEnergy / (energy * .5) > .7, `${type}: excessive mono cancellation`);
     fingerprints.add(energy.toFixed(6));
   }
   assert.equal(fingerprints.size, Object.keys(sonicScore).length, 'Cues must not be aliased copies');
@@ -28,11 +30,15 @@ test('every shipped cue matches its authored PCM, has headroom, zero endpoints a
 test('optional room loops remain quiet, stereo and continuous at the wrap', () => {
   for (const scene of sonicScenes) {
     const channels = renderRoom(scene);
-    assert.deepEqual(Buffer.from(wav(channels)), readFileSync(new URL(`../public/audio/score-v1/room-${scene}.wav`, import.meta.url)));
+    assert.deepEqual(Buffer.from(wav(channels)), readFileSync(new URL(`../public/audio/score-v2/room-${scene}.wav`, import.meta.url)));
     assert.notDeepEqual(channels[0], channels[1]);
     for (const data of channels) {
-      let peak = 0; for (const sample of data) peak = Math.max(peak, Math.abs(sample));
-      assert.ok(peak < .15); assert.ok(Math.abs(data[0] - data.at(-1)!) < .01, `${scene}: audible loop seam`);
+      let peak = 0, energy = 0, sum = 0;
+      for (const sample of data) { assert.ok(Number.isFinite(sample)); peak = Math.max(peak, Math.abs(sample)); energy += sample * sample; sum += sample; }
+      assert.equal(data.length, SAMPLE_RATE * 8);
+      assert.ok(peak < .15); assert.ok(Math.abs(data[0] - data.at(-1)!) < .002, `${scene}: audible loop seam`);
+      assert.ok(Math.sqrt(energy / data.length) > .015, `${scene}: field must retain audible body`);
+      assert.ok(Math.abs(sum/data.length) < .001, `${scene}: DC offset`);
     }
   }
 });

@@ -49,7 +49,7 @@ function Station({ index, onWatch, compact, reducedMotion }: { index: number; on
   const inspectionId = `tunnel-inspection-${portal.id}`;
   function toggleInspection() {
     setTunnelInspection({ station: expanded ? null : portal.id, expanded: !expanded, rotation: 0 });
-    playSound('select');
+    playSound(expanded ? 'close' : 'scan', { intensity: .8 });
   }
   function turnSculpture(direction: number) {
     setTunnelInspection({ station: portal.id, expanded: true, rotation: Math.max(-Math.PI, Math.min(Math.PI, inspection.rotation + direction * Math.PI / 6)) });
@@ -64,14 +64,14 @@ function Station({ index, onWatch, compact, reducedMotion }: { index: number; on
       setTunnelInspection({ station: null, expanded: false, rotation: 0 });
       inspectionToggle.current?.focus({ preventScroll: true });
       event.preventDefault();
-      playSound('select');
+      playSound('close');
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [expanded]);
   return <article className="tunnel-panel" data-environment={chapter.environment} data-text-motion="off" data-reduced-motion={reducedMotion} data-expanded={expanded} data-inspection-mode={compact ? 'story' : 'sculpture'} aria-labelledby={`tunnel-heading-${portal.id}`}
     onKeyDown={event => { if (event.key === 'Escape' && expanded) { toggleInspection(); inspectionToggle.current?.focus(); event.stopPropagation(); } }}>
-    <div className="tunnel-panel-top"><span><b>{String(index + 1).padStart(2, '0')}</b>{portal.title}</span><button ref={inspectionToggle} onClick={toggleInspection} aria-expanded={expanded} aria-controls={inspectionId} aria-label={`${expanded ? 'Close' : 'Inspect'} ${portal.title} exhibit`}><CornersOut size={16}/><span>{expanded ? 'CLOSE EXHIBIT' : 'INSPECT'}</span></button></div>
+    <div className="tunnel-panel-top"><span><b>{String(index + 1).padStart(2, '0')}</b>{portal.title}</span><button data-sound-owned ref={inspectionToggle} onClick={toggleInspection} aria-expanded={expanded} aria-controls={inspectionId} aria-label={`${expanded ? 'Close' : 'Inspect'} ${portal.title} exhibit`}><CornersOut size={16}/><span>{expanded ? 'CLOSE EXHIBIT' : 'INSPECT'}</span></button></div>
     {compact && film && <PassageCompactMedia chapter={chapter} film={film} saved={!!savedFilm} reducedMotion={reducedMotion} onWatch={onWatch}/>}
     <div className="tunnel-panel-heading"><h2 id={`tunnel-heading-${portal.id}`} aria-label={chapter.lines.join(' ')}><DepthText text={chapter.lines[0]}/><br/><span><DepthText text={chapter.lines[1]}/></span></h2></div>
     <div className="tunnel-panel-copy"><p>{chapter.copy}</p><a className="tunnel-enter-room" href={href(portal.route)}>{chapter.action}<ArrowUpRight size={22}/></a></div>
@@ -81,11 +81,11 @@ function Station({ index, onWatch, compact, reducedMotion }: { index: number; on
     </div>}
     <div id={inspectionId} className="tunnel-inspection" hidden={!expanded}>
       <div className="tunnel-inspection-heading"><h3>{chapter.object}</h3>{!compact && <span role="status" aria-label={`Rotation ${Math.round(inspection.rotation * 180 / Math.PI)} degrees`}>{Math.round(inspection.rotation * 180 / Math.PI)}°</span>}</div>
-      {compact ? <p>{film?.description ?? portal.description}</p> : <div className="tunnel-inspection-controls" role="group" aria-label={`Rotate ${portal.title} sculpture`}>
+      {compact ? <p>{film?.description ?? portal.description}</p> : <div className="tunnel-inspection-controls" data-sound-owned role="group" aria-label={`Rotate ${portal.title} sculpture`}>
         <span>Turn the sculpture</span>
         <button onClick={() => turnSculpture(-1)} disabled={inspection.rotation <= -Math.PI} aria-label={`Rotate ${portal.title} sculpture left`}><ArrowLeft size={18}/></button>
         <button onClick={() => turnSculpture(1)} disabled={inspection.rotation >= Math.PI} aria-label={`Rotate ${portal.title} sculpture right`}><ArrowRight size={18}/></button>
-        <button className="tunnel-inspection-reset" onClick={() => { setTunnelInspection({ station: portal.id, expanded: true, rotation: 0 }); playSound('select'); }} disabled={Math.abs(inspection.rotation) < .001}><ArrowCounterClockwise size={16}/><span>Reset</span></button>
+        <button className="tunnel-inspection-reset" onClick={() => { setTunnelInspection({ station: portal.id, expanded: true, rotation: 0 }); playSound('sculpture-reset'); }} disabled={Math.abs(inspection.rotation) < .001}><ArrowCounterClockwise size={16}/><span>Reset</span></button>
       </div>}
     </div>
     {chapter.id === 'my-world' && <p className="tunnel-collection-state">{savedFilm ? `From your collection · ${viewer.saved.length} saved ${viewer.saved.length === 1 ? 'story' : 'stories'}` : 'Your collection starts with a story. An editorial selection to begin.'}</p>}
@@ -275,7 +275,7 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
     cancelAnimationFrame(stationJumpFrame.current);
     setPreviewStation(null);
     setTunnelInspection({ station: null, expanded: false, rotation: 0 });
-    enterSpatialWorld(); playSound('select');
+    enterSpatialWorld(); playSound('portal', { intensity: .82 });
     function deliverJump() {
       // Closing an exhibit changes the compact document height. Let its observer
       // finish refreshing before native smooth scrolling takes ownership.
@@ -293,31 +293,31 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
     <div className="tunnel-hero-checkpoint"><section className="tunnel-hero" data-text-motion="off" ref={hero}>
       <div className="tunnel-hero-copy"><h1 aria-label="CULTURE. WITHOUT BORDERS."><DepthText text="CULTURE." living/><br/><span className="living-type-outline"><DepthText text="WITHOUT" living/></span><br/><DepthText text="BORDERS" living/><span className="tunnel-full-stop" aria-hidden="true">.</span></h1>
         <p className="living-copy"><LivingWords text="Every film opens a world."/><br/><LivingWords text="Go inside. See where it takes you." offset={5}/></p>
-        <button className="tunnel-entry-button" onClick={() => goToStation(0)} data-cursor="ENTER" data-mechanical-press><LivingAction text="ENTER THE WORLD"/><ArrowRight size={23}/></button>
+        <button className="tunnel-entry-button" data-sound-owned onClick={() => goToStation(0)} data-cursor="ENTER" data-mechanical-press><LivingAction text="ENTER THE WORLD"/><ArrowRight size={23}/></button>
         <a className="tunnel-browse" href={href('/category/movies')}><LivingAction text="Browse the films"/><ArrowUpRight size={14}/></a>
       </div>
       <div className="tunnel-hero-caption" aria-hidden="true"><span>AN OPEN WORLD<br/>OF ENTERTAINMENT</span><i/><span>MONUMENTAL<br/>STREAMS</span></div>
-      {!reading && !reducedMotion && <div className="tunnel-relay-control" data-expanded={life.relayOpen}>
-        <button ref={relayToggle} aria-pressed={life.relayOpen} aria-expanded={life.relayOpen} aria-controls="tunnel-relay-parts" onClick={() => { setTunnelRelay(!life.relayOpen); playSound('sculpture-turn'); }}><CornersOut size={17}/><span>{life.relayOpen ? 'Fold the relay' : 'Unfold the relay'}</span><ArrowUpRight size={16}/></button>
+      {!reading && !reducedMotion && <div className="tunnel-relay-control" data-sound-owned data-expanded={life.relayOpen}>
+        <button ref={relayToggle} aria-pressed={life.relayOpen} aria-expanded={life.relayOpen} aria-controls="tunnel-relay-parts" onClick={() => { setTunnelRelay(!life.relayOpen); playSound(life.relayOpen ? 'sculpture-fold' : 'sculpture-unfold'); }}><CornersOut size={17}/><span>{life.relayOpen ? 'Fold the relay' : 'Unfold the relay'}</span><ArrowUpRight size={16}/></button>
         <span>A living mechanism. Yours to open.</span>
         <div id="tunnel-relay-parts" className="tunnel-relay-parts" data-flight-protected role="group" aria-label="Inspect relay components" hidden={!life.relayOpen}>
           <span id="tunnel-relay-help">Select a shell to reveal its mechanism.</span>
-          <div className="tunnel-relay-shells">{Array.from({ length: 6 }, (_, part) => <button key={part} aria-label={`Inspect relay component ${part + 1}`} aria-describedby={`tunnel-relay-shell-${part} tunnel-relay-help`} aria-pressed={life.relayPart === part} onClick={() => { selectTunnelRelayPart(life.relayPart === part ? null : part); playSound('sculpture-turn'); }}><span id={`tunnel-relay-shell-${part}`}>Shell</span><b>{String(part + 1).padStart(2, '0')}</b></button>)}</div>
+          <div className="tunnel-relay-shells">{Array.from({ length: 6 }, (_, part) => <button key={part} aria-label={`Inspect relay component ${part + 1}`} aria-describedby={`tunnel-relay-shell-${part} tunnel-relay-help`} aria-pressed={life.relayPart === part} onClick={() => { selectTunnelRelayPart(life.relayPart === part ? null : part); playSound(life.relayPart === part ? 'close' : 'scan', { pan: (part / 5 - .5) * .8 }); }}><span id={`tunnel-relay-shell-${part}`}>Shell</span><b>{String(part + 1).padStart(2, '0')}</b></button>)}</div>
           <p className="tunnel-relay-feedback" role="status" aria-live="polite" aria-atomic="true">{life.relayPart === null ? 'Six machined leaves surround the signal core.' : `Shell ${String(life.relayPart + 1).padStart(2, '0')} pulled forward. Piston and cooling fins exposed. Select it again to return.`}</p>
-          <button className="tunnel-relay-reassemble" onClick={() => { setTunnelRelay(false); relayToggle.current?.focus({ preventScroll: true }); playSound('sculpture-turn'); }}><span>Reassemble</span><ArrowCounterClockwise size={14}/></button>
+          <button className="tunnel-relay-reassemble" onClick={() => { setTunnelRelay(false); relayToggle.current?.focus({ preventScroll: true }); playSound('sculpture-fold'); }}><span>Reassemble</span><ArrowCounterClockwise size={14}/></button>
         </div>
       </div>}
-      <div className="tunnel-hero-bottom"><button onClick={() => goToStation(0)}><ArrowDown size={17}/><span>SCROLL INTO THE EXPERIENCE</span></button><span>{spatial.unavailable ? 'Every story is still open.' : spatial.ready ? 'Six stations. Endless connections.' : 'Opening the world…'}</span></div>
+      <div className="tunnel-hero-bottom"><button data-sound-owned onClick={() => goToStation(0)}><ArrowDown size={17}/><span>SCROLL INTO THE EXPERIENCE</span></button><span>{spatial.unavailable ? 'Every story is still open.' : spatial.ready ? 'Six stations. Endless connections.' : 'Opening the world…'}</span></div>
     </section></div>
     {chapters.map((chapter, index) => <section key={spatialPortals[index].id} className="tunnel-checkpoint" data-station-index={index} data-environment={chapter.environment} aria-label={`${spatialPortals[index].title} station`}>
       <div className="tunnel-fallback-slot" ref={element => { slots.current[index] = element; }}/>
       {createPortal(<Station index={index} onWatch={onWatch} compact={reading} reducedMotion={reducedMotion}/>, mounts[index])}
       <span className="tunnel-object-caption" aria-hidden="true">{chapter.object}</span>
     </section>)}
-    <nav className="tunnel-wayfinder" aria-label="Tunnel stations" data-in-journey={active >= 0}>
+    <nav className="tunnel-wayfinder" data-sound-owned aria-label="Tunnel stations" data-in-journey={active >= 0}>
       <div className="tunnel-destination-preview" data-visible={previewStation !== null} aria-hidden="true">{previewStation !== null && <><span>{String(previewStation + 1).padStart(2, '0')} / {spatialPortals[previewStation].title}</span><strong>{chapters[previewStation].object}</strong><ArrowUpRight size={18}/></>}</div>
       <button className="tunnel-home-stop" onClick={() => goToStation(-1)} aria-label="Return to tunnel entrance">M<span>THE PASSAGE</span></button>
-      {!reading && !reducedMotion && <button className="tunnel-signal-button" aria-label="Send a signal" title="Send a signal through the tunnel" onClick={() => { sendTunnelSignal(); playSound('sculpture-turn'); }}><span key={life.signal} className={life.signal ? 'tunnel-signal-mark is-sent' : 'tunnel-signal-mark'}><Waveform size={19}/></span><span>Send a signal</span></button>}
+      {!reading && !reducedMotion && <button className="tunnel-signal-button" aria-label="Send a signal" title="Send a signal through the tunnel" onClick={() => { sendTunnelSignal(); playSound('signal', { intensity: .84 }); }}><span key={life.signal} className={life.signal ? 'tunnel-signal-mark is-sent' : 'tunnel-signal-mark'}><Waveform size={19}/></span><span>Send a signal</span></button>}
       <select className="tunnel-mobile-station" aria-label="Choose Passage station" value={active} onChange={event => goToStation(Number(event.target.value))}><option value={-1}>The Passage</option>{spatialPortals.map((portal, index) => <option key={portal.id} value={index}>{String(index + 1).padStart(2, '0')} · {portal.title.replace('The ', '')}</option>)}</select>
       <div className="tunnel-stop-list">{spatialPortals.map((portal, index) => <button key={portal.id} onClick={() => goToStation(index)} onPointerEnter={event => { if (event.pointerType === 'mouse') setPreviewStation(index); }} onPointerLeave={() => setPreviewStation(null)} onFocus={() => setPreviewStation(index)} onBlur={() => setPreviewStation(null)} aria-current={active === index ? 'step' : undefined} aria-label={`Travel to ${portal.title}`}><i/><span>{portal.title.replace('The ', '')}</span></button>)}</div>
       <div className="tunnel-step-buttons"><button onClick={() => goToStation(active - 1)} disabled={active < 0} aria-label="Previous station"><ArrowLeft size={18}/></button><span>{String(Math.max(0, active + 1)).padStart(2, '0')} / 06</span><button onClick={() => goToStation(active + 1)} disabled={active === 5} aria-label="Next station"><ArrowRight size={18}/></button></div>

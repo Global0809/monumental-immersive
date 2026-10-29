@@ -151,7 +151,7 @@ The Passage structural reveal is a finite world-space cut into physical shell ma
 
 The Passage now unfolds side-mounted displays inside a continuous mechanical spiral, while the globe exposes actual catalogue connections. The Time Machine supports a contact sheet and direct era comparison. These interactions retain conventional controls beside spatial gestures. The homepage's silent previews, inspection controls, saved-story state and direct destination routes stay connected to the existing catalogue.
 
-The sound identity is synthesized from six material families, with meaningful selection, travel, memory and mechanical responses. Sound Studio makes volume and optional atmosphere explicit. A real waveform responds to the audio signal. Sound is off until enabled and stays quiet during film playback.
+The sound identity uses 25 authored stereo gestures built from magnetic contacts, pressure, articulated chrome, optical scans and spatial signals. Eight optional environments crossfade by route and Passage chapter; travel opens their air and stereo image through the existing journey controller. Distinct portal, arrival, inspection, memory and mechanism responses replace generic clicks. Sound Studio exposes six auditions, the actual output waveform, room identity and an Immersive mix. Preserve consent and mute; films and explicitly enabled sound studies own playback. See [Sound score](docs/sound-score.md).
 
 Motion uses damped spatial movement, short route arrivals, cover transitions and GSAP Flip for journey reordering. A contextual cursor and subtle pointer lighting apply only on suitable pointer devices. Native scrolling, focus behavior and reduced-motion preferences remain primary.
 

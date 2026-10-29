@@ -272,3 +272,35 @@ test('a decoded cue is reused for subsequent gestures', async () => {
   assert.equal(requests.length, firstLoadCount);
   assert.equal(sources.filter(source => source.started).length, 2);
 });
+
+test('passage motion cannot allocate audio or timers before consent', async () => {
+  for (let index = 0; index < 120; index++) audio.setSonicMotion(index / 120, .8);
+  await settle();
+  assert.equal(contexts.length, 0);
+  assert.equal(requests.length, 0);
+  assert.equal(timers.size, 0);
+});
+
+test('a pending room handoff keeps the old room until the latest destination is ready', async () => {
+  audio.setSoundEnabled(true); audio.setAmbientEnabled(true); await settle();
+  const oldRoom = sources.at(-1)!;
+  assert.equal(oldRoom.stopped, false);
+  holdDecode = true;
+  audio.setAmbientScene('music'); await settle();
+  audio.setAmbientScene('culture'); await settle();
+  assert.equal(oldRoom.stopped, false, 'Do not cut to silence while a room is loading.');
+  const count = sources.length;
+  await finishDecode();
+  assert.equal(sources.length, count + 1, 'Only the last requested room may start.');
+  assert.equal(oldRoom.stopped, true);
+  assert.equal(audio.getSonicState().scene, 'culture');
+});
+
+test('a pending room cannot resume after full-player ownership', async () => {
+  audio.setSoundEnabled(true); await settle();
+  holdDecode = true; audio.setAmbientScene('cinema'); audio.setAmbientEnabled(true); await settle();
+  const count = sources.length;
+  audio.setPlaybackActive(true); await finishDecode();
+  assert.equal(sources.length, count);
+  assert.ok(sources.every(source => !source.started || source.stopped));
+});

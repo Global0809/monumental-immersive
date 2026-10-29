@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowUp } from '@phosphor-icons/react/dist/csr/ArrowUp';
 import { Check } from '@phosphor-icons/react/dist/csr/Check';
 import { X } from '@phosphor-icons/react/dist/csr/X';
-import { playSound, setAmbientScene, type SoundType } from '../services/audio';
+import { playSound, setAmbientScene, setSonicMotion, type SoundType } from '../services/audio';
+import { createPassageScore, routeSoundRoom } from '../services/passageSonic';
+import { getTunnelFrame, subscribeTunnelFrame } from '../services/tunnelJourney';
 import type { Notice } from '../services/feedback';
 import './experience.css';
 import { usePersistentStorage } from '../services/viewer';
@@ -18,7 +20,31 @@ export default function ExperienceLayer({ path, reducedMotion }: { path: string;
   useEffect(() => { if (persistentStorage) setStorageNoticeDismissed(false); }, [persistentStorage]);
 
   useEffect(() => {
-    setAmbientScene(path === '/' ? 'home' : path === '/world' ? 'world' : path === '/time-machine' ? 'time' : 'library');
+    setAmbientScene(routeSoundRoom(path));
+    if (path !== '/') { setSonicMotion(0); return; }
+    const score = createPassageScore({
+      room: setAmbientScene, motion: setSonicMotion,
+      arrival: compact => { if (!document.hidden) playSound('arrival', { intensity: compact ? .44 : .62 }); },
+      schedule: (callback, delay) => { const timer = window.setTimeout(callback, delay); return () => window.clearTimeout(timer); },
+    });
+    const update = () => score.sample(getTunnelFrame(), performance.now(), !document.hidden);
+    const intent = (event: Event) => {
+      if (!event.isTrusted || document.hidden) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('dialog,[popover]:popover-open,input:not([type=range]),textarea,[contenteditable=true]')) return;
+      if (event.type === 'pointerdown' && !target?.closest('.tunnel-entry-button,.tunnel-hero-bottom button,.tunnel-wayfinder')) return;
+      if (event instanceof KeyboardEvent && !['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End', ' ', 'Enter'].includes(event.key)) return;
+      score.arm(performance.now());
+    };
+    const unsubscribe = subscribeTunnelFrame(update);
+    for (const type of ['wheel', 'touchmove', 'pointerdown', 'keydown']) window.addEventListener(type, intent, { passive: true, capture: true });
+    document.addEventListener('visibilitychange', update);
+    update();
+    return () => {
+      unsubscribe(); score.dispose();
+      for (const type of ['wheel', 'touchmove', 'pointerdown', 'keydown']) window.removeEventListener(type, intent, true);
+      document.removeEventListener('visibilitychange', update);
+    };
   }, [path]);
 
   useEffect(() => {
@@ -53,19 +79,22 @@ export default function ExperienceLayer({ path, reducedMotion }: { path: string;
     let lastHover = -Infinity;
     let hoverTimer = 0;
     let previousTarget: HTMLElement | null = null;
-    const excluded = (el: Element) => el.closest('[data-sound-owned],.ms-player-dialog,.sound-studio');
-    const hoverTargets = '.film-image > a,.film-title,.hero-feature,.portal,.category-index a,.journey-stop-picture,.bottom-nav a,.index-links a,.ex-story-image > a,[data-sound-hover]';
+    const excluded = (el: Element) => el.closest('.ms-player-dialog,.sound-studio');
+    const hoverTargets = '.film-image > a,.film-title,.hero-feature,.portal,.category-index a,.journey-stop-picture,.bottom-nav a,.index-links a,.ex-story-image > a,.primary-navigation a,.header-actions button,.directory-primary a,.directory-secondary a,.tunnel-wayfinder button,.tunnel-entry-button,.tunnel-panel button,.tunnel-panel a,.tunnel-relay-control button,.flight-crew-list button,.ct-filmstrip button,[data-sound-hover]';
     const cancelHover = () => { window.clearTimeout(hoverTimer); hoverTimer = 0; };
     const click = (e: MouseEvent) => {
       cancelHover();
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || !(e.target instanceof Element)) return;
       const control = e.target.closest<HTMLElement>('button,a,summary');
-      if (!control || excluded(control) || control.matches(':disabled,[aria-disabled="true"]')) return;
+      if (!control || excluded(control) || control.closest('[data-sound-owned]') || control.matches(':disabled,[aria-disabled="true"]')) return;
       const label = (control.getAttribute('aria-label') || control.textContent || '').toLowerCase();
       const explicit = control.dataset.sound as SoundType | undefined;
       const disclosure = control.tagName === 'SUMMARY' ? control.closest('details') : null;
-      const type: SoundType = explicit || (disclosure ? disclosure.open ? 'close' : 'open' : control.tagName === 'A' && control.getAttribute('href')?.startsWith('#/') ? 'navigate' : /close|cancel|dismiss/.test(label) ? 'close' : /open|index|search/.test(label) ? 'open' : 'select');
-      playSound(type);
+      const type: SoundType = explicit || (disclosure ? disclosure.open ? 'close' : 'open' : control.tagName === 'A' && control.getAttribute('href')?.startsWith('#/') ? 'navigate' : /close|cancel|dismiss/.test(label) ? 'close' : /inspect|reveal|framework/.test(label) ? 'scan' : /open|index|search/.test(label) ? 'open' : 'select');
+      const pan = e.detail > 0 ? Math.max(-.55, Math.min(.55, e.clientX / innerWidth * 1.1 - .55)) : 0;
+      // Router and scene listeners may claim this same click later in the
+      // bubble. Let their semantic sound win regardless of effect mount order.
+      queueMicrotask(() => { if (!e.defaultPrevented) playSound(type, { pan }); });
     };
     const hover = (e: PointerEvent) => {
       if (e.pointerType !== 'mouse' || !(e.target instanceof Element)) return;
@@ -79,7 +108,7 @@ export default function ExperienceLayer({ path, reducedMotion }: { path: string;
         hoverTimer = 0;
         if (previousTarget !== control || !control.isConnected || !control.matches(':hover') || document.hidden || performance.now() - lastHover < 450) return;
         lastHover = performance.now();
-        playSound('hover', { intensity: .23, pan });
+        playSound('hover', { intensity: .5, pan });
       }, 90);
     };
     const leave = (e: PointerEvent) => {

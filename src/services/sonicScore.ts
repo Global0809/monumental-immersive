@@ -1,28 +1,32 @@
-/** Authored materials, rendered ahead of time. These are synthesis, not field recordings. */
+/** Original stereo material studies, rendered offline. No sampled or generated stock audio. */
 export const sonicScore = {
-  activate: { duration: 1.12, peak: .65, material: 'Monumental signature' },
-  select: { duration: .22, peak: .48, material: 'Felted detent' },
-  save: { duration: .64, peak: .55, material: 'Keepsake clasp' },
-  remove: { duration: .28, peak: .42, material: 'Clasp release' },
-  destination: { duration: 1.08, peak: .63, material: 'Atlas transit' },
-  era: { duration: .83, peak: .55, material: 'Film splice' },
-  error: { duration: .28, peak: .34, material: 'Soft obstruction' },
-  hover: { duration: .085, peak: .16, material: 'Felt contact' },
-  navigate: { duration: .53, peak: .48, material: 'Editorial cut' },
-  open: { duration: .47, peak: .46, material: 'Hinged aperture' },
-  close: { duration: .29, peak: .42, material: 'Damped closure' },
-  drag: { duration: .19, peak: .25, material: 'Bearing friction' },
-  tick: { duration: .105, peak: .25, material: 'Index tooth' },
-  success: { duration: .8, peak: .58, material: 'Joined structure' },
-  focus: { duration: .33, peak: .4, material: 'Optical lock' },
-  collider: { duration: 1.15, peak: .64, material: 'Confluence' },
-  'sculpture-unfold': { duration: .92, peak: .6, material: 'Chrome opening' },
-  'sculpture-fold': { duration: .58, peak: .5, material: 'Chrome settling' },
-  'sculpture-pulse': { duration: 1.18, peak: .65, material: 'Chrome resonance' },
-  'sculpture-turn': { duration: .24, peak: .3, material: 'Chrome bearing' },
-  'sculpture-reset': { duration: .53, peak: .47, material: 'Chrome alignment' },
+  activate: { duration: 1.45, peak: .65, material: 'Monumental ignition' },
+  select: { duration: .29, peak: .51, material: 'Magnetic detent' },
+  save: { duration: .88, peak: .58, material: 'Memory seal' },
+  remove: { duration: .38, peak: .45, material: 'Magnetic release' },
+  destination: { duration: 1.26, peak: .63, material: 'Atlas vector' },
+  era: { duration: 1.08, peak: .58, material: 'Archive transport' },
+  error: { duration: .32, peak: .36, material: 'Soft resistance' },
+  hover: { duration: .15, peak: .26, material: 'Proximity contact' },
+  navigate: { duration: .72, peak: .55, material: 'Spatial passage' },
+  open: { duration: .68, peak: .55, material: 'Pressure aperture' },
+  close: { duration: .43, peak: .48, material: 'Vacuum seal' },
+  drag: { duration: .26, peak: .32, material: 'Suspended bearing' },
+  tick: { duration: .16, peak: .32, material: 'Instrument index' },
+  success: { duration: 1.03, peak: .6, material: 'Resolved structure' },
+  focus: { duration: .46, peak: .47, material: 'Optical alignment' },
+  collider: { duration: 1.43, peak: .65, material: 'Converging fields' },
+  'sculpture-unfold': { duration: 1.23, peak: .62, material: 'Articulated chrome' },
+  'sculpture-fold': { duration: .86, peak: .56, material: 'Counterweight return' },
+  'sculpture-pulse': { duration: 1.36, peak: .65, material: 'Structural resonance' },
+  'sculpture-turn': { duration: .35, peak: .36, material: 'Orbital bearing' },
+  'sculpture-reset': { duration: .78, peak: .54, material: 'Mechanical registration' },
+  portal: { duration: 1.65, peak: .65, material: 'Threshold pressure' },
+  scan: { duration: .79, peak: .5, material: 'Optical section' },
+  signal: { duration: .83, peak: .55, material: 'Relay transmission' },
+  arrival: { duration: 1.18, peak: .6, material: 'Spatial settlement' },
 } as const;
 export type SoundType = keyof typeof sonicScore;
-export type AmbientScene = 'home' | 'world' | 'time' | 'library';
-export const sonicScenes: AmbientScene[] = ['home', 'world', 'time', 'library'];
-export const sonicAsset = (name: SoundType | `room-${AmbientScene}`) => `${import.meta.env?.BASE_URL ?? '/'}audio/score-v1/${name}.wav`;
+export type AmbientScene = 'home' | 'world' | 'time' | 'library' | 'cinema' | 'music' | 'culture' | 'collection';
+export const sonicScenes: AmbientScene[] = ['home', 'world', 'time', 'library', 'cinema', 'music', 'culture', 'collection'];
+export const sonicAsset = (name: SoundType | `room-${AmbientScene}`) => `${import.meta.env?.BASE_URL ?? '/'}audio/score-v2/${name}.wav`;
