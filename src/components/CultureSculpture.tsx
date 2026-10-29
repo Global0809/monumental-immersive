@@ -436,7 +436,7 @@ export default function CultureSculpture({ active, onSelect, reducedMotion, onWa
     ember.position.set(-2.4, -1.8, 2.4);
     scene.add(ember);
 
-    const xray = attachXray(renderer, [chrome,paleChrome,darkChrome], [...bands,core,...innerRings]);
+    const xray = attachXray(renderer, [chrome,paleChrome,darkChrome], [...bands,core,...innerRings], () => requestDraw());
     let disposed = false;
     let visible = true;
     let failed = false;
@@ -518,6 +518,7 @@ export default function CultureSculpture({ active, onSelect, reducedMotion, onWa
       }
       previousTime = now;
       const reduced = reducedRef.current;
+      const scanSettling = xray.update(!reduced && !dragging, now);
       const frozen = pointHoveredRef.current;
       const idle = !reduced && !pausedRef.current;
       if (idle && !frozen) time += dt;
@@ -608,7 +609,6 @@ export default function CultureSculpture({ active, onSelect, reducedMotion, onWa
       resonanceWave.scale.setScalar(0.65 + pulseAge * 1.2);
       waveMaterial.opacity = Math.max(0, 1 - pulseAge) * pulseStrength * 0.28;
       satellites.forEach((node, i) => node.scale.setScalar(i === activeRef.current ? 1.7 : 1));
-      xray.update(!reduced);
       renderer.render(scene, camera);
       for (let i = 0; i < satellites.length; i += 1) {
         const button = buttonsRef.current[i];
@@ -635,7 +635,7 @@ export default function CultureSculpture({ active, onSelect, reducedMotion, onWa
       const settling = (!frozen && rotationSettling) || Math.abs((expandedRef.current ? 1 : 0) - opening) > 0.003;
       if (resetPending && !settling) resetPending = false;
       const filmSettling = bandLift.some((lift, index) => Math.abs(lift - (instrument.enabled && instrument.open && instrument.index === index ? 1 : 0)) > .003);
-      if (idle || dragging || pressureRef.current || pressure > 0.005 || pulseAge < 2.1 || sonicEnergy > 0.005 || settling || resetPending || instrument.playing || filmSettling || aperture > 0.003 || portalUntilRef.current > now) frame = requestAnimationFrame(draw);
+      if (scanSettling || idle || dragging || pressureRef.current || pressure > 0.005 || pulseAge < 2.1 || sonicEnergy > 0.005 || settling || resetPending || instrument.playing || filmSettling || aperture > 0.003 || portalUntilRef.current > now) frame = requestAnimationFrame(draw);
     };
     const requestDraw = () => {
       if (!disposed && !frame && visible && !document.hidden && !failed && !playbackActive) { cadence.reset(); frame = requestAnimationFrame(draw); }

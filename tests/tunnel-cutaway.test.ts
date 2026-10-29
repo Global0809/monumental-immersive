@@ -47,7 +47,7 @@ test('service bays stay within the local geometry budget and upload only when th
   assert.deepEqual(batches.map(mesh => mesh.instanceMatrix.version), versions, 'a held cursor never reuploads the service geometry');
   const initialDepths = batches.map(mesh => mesh.boundingSphere!.center.z);
   camera.position.z -= 60; camera.updateMatrixWorld();
-  controller.update([.8, .1], true, 1440, 900, 1 / 60);
+  for (let frame = 0; frame < 18; frame++) controller.update([.8, .1], true, 1440, 900, 1 / 60);
   batches.forEach((mesh, index) => {
     assert.equal(mesh.instanceMatrix.version, versions[index] + 1, 'one upload selects the new row window');
     assert.ok(mesh.boundingSphere!.center.z < initialDepths[index] - 50, 'bounds follow actual distant world coordinates');
@@ -98,9 +98,11 @@ test('cutaway activation is reversible, protects media, and releases only its ow
   assert.equal(controller.update([.8, .1], false, 1440, 900, 1 / 60), false);
   assert.equal(assembly.visible, false);
   assert.equal(controller.update([.8, .1], true, 1440, 900, 1 / 60), true, 're-entry works after suspension');
-  assert.equal(controller.update([0, 0], true, 1440, 900, 1 / 60), false, 'moving into empty space retires the old reveal');
+  for (let frame = 0; frame < 30; frame++) controller.update([0, 0], true, 1440, 900, 1 / 60);
+  assert.equal(controller.update([0, 0], true, 1440, 900, 1 / 60), false, 'moving into empty space smoothly retires the old reveal');
   assert.equal(assembly.visible, false);
 
+  controller.destroy();
   controller.destroy();
   assert.deepEqual(scene.children, originals, 'teardown preserves pre-existing scene objects');
   externalMaterials.forEach((material, index) => {

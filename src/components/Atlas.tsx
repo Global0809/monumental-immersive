@@ -177,7 +177,7 @@ export default function Atlas({
     );
     globe.add(body);
     surfaceFinish.apply(body.material, 'metal', .35);
-    const xray = attachXray(renderer, [body.material], [body]);
+    const xray = attachXray(renderer, [body.material], [body], () => requestDraw());
     const haloMaterial = new THREE.ShaderMaterial({
       uniforms: { tint: { value: new THREE.Color("#e9eee2") } },
       vertexShader:
@@ -422,6 +422,7 @@ export default function Atlas({
       // RAF timestamp. Never let that move a newly revealed connection backward.
       const delta = Math.max(0, Math.min((time - lastTime) / 1000, 0.05));
       lastTime = time;
+      const scanSettling = xray.update(!motionRef.current && !dragging, time);
       const cameraTarget = baseDistance - targetZoom * .3;
       const zooming = Math.abs(camera.position.z - cameraTarget) > .002;
       camera.position.z = motionRef.current ? cameraTarget : THREE.MathUtils.lerp(camera.position.z, cameraTarget, 1 - Math.exp(-delta * 7));
@@ -465,9 +466,8 @@ export default function Atlas({
       // DOM pins and WebGL must project from the same camera frame during zoom.
       camera.updateMatrixWorld(true);
       updateLabels();
-      xray.update(!motionRef.current);
       cinematic.render(scene, camera, { enabled: !motionRef.current && window.innerWidth >= 980 && window.innerHeight >= 660 && getSpatialPreferences().quality !== 'light', strength: .1, lens: 0 });
-      if (targetRotation || zooming || connectionReveal < 1 || (!motionRef.current && !pauseRef.current))
+      if (scanSettling || targetRotation || zooming || connectionReveal < 1 || (!motionRef.current && !pauseRef.current))
         frame = window.requestAnimationFrame(draw);
     };
     const requestDraw = () => {

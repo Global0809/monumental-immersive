@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { reactiveField as input } from './reactiveField';
+import { acquireXrayPointer, invalidateXrayPointer, readXrayPointer } from './xrayPointer';
+import { advanceXrayLens, createXrayLens } from './xrayLens';
 
 const SCAN_RADIUS = 170;
 const MAX_OVERLAYS = 28;
@@ -10,13 +11,13 @@ function hasVideo(material: THREE.Material) {
 }
 
 /** A local material reveal; shares the scene renderer and never shades film surfaces. */
-export function attachXray(renderer: THREE.WebGLRenderer, materials: THREE.MeshStandardMaterial[], meshes: THREE.Mesh[]) {
+export function attachXray(renderer: THREE.WebGLRenderer, materials: THREE.MeshStandardMaterial[], meshes: THREE.Mesh[], requestDraw?: () => void) {
   const cursor = { value: new THREE.Vector2(-10000, -10000) };
   const radius = { value: 0 };
-  const pixelRatio = { value: renderer.getPixelRatio() };
-  const uniforms = 'uniform vec2 scanCursor; uniform float scanRadius; uniform float scanPixelRatio;\n';
-  const mask = `float scanDistance = distance(gl_FragCoord.xy, scanCursor) / max(1.0, scanRadius);
-    float scan = (1.0 - smoothstep(.28, 1.0, scanDistance)) * step(1.0, scanRadius);`;
+  const resolutionScale = { value: new THREE.Vector2(1, 1) }, strength = { value: 0 };
+  const uniforms = 'uniform vec2 scanCursor; uniform float scanRadius; uniform vec2 scanResolutionScale; uniform float scanStrength;\n';
+  const mask = `float scanDistance = distance(gl_FragCoord.xy / scanResolutionScale, scanCursor) / max(1.0, scanRadius);
+    float scan = (1.0 - smoothstep(.28, 1.0, scanDistance)) * scanStrength;`;
   const originals = [...new Set(materials)].filter(m => !hasVideo(m)).map(m => ({
     m, compile: m.onBeforeCompile, key: m.customProgramCacheKey, programKey: m.customProgramCacheKey(),
   }));
@@ -25,7 +26,8 @@ export function attachXray(renderer: THREE.WebGLRenderer, materials: THREE.MeshS
       compile.call(m, shader, activeRenderer);
       shader.uniforms.scanCursor = cursor;
       shader.uniforms.scanRadius = radius;
-      shader.uniforms.scanPixelRatio = pixelRatio;
+      shader.uniforms.scanResolutionScale = resolutionScale;
+      shader.uniforms.scanStrength = strength;
       shader.vertexShader = 'varying vec3 vScanPosition;\n' + shader.vertexShader;
       shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n vScanPosition = transformed;');
       shader.fragmentShader = uniforms + 'varying vec3 vScanPosition;\n' + shader.fragmentShader;
@@ -37,17 +39,15 @@ export function attachXray(renderer: THREE.WebGLRenderer, materials: THREE.MeshS
           float sectionDistance = abs(fract(section + .5) - .5);
           float sectionWidth = max(fwidth(section) * 1.15, .012);
           float sectionLine = 1.0 - smoothstep(sectionWidth, sectionWidth * 2.0, sectionDistance);
-          float fineScan = .5 + .5 * sin(gl_FragCoord.y / max(1.0, scanPixelRatio) * 1.05);
           vec3 heat = mix(vec3(.025, .008, .006), vec3(.78, .075, .026), scanRim);
           heat = mix(heat, vec3(1.0, .78, .64), pow(scanRim, 5.0));
           heat += vec3(.82, .15, .065) * sectionLine * (.14 + scanRim * .25);
-          heat += fineScan * vec3(.018, .006, .003);
           // Retain a little original reflection so the reveal still feels metallic.
           outgoingLight = mix(outgoingLight, heat + outgoingLight * .12, scan * .94);
         }
         #include <opaque_fragment>`);
     };
-    m.customProgramCacheKey = () => `${programKey}|monumental-scan-v2`;
+    m.customProgramCacheKey = () => `${programKey}|monumental-scan-v3`;
     m.needsUpdate = true;
   });
 
@@ -59,8 +59,10 @@ export function attachXray(renderer: THREE.WebGLRenderer, materials: THREE.MeshS
   const geometries = new Map<THREE.BufferGeometry, THREE.BufferGeometry>();
   const wire = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, depthTest: true, toneMapped: false,
-    uniforms: { scanCursor: cursor, scanRadius: radius, scanPixelRatio: pixelRatio },
-    vertexShader: 'void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+    uniforms: { scanCursor: cursor, scanRadius: radius, scanResolutionScale: resolutionScale, scanStrength: strength },
+    // A tiny clip-depth bias prevents coplanar lines flickering against their
+    // own shell, while real nearer film surfaces still occlude the overlay.
+    vertexShader: 'void main(){gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);gl_Position.z-=.000015*gl_Position.w;}',
     fragmentShader: uniforms + `void main(){${mask}
       if(scan < .015) discard;
       vec3 tint = mix(vec3(.98,.20,.09), vec3(1.0,.78,.64), scan * .32);
@@ -102,30 +104,44 @@ export function attachXray(renderer: THREE.WebGLRenderer, materials: THREE.MeshS
     return overlay;
   });
 
-  let dirty = true;
+  let dirty = true, disposed = false;
   let bounds = renderer.domElement.getBoundingClientRect();
   let visible = false;
-  const invalidate = () => { dirty = true; };
-  const resizer = new ResizeObserver(invalidate);
+  const lens = createXrayLens(), drawingSize = new THREE.Vector2();
+  const invalidate = (layout = false) => {
+    dirty = true;
+    const input = readXrayPointer();
+    // A layout event can move a previously distant paused canvas beneath the
+    // stationary cursor. Force one eligible frame before trusting cached bounds.
+    // Actual bounds are measured once by that frame, not by each pointer event.
+    if (layout || visible || input.x > bounds.left - SCAN_RADIUS && input.x < bounds.right + SCAN_RADIUS && input.y > bounds.top - SCAN_RADIUS && input.y < bounds.bottom + SCAN_RADIUS) requestDraw?.();
+  };
+  const releasePointer = acquireXrayPointer(invalidate);
+  const resizer = new ResizeObserver(() => { dirty = true; invalidateXrayPointer(); });
   resizer.observe(renderer.domElement);
-  window.addEventListener('scroll', invalidate, { passive: true });
-  window.addEventListener('resize', invalidate, { passive: true });
   return {
-    update(enabled = true) {
+    /** True only while a local reveal is settling; paused scenes request those
+     * bounded frames through their existing scheduler and then rest again. */
+    update(enabled = true, now = performance.now()) {
+      if (disposed) return false;
       if (dirty) { bounds = renderer.domElement.getBoundingClientRect(); dirty = false; }
-      const ratio = renderer.getPixelRatio();
+      const input = readXrayPointer();
+      renderer.getDrawingBufferSize(drawingSize);
       const nearby = input.x > bounds.left - SCAN_RADIUS && input.x < bounds.right + SCAN_RADIUS
         && input.y > bounds.top - SCAN_RADIUS && input.y < bounds.bottom + SCAN_RADIUS;
-      const on = enabled && nearby && input.active && !input.reduced && !input.blocked;
-      cursor.value.set((input.x - bounds.left) * ratio, (bounds.bottom - input.y) * ratio);
-      pixelRatio.value = ratio;
-      radius.value = on ? SCAN_RADIUS * ratio : 0;
-      if (on !== visible) { overlays.forEach(overlay => { overlay.visible = on; }); visible = on; }
+      const on = enabled && nearby && input.active && !input.pressed;
+      const settling = advanceXrayLens(lens, input.x, input.y, on, now, !enabled || input.pressed || input.blocked || document.hidden || bounds.width <= 0 || bounds.height <= 0);
+      cursor.value.set(lens.x - bounds.left, bounds.bottom - lens.y);
+      resolutionScale.value.set(drawingSize.x / Math.max(1, bounds.width), drawingSize.y / Math.max(1, bounds.height));
+      radius.value = SCAN_RADIUS; strength.value = lens.strength;
+      const shown = lens.strength > .001;
+      if (shown !== visible) { overlays.forEach(overlay => { overlay.visible = shown; }); visible = shown; }
+      return settling;
     },
     dispose() {
+      if (disposed) return; disposed = true;
       resizer.disconnect();
-      window.removeEventListener('scroll', invalidate);
-      window.removeEventListener('resize', invalidate);
+      releasePointer();
       overlays.forEach(overlay => overlay.removeFromParent());
       geometries.forEach(geometry => geometry.dispose());
       wire.dispose();

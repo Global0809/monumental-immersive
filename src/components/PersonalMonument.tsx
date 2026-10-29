@@ -188,7 +188,8 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
       const pointer = new THREE.Vector2();
       const target = new THREE.Vector3();
       const objectMeshes = meshes.map(item => item.mesh);
-      const xray = attachXray(renderer, [chrome, red, thread, activeMaterial], objectMeshes);
+      const xray = attachXray(renderer, [chrome, red, thread, activeMaterial], objectMeshes, redraw);
+      let scanInFlight = false;
       const canRender = () => !disposed && !contextLost && !document.hidden && !playingFilm && state.current.visible;
       const cadence = createFrameCadence();
       function render(time: number) {
@@ -197,6 +198,8 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
         if (!cadence.ready(time)) { frame = requestAnimationFrame(render); return; }
         const dt = Math.min((time - lastTime) / 1000 || 0, .04); lastTime = time;
         const { preferences: prefs, paused: stopped, reducedMotion: reduced } = state.current;
+        const wasScanning = scanInFlight;
+        scanInFlight = xray.update(!reduced && !dragging, time);
         const moving = !stopped && !reduced && !dragging;
         if (moving) illuminationTime += dt;
         const illumination = sampleCinematicLight(illuminationTime, reduced);
@@ -226,12 +229,11 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
           if (part.kind !== 'place') mesh.rotation.set(part.kind === 'journey' ? .5 + kindIndex * .16 : .15, kindIndex * .73, prefs.arrangement === 'column' ? .05 : fraction * .75);
           mesh.material = selectedPart ? activeMaterial : part.kind === 'place' ? red : part.kind === 'film' ? chrome : thread;
         }
-        if (dirty || moving || settling) {
-          xray.update(!reduced);
+        if (dirty || moving || settling || scanInFlight || wasScanning) {
           cinematic.render(scene, camera, { enabled: !reduced && window.innerWidth >= 980 && window.innerHeight >= 660 && getSpatialPreferences().quality !== 'light', strength: .1, lens: 0 });
           dirty = false;
         }
-        if (moving || settling) frame = requestAnimationFrame(render);
+        if (moving || settling || scanInFlight) frame = requestAnimationFrame(render);
       }
       function redraw() { dirty = true; if (!frame && canRender()) { cadence.reset(); lastTime = performance.now() - 16; frame = requestAnimationFrame(render); } }
       function resize() {
@@ -267,8 +269,6 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
       }
       function visibility() { if (!canRender()) { cancelAnimationFrame(frame); frame = 0; } else redraw(); }
       function playback(event: Event) { playingFilm = Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active); visibility(); }
-      // Pausing the sculpture still allows a pointer scan, using its existing frame.
-      function scanRedraw() { if (state.current.visible && state.current.paused && !state.current.reducedMotion) redraw(); }
       function lost(event: Event) { event.preventDefault(); contextLost = true; setFallback(true); cancelAnimationFrame(frame); frame = 0; }
       const resizer = new ResizeObserver(resize); resizer.observe(element);
       renderer.domElement.addEventListener('pointerdown', down);
@@ -278,14 +278,12 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
       renderer.domElement.addEventListener('webglcontextlost', lost);
       document.addEventListener('visibilitychange', visibility);
       window.addEventListener('monumental:playback', playback);
-      window.addEventListener('pointermove', scanRedraw, { passive: true });
-      window.addEventListener('pointerout', scanRedraw, { passive: true });
       actions.current = { rotate: amount => { targetY += amount; redraw(); }, reset: () => { targetX = .12; targetY = -.38; redraw(); }, redraw };
       resize(); setReady(true);
       cleanup = () => {
         cancelAnimationFrame(frame); resizer.disconnect(); document.removeEventListener('visibilitychange', visibility);
         window.removeEventListener('monumental:playback', playback);
-        window.removeEventListener('pointermove', scanRedraw); window.removeEventListener('pointerout', scanRedraw); xray.dispose();
+        xray.dispose();
         renderer.domElement.removeEventListener('pointerdown', down); renderer.domElement.removeEventListener('pointermove', move);
         renderer.domElement.removeEventListener('pointerup', up); renderer.domElement.removeEventListener('pointercancel', up); renderer.domElement.removeEventListener('webglcontextlost', lost);
         geometries.forEach(geometry => geometry.dispose()); [chrome, red, thread, activeMaterial].forEach(material => material.dispose());

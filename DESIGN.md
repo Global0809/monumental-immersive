@@ -72,6 +72,8 @@ The implemented world combines assertive editorial typography with physical, int
 The cinematic finish adds fine material roughness, slow architectural light breathing and restrained highlight diffusion. Peripheral lens softness is limited to Passage travel; reading holds, semantic text and active film pixels remain clear. Supporting objects use quieter optics, with native rendering for compact, reduced-motion and Light quality modes. See `docs/cinematic-rendering.md` for the shared implementation and performance boundaries.
 
 **Key Characteristics:**
+The structural reveal retains physical surface ownership while smoothing entry, exit and handoff. Scrolling keeps pointer tracking active; text, controls and media remain hard exclusions. Shared model inspection works independently of the optional 2D background and wakes paused scenes only while settling. See `docs/xray-stability.md`.
+
 - Monumental condensed headlines with occasional outlined words.
 - Thin rules, square media, deliberate negative space and visible content provenance.
 - A single warm signal accent for selected state, forward action and cultural connections.

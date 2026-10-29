@@ -119,7 +119,7 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
     });
     return candidates.sort((a, b) => b.size - a.size).slice(0, 8).map(candidate => candidate.mesh);
   });
-  const xray = attachXray(renderer, [chrome, pale, black, red, glass], scanMeshes);
+  const xray = attachXray(renderer, [chrome, pale, black, red, glass], scanMeshes, invalidate);
 
   let disposed = false, contextAvailable = true, raf = 0, width = 0, height = 0, inView = true, playingFilm = document.body.classList.contains('monumental-player-active'), dirty = true, active: number | null = null;
   let tween: gsap.core.Tween | undefined;
@@ -146,11 +146,11 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
     light.position.x = -5 + illumination.drift * .32;
     updateCamera();
     if (!options.reducedMotion) { pulse.position.copy(route.getPointAt((time * .000065) % 1)); pulses.forEach((ring, index) => { const scale = 1 + Math.sin(time * .002 + index) * .08; ring.scale.setScalar(active === index ? scale * 1.6 : scale); }); }
-    xray.update(!options.reducedMotion && !playingFilm);
+    const scanSettling = xray.update(!options.reducedMotion && !playingFilm && !drag, time);
     cinematic.render(scene, camera, { enabled: !options.reducedMotion && window.innerWidth >= 980 && window.innerHeight >= 660 && getSpatialPreferences().quality !== 'light', strength: .12, lens: 0 });
     markers.forEach((position, index) => { projected.copy(position).project(camera); options.onProject(index, (projected.x + 1) * width / 2, (1 - projected.y) * height / 2, projected.z < 1 && Math.abs(projected.x) < .93 && Math.abs(projected.y) < .85); });
     dirty = false;
-    if (!options.reducedMotion || tween?.isActive()) raf = requestAnimationFrame(frame);
+    if (scanSettling || !options.reducedMotion || tween?.isActive()) raf = requestAnimationFrame(frame);
   }
   function invalidate() { dirty = true; if (!raf && canRender()) { cadence.reset(); raf = requestAnimationFrame(frame); } }
   function fit() {

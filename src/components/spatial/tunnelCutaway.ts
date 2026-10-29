@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createCutawayMotion, type CutawayTarget } from '../../services/cutawayMotion';
 
 /** The probe intersects the lining in world space. A finite inspection volume
  * exposes one bay, rather than erasing every surface beneath a screen circle. */
@@ -144,13 +145,32 @@ export function createTunnelCutaway(scene: THREE.Scene, _renderer: THREE.WebGLRe
   bindMaterials();
   const raycaster = new THREE.Raycaster(), point = new THREE.Vector2(), focus = new THREE.Vector3(), view = new THREE.Vector3();
   const hits: THREE.Intersection[] = [];
-  let strength = 0;
-  function reset() { strength = 0; section.value.w = 0; root.visible = false; }
+  const motion = createCutawayMotion();
+  const target: CutawayTarget = { surface: '', x: 0, y: 0, z: 0, radius: 0 };
+  let tracking = false, destroyed = false;
+  function reset() { motion.reset(); tracking = false; section.value.w = 0; root.visible = false; }
+  function present(candidate: CutawayTarget | null, delta: number) {
+    const state = motion.sample(candidate, delta);
+    const visible = state.strength > .006;
+    section.value.set(state.x, state.y, state.z, state.radius * state.strength);
+    root.visible = state.surface === 'lining' && visible;
+    if (root.visible) selectRows(state.z);
+    if (!visible) tracking = false;
+    return visible;
+  }
   return {
     bindMaterials, reset,
-    update(pointer: readonly [number, number], enabled: boolean, _width: number, height: number, delta: number) {
-      if (!enabled) { reset(); return false; }
-      point.set(pointer[0], pointer[1]); raycaster.setFromCamera(point, camera);
+    update(pointer: readonly [number, number], enabled: boolean, _width: number, height: number, delta: number, hardBlock = true) {
+      if (destroyed) return false;
+      if (!enabled) { if (hardBlock) { reset(); return false; } return present(null, delta); }
+      if (!pointer.every(Number.isFinite) || !(height > 0)) { reset(); return false; }
+      const dt = Number.isFinite(delta) ? Math.max(0, Math.min(.05, delta)) : 0;
+      if (!tracking) { point.set(pointer[0], pointer[1]); tracking = true; }
+      else {
+        const response = 1 - Math.exp(-32 * dt);
+        point.x += (pointer[0] - point.x) * response; point.y += (pointer[1] - point.y) * response;
+      }
+      raycaster.setFromCamera(point, camera);
       hits.length = 0;
       for (const mesh of relayShells) {
         let visible = true; for (let parent: THREE.Object3D | null = mesh; parent; parent = parent.parent) if (!parent.visible) visible = false;
@@ -159,17 +179,17 @@ export function createTunnelCutaway(scene: THREE.Scene, _renderer: THREE.WebGLRe
       hits.sort((a, b) => a.distance - b.distance);
       const relay = hits[0];
       if (relay) focus.copy(relay.point);
-      else if (!liningIntersection(raycaster.ray, focus)) { reset(); return false; }
-      if (!relay) selectRows(focus.z);
+      else if (!liningIntersection(raycaster.ray, focus)) return present(null, dt);
       view.copy(focus).applyMatrix4(camera.matrixWorldInverse);
       const focalLength = height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
       const radius = relay ? .88 : THREE.MathUtils.clamp(155 * -view.z / focalLength, 1.2, 3.9);
-      strength += (1 - strength) * (1 - Math.exp(-Math.min(.05, delta) * 16));
-      section.value.set(focus.x, focus.y, focus.z, radius * strength);
-      root.visible = !relay && strength > .01;
-      return strength > .01;
+      target.surface = relay ? `relay:${relay.object.id}` : 'lining';
+      target.x = focus.x; target.y = focus.y; target.z = focus.z; target.radius = radius;
+      return present(target, dt);
     },
     destroy() {
+      if (destroyed) return;
+      destroyed = true; reset();
       for (const entry of originals) { entry.material.onBeforeCompile = entry.compile; entry.material.customProgramCacheKey = entry.key; entry.material.alphaToCoverage = entry.alpha; entry.material.needsUpdate = true; }
       scene.remove(root); batches.forEach(mesh => mesh.dispose()); geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); templates.clear(); patched.clear(); relayShells.length = 0;
     },

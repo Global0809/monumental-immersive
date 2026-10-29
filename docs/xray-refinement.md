@@ -1,5 +1,7 @@
 # Passage structural cutaway — 30 October 2026
 
+This records the original structural-cutaway release. The later [X-ray stability correction](xray-stability.md) replaces the scroll-reset behaviour described below and restores shared material inspection on immersive routes.
+
 The active Passage X-ray now reveals a finite volume of the tunnel's construction. It replaces the grainy, wobbling screen mask and bright unlit rods with a scene-lit material section. Existing composition, catalogue, typography, navigation, media and inspection controls are retained.
 
 ## Construction and ownership
