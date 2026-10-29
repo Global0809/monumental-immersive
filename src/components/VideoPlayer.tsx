@@ -88,7 +88,9 @@ export function VideoPlayer({
   const [speed, setSpeed] = useState(1);
   const [resumedAt, setResumedAt] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
+  const [slowLoading, setSlowLoading] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const retryPosition = useRef<{ id: string; time: number } | null>(null);
   const [pipSupported, setPipSupported] = useState(false);
   const [fullscreenSupported, setFullscreenSupported] = useState(false);
   const [nativeControls, setNativeControls] = useState(false);
@@ -249,11 +251,13 @@ export function VideoPlayer({
     const controller = new AbortController();
     let releaseSource = () => {};
     const selectedVideo = videoRef.current;
+    if (retryPosition.current?.id !== selectedVideo.id) retryPosition.current = null;
     setSource(undefined);
     setState("loading");
+    setSlowLoading(false);
     setError("");
     setNotice("");
-    setPosition(0);
+    setPosition(retryPosition.current?.time ?? 0);
     setDuration(0);
     setResumedAt(null);
     setMomentLink('');
@@ -326,16 +330,42 @@ export function VideoPlayer({
   }, [video.id, attempt]);
 
   useEffect(() => {
+    setSlowLoading(false);
     if (state !== "loading" && state !== "buffering") return;
-    const timer = window.setTimeout(
-      () =>
-        setNotice(
-          "This is taking a little longer. Check your connection, or try loading the film again.",
-        ),
-      12000,
-    );
-    return () => window.clearTimeout(timer);
-  }, [state, attempt]);
+    const element = media.current;
+    let timer = 0, lastPosition = element?.currentTime ?? 0;
+    // Offer recovery without pausing, replacing the source or promoting an
+    // ordinary seek to a hard error. Actual playback retires these choices.
+    const restart = () => {
+      window.clearTimeout(timer);
+      setSlowLoading(false);
+      if (!document.hidden) timer = window.setTimeout(() => setSlowLoading(true), 12000);
+    };
+    const progress = () => {
+      if (!element || element.seeking || Math.abs(element.currentTime - lastPosition) < .05) return;
+      lastPosition = element.currentTime;
+      restart();
+    };
+    element?.addEventListener('timeupdate', progress);
+    element?.addEventListener('seeking', restart);
+    document.addEventListener('visibilitychange', restart);
+    restart();
+    return () => {
+      window.clearTimeout(timer);
+      element?.removeEventListener('timeupdate', progress);
+      element?.removeEventListener('seeking', restart);
+      document.removeEventListener('visibilitychange', restart);
+    };
+  }, [state, attempt, video.id, source]);
+
+  function retryPlayback() {
+    const element = media.current;
+    if (element && element.readyState >= 1 && Number.isFinite(element.currentTime)) {
+      retryPosition.current = { id: video.id, time: element.currentTime };
+    }
+    setSlowLoading(false);
+    setAttempt(value => value + 1);
+  }
 
   function loaded() {
     const element = media.current;
@@ -346,7 +376,10 @@ export function VideoPlayer({
     setDuration(actualDuration);
     element.playbackRate = speed;
     const history = getViewer().history[video.id];
-    if (typeof initialTime === 'number' && Number.isFinite(initialTime) && initialTime >= 0 && initialTime < actualDuration) {
+    const retry = retryPosition.current;
+    if (retry?.id === video.id && retry.time >= 0 && retry.time < actualDuration) {
+      element.currentTime = retry.time; setPosition(retry.time); setResumedAt(retry.time);
+    } else if (typeof initialTime === 'number' && Number.isFinite(initialTime) && initialTime >= 0 && initialTime < actualDuration) {
       element.currentTime = initialTime; setPosition(initialTime); setResumedAt(initialTime);
     } else if (
       history &&
@@ -359,7 +392,7 @@ export function VideoPlayer({
       setResumedAt(history.time);
       setPosition(history.time);
     }
-    setState("ready");
+    setState(element.readyState >= 3 ? "ready" : "loading");
   }
 
   async function togglePlayback() {
@@ -564,7 +597,7 @@ export function VideoPlayer({
             }}
             onPlay={() => {
               setPaused(false);
-              setState("ready");
+              setState(current => current === "ended" ? "ready" : current);
               setNotice("");
             }}
             onPlaying={() => {
@@ -627,7 +660,7 @@ export function VideoPlayer({
                 <button
                   className="ms-player-primary"
                   type="button"
-                  onClick={() => setAttempt((value) => value + 1)}
+                  onClick={retryPlayback}
                 >
                   <ArrowCounterClockwise size={17} />
                   Try again
@@ -755,13 +788,22 @@ export function VideoPlayer({
           </div>
         </div>
 
+        {slowLoading && (state === "loading" || state === "buffering") && (
+          <section className="ms-player-recovery" aria-label="Playback recovery">
+            <div role="status"><strong>Still waiting for this film.</strong><p>You can keep waiting or retry from the same position.</p></div>
+            <div className="ms-player-recovery-actions">
+              <button className="ms-player-primary" type="button" onClick={retryPlayback}><ArrowCounterClockwise size={17}/>Retry film</button>
+              {recoveryTrailer && onNext && <button className="ms-player-quiet" type="button" onClick={() => onNext(recoveryTrailer.id)}><Play size={16} weight="fill"/>Watch the available trailer</button>}
+            </div>
+          </section>
+        )}
         {notice && (
           <div className="ms-player-notice" role="status">
             {notice}
             {(state === "loading" || state === "buffering") && (
               <button
                 type="button"
-                onClick={() => setAttempt((value) => value + 1)}
+                onClick={retryPlayback}
               >
                 Reload film
               </button>

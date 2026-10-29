@@ -27,6 +27,7 @@
 @media(max-width:1199px){.tunnel-signal-button>span:last-child{display:none}.tunnel-signal-button{min-width:44px;justify-content:center}}
 @media(prefers-reduced-motion:reduce){.tunnel-signal-mark.is-sent{animation:none}}
 .tunnel-hero-bottom{position:absolute;bottom:97px;right:5.2vw;display:flex;align-items:flex-end;flex-direction:column;gap:8px;color:#a9aaa6;font-size:10px}
+.tunnel-relay-control[data-expanded=true]~.tunnel-hero-bottom{visibility:hidden}
 .tunnel-hero-bottom button{display:flex;align-items:center;gap:13px;pointer-events:auto;border:0;background:none;color:#efeee9;padding:12px 0;font-size:10px;letter-spacing:.1em}
 .tunnel-hero-bottom button svg{color:#ff4d32}
 .tunnel-checkpoint{height:var(--tunnel-chapter-height);position:relative;pointer-events:none}
@@ -37,9 +38,10 @@
 .tunnel-panel::before{display:none}
 .tunnel-panel-top{position:relative;display:flex;align-items:center;justify-content:space-between;gap:15px;min-height:54px;margin:0 17px 24px -7px;padding:2px 9px 2px 17px;background:#111212f5;border-top:1px solid #efeee987;border-bottom:1px solid #efeee91c;box-shadow:6px 9px 15px #0009;font-size:13px;letter-spacing:.055em;text-transform:uppercase}
 .tunnel-panel-top::before{content:"";position:absolute;left:0;top:-1px;width:50px;height:2px;background:#ff4d32;pointer-events:none}
-.tunnel-panel-top>span{display:flex;gap:15px;align-items:center}
+.tunnel-panel-top>span{display:flex;gap:15px;align-items:center;min-width:0}
 .tunnel-panel-top b{color:#ff4d32;font-size:12px;font-weight:500;font-variant-numeric:tabular-nums}
-.tunnel-panel-top button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;min-width:52px;border:0;background:#080909a8;color:#d2d4cb;padding:9px 10px;font-size:10px;letter-spacing:.04em;cursor:pointer;transition:color .2s,background .2s}
+.tunnel-panel-top button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;min-width:52px;flex:none;border:0;background:#080909a8;color:#d2d4cb;padding:9px 10px;font-size:10px;letter-spacing:.04em;cursor:pointer;transition:color .2s,background .2s}
+.tunnel-panel-top button>svg{flex:none}
 .tunnel-panel-top button:hover{color:#efeee9;background:#242725}
 .tunnel-panel-top button[aria-expanded=true]{color:#080909;background:#ff4d32}
 .tunnel-panel button:active{transform:none}
@@ -48,17 +50,21 @@
 .tunnel-panel h2>span:not(.depth-text){color:#d7d8cf}
 .tunnel-panel-copy{padding-right:15px}
 .tunnel-panel-copy p{position:relative;font-size:18px;line-height:1.55;color:#daddd3;max-width:43ch;margin:0 0 14px;padding:15px 18px 16px;background:var(--plate);border-top:1px solid var(--plate-edge);box-shadow:6px 9px 17px #0008}
-.tunnel-enter-room{display:inline-flex;justify-content:space-between;gap:28px;align-items:center;min-height:54px;min-width:258px;margin-left:12px;color:#efeee9;background:#101212f5;border-top:1px solid #efeee969;border-bottom:1px solid #ff4d32;padding:14px 18px;font-size:16px;font-weight:500;text-decoration:none;box-shadow:4px 7px 12px #0007;transition:color .2s,background .2s,border-color .2s}
-.tunnel-enter-room>svg{color:#ff4d32;transition:transform .2s}
+.tunnel-enter-room{display:inline-flex;justify-content:space-between;gap:28px;align-items:center;min-height:54px;min-width:min(258px,calc(100% - 12px));max-width:calc(100% - 12px);margin-left:12px;color:#efeee9;background:#101212f5;border-top:1px solid #efeee969;border-bottom:1px solid #ff4d32;padding:14px 18px;font-size:16px;font-weight:500;text-decoration:none;box-shadow:4px 7px 12px #0007;transition:color .2s,background .2s,border-color .2s}
+.tunnel-enter-room>svg{flex:none;color:#ff4d32;transition:transform .2s}
 .tunnel-enter-room:hover{color:#080909;background:#efeee9;border-bottom-color:#ff4d32}
 .tunnel-enter-room:hover>svg{transform:translate(2px,-2px)}
-.tunnel-inspection{display:flex;align-items:center;gap:12px;padding:11px 13px;margin:17px 0 0 8px;background:#080909f5;border-top:1px solid #ff4d32;box-shadow:4px 8px 15px #0007}
+.tunnel-inspection{display:grid;gap:12px;padding:14px 13px 12px;margin:17px 0 0 8px;background:#080909f5;border-top:1px solid #ff4d32;box-shadow:4px 8px 15px #0007}
 .tunnel-inspection[hidden]{display:none!important}
+.tunnel-panel[data-inspection-mode=sculpture] .tunnel-inspection{position:absolute;left:calc(100% + 24px);top:calc(50% + 185px);width:235px;margin:0;z-index:2}
+.tunnel-panel[data-inspection-mode=sculpture] .tunnel-inspection-controls{flex-wrap:wrap}
+.tunnel-panel[data-inspection-mode=sculpture] .tunnel-inspection-controls>span{flex-basis:100%;font-size:10px}
+.tunnel-panel[data-inspection-mode=sculpture] .tunnel-inspection-controls button{flex:1;min-width:44px;min-height:44px}
 .tunnel-inspection-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:1;min-width:0}
 .tunnel-inspection h3{font-family:'Barlow Condensed',sans-serif;font-weight:500;font-size:23px;line-height:1.1;margin:0;color:#efeee9}
 .tunnel-inspection-heading>span{font-size:11px;font-variant-numeric:tabular-nums;color:#bfc3b8;min-width:30px;text-align:right}
-.tunnel-inspection-controls{display:flex;align-items:center;gap:3px;flex-shrink:0}
-.tunnel-inspection-controls>span{font-size:0}
+.tunnel-inspection-controls{display:flex;align-items:center;gap:4px;min-width:0}
+.tunnel-inspection-controls>span{flex:1;font-size:11px;line-height:1.4;color:#bfc3b8}
 .tunnel-inspection-controls button{display:flex;align-items:center;justify-content:center;gap:6px;min-width:52px;min-height:52px;border:1px solid transparent;background:#111212;color:#efeee9;font-size:11px;padding:0 7px;transition:background .2s,border-color .2s}
 .tunnel-inspection-controls button:hover:not(:disabled){background:#efeee90a;border-color:#70756b}
 .tunnel-inspection-controls button:disabled{opacity:.35;cursor:default}
@@ -114,15 +120,21 @@ html[data-spatial-passage=departing] .tunnel-css-world{opacity:0;pointer-events:
 .tunnel-study-sound>button[aria-pressed=true]{border-color:#ff4d32}
 .tunnel-study-sound>button svg{color:#ff795f}
 .tunnel-study-sound>small{display:block;color:#bcc0b6;font-size:11px;line-height:1.5;margin-top:6px}
-.tunnel-relay-parts{margin-top:12px;padding:13px 14px;background:#080909ed;border:1px solid #efeee932;max-width:310px;pointer-events:auto}
-.tunnel-relay-parts>span{display:block;font-size:12px;color:#bdbdb5;margin-bottom:7px}
-.tunnel-relay-parts>div{display:flex;gap:3px}
-.tunnel-relay-control .tunnel-relay-parts button{min-width:44px;min-height:44px;padding:8px;border:1px solid #efeee925;background:#111212;color:#efeee9;font-size:12px;justify-content:center;cursor:pointer}
+.tunnel-relay-parts{position:absolute;top:-24px;left:calc(100% + 18px);padding:12px;background:#080909f5;border:1px solid #efeee932;width:280px;max-width:calc(41vw - 124px);pointer-events:auto}
+.tunnel-relay-parts[hidden]{display:none!important}
+.tunnel-relay-parts>span{display:block;font-size:11px;line-height:1.5;color:#c7cbc2;margin-bottom:9px}
+.tunnel-relay-shells{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+.tunnel-relay-control .tunnel-relay-parts button{display:flex;align-items:center;min-width:0;min-height:44px;padding:7px 4px;border:1px solid #efeee925;background:#111212;color:#efeee9;font-size:12px;justify-content:center;cursor:pointer;transition:background .2s,border-color .2s,color .2s}
+.tunnel-relay-shells>button{gap:6px}
+.tunnel-relay-shells>button>span{font-size:10px;line-height:1.2;color:#bfc3b9}
+.tunnel-relay-shells>button>b{font-size:13px;font-weight:500;font-variant-numeric:tabular-nums}
 .tunnel-relay-control .tunnel-relay-parts button:hover{border-color:#ff4d32}
 .tunnel-relay-control .tunnel-relay-parts button[aria-pressed=true]{color:#080909;background:#ff4d32;border-color:#ff4d32}
-.tunnel-relay-control .tunnel-relay-parts .tunnel-relay-reassemble{margin-top:8px;min-height:40px;width:100%;gap:12px}
+.tunnel-relay-shells>button[aria-pressed=true]>span{color:inherit}
+.tunnel-relay-feedback{min-height:48px;margin:10px 0 0;font-size:11px;line-height:1.45;color:#c7cbc2}
+.tunnel-relay-control .tunnel-relay-parts .tunnel-relay-reassemble{margin-top:8px;width:100%;gap:12px}
 @media(max-height:820px){.tunnel-relay-control{top:53%}}
-.tunnel-journey button:focus-visible,.tunnel-panel :is(a,button):focus-visible{outline:2px solid #ff795f;outline-offset:5px}
+.tunnel-journey :is(button,a,select):focus-visible,.tunnel-panel :is(a,button):focus-visible{outline:2px solid #ff795f;outline-offset:5px}
 .tunnel-panel ::selection,.tunnel-hero ::selection{background:#ff4d32;color:#080909}
 /* The compact image is the same ambient decoder used by the WebGL scene. */
 .tunnel-compact-media{position:relative;margin:0 0 27px;padding:7px;background:#111212f2;border-top:1px solid #efeee96e;box-shadow:7px 12px 22px #0009}
@@ -177,7 +189,7 @@ html[data-spatial-passage=departing] .tunnel-css-world{opacity:0;pointer-events:
  .tunnel-journey[data-compact=true] .tunnel-hero{padding-top:100px}
  .tunnel-journey[data-compact=true] .tunnel-checkpoint{padding:91px 24px 130px}
  .tunnel-journey[data-compact=true] .tunnel-panel h2{font-size:clamp(43px,10.5vw,68px)}
- .tunnel-panel-top{font-size:12px;gap:10px}.tunnel-panel-top>span{gap:12px}.tunnel-panel-top button{font-size:9px;gap:6px;padding:8px 0 8px 8px}
+ .tunnel-panel-top{font-size:12px;gap:10px}.tunnel-panel-top>span{gap:12px}.tunnel-panel-top button{font-size:9px;gap:6px;padding:8px 0 8px 8px;max-width:43%}.tunnel-panel-top button>span{max-width:64px;line-height:1.4}
  .tunnel-panel-copy p{font-size:16px;line-height:1.65}.tunnel-enter-room{font-size:15px;min-height:48px;min-width:222px}
  .tunnel-story-copy small{font-size:10px}.tunnel-story-copy strong{font-size:26px}.tunnel-story-copy>span{font-size:12px}.tunnel-panel-foot{font-size:10px;letter-spacing:.04em}.tunnel-panel-foot>span:last-child{display:none}
  .tunnel-inspection p{font-size:14px;line-height:1.65}.tunnel-compact-media{margin-bottom:27px}.tunnel-compact-media figcaption{font-size:11px}.tunnel-compact-window>button{font-size:11px;left:12px;bottom:12px;padding:10px}

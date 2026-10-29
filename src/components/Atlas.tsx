@@ -20,6 +20,7 @@ import { Crosshair } from '@phosphor-icons/react/dist/csr/Crosshair';
 import { places, type Video } from "../data/catalogue";
 import { href } from "../services/router";
 import { durationLabel } from "../services/discovery";
+import { filmFormat } from "./FilmCard";
 import "./discovery-spatial.css";
 import { playSound } from "../services/audio";
 import { resolveDragAxis, type DragAxis } from "../services/exploreInteraction";
@@ -821,8 +822,8 @@ export default function Atlas({
       </div>
       {stories.length > 0 && <div key={selected} className={`atlas-story-windows ${calm?'is-calm':''}`} aria-label={`Stories connected to ${places.find(place=>place.id===selected)?.name || 'this destination'}`}>
         {stories.slice(0,3).map((story,index)=><article key={story.id} style={{'--window-index':index} as import('react').CSSProperties}>
-          <a href={href('/film/'+story.id)} data-transition-film={story.id} aria-label={`Read about ${story.title}`}><img src={story.poster} alt="" loading="lazy"/><span>{story.title}</span></a>
-          <div><small>{durationLabel(story.duration)}</small>{onWatch && <button aria-label={`Watch ${story.title} from the globe`} onClick={()=>onWatch(story)}><Play size={14} weight="fill"/></button>}</div>
+          <a href={href('/film/'+story.id)} data-transition-film={story.id} aria-label={`Read about ${story.title}`}><img src={story.poster} alt="" loading="lazy"/><span>{story.title}</span><small className="atlas-story-format">{filmFormat(story)}</small></a>
+          <div><small>{story.status==='development'?'In development':durationLabel(story.duration)}</small>{onWatch && story.status==='available' && story.src && <button aria-label={`Watch ${story.title} from the globe`} onClick={()=>onWatch(story)}><Play size={14} weight="fill"/></button>}</div>
         </article>)}
       </div>}
       <div className="cultural-atlas__footer">

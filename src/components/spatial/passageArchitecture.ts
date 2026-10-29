@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import { PASSAGE_CHAPTERS } from '../../services/passageChapters';
-import { passageStationMotion, passagePose } from '../../services/passageJourney';
+import { passageStationMotion, passagePose, passageReading } from '../../services/passageJourney';
 import { passageScreenExtension } from '../../services/passageMechanisms';
 import { createPassageThresholds } from './passageThresholds';
 import { createPassageInstruments } from './passageInstruments';
 
 type ArchitectureFrame = {
   active: number; progress: number; elapsed: number; reducedMotion: boolean; delta?: number;
-  pointer?: readonly [number, number]; energy?: number; compact?: boolean;
+  pointer?: readonly [number, number]; energy?: number; compact?: boolean; quality?: string;
   audio?: { rms: number; bass: number; mid: number; treble: number };
   inspection: { station: string | null; expanded: boolean; rotation: number };
 };
@@ -31,14 +31,14 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   const posters: (THREE.Texture | null)[] = PASSAGE_CHAPTERS.map(() => null), activeTextures = [...posters];
   const loadVersions = PASSAGE_CHAPTERS.map(() => 0);
   const collectionMounts: THREE.Group[] = [], collectionSurfaces: ImageSurface[] = [], collectionTextures: (THREE.Texture | null)[] = [null, null, null];
-  let destroyed = false, collectionKey = '', collectionVersion = 0, pointerX = 0, pointerY = 0;
+  let destroyed = false, collectionKey = '', collectionVersion = 0, pointerX = 0, pointerY = 0, readingAmount = 0;
   function geometry<T extends THREE.BufferGeometry>(key: string, make: () => T): T {
     if (!cache.has(key)) { const g = make(); cache.set(key, g); geometries.add(g); }
     return cache.get(key) as T;
   }
   function material<T extends THREE.Material>(value: T) { materials.add(value); return value; }
   const alloy = material(new THREE.MeshStandardMaterial({ color: 0x565e59, metalness: .88, roughness: .29 }));
-  const ribAlloy = material(new THREE.MeshStandardMaterial({ color: 0x222925, metalness: .72, roughness: .48, envMapIntensity: .30 }));
+  const ribAlloy = material(new THREE.MeshStandardMaterial({ color: 0x171d19, metalness: .80, roughness: .42, envMapIntensity: .24 }));
   const wallAlloy = material(new THREE.MeshStandardMaterial({ color: 0x101513, metalness: .34, roughness: .79, envMapIntensity: .20 }));
   wallAlloy.userData.passageShell = true;
   const graphite = material(new THREE.MeshStandardMaterial({ color: 0x171b19, metalness: .78, roughness: .38 }));
@@ -97,10 +97,10 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
 
   // Depth-tested light bleed is attached to real conduits, rather than a
   // full-screen bloom pass that would wash out footage and typography.
-  const signalUniforms = { uTime: { value: 0 }, uEnergy: { value: 0 }, uPointer: { value: new THREE.Vector2() }, uCameraZ: { value: 14 } };
+  const signalUniforms = { uTime: { value: 0 }, uEnergy: { value: 0 }, uRead: { value: 0 }, uPointer: { value: new THREE.Vector2() }, uCameraZ: { value: 14 } };
   const haloMaterial = material(new THREE.ShaderMaterial({ uniforms: signalUniforms, transparent: true, depthWrite: false, depthTest: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     vertexShader: `varying vec2 vUv;varying vec3 vTint;varying float vDepth;void main(){vUv=uv;vTint=instanceColor;vec4 world=modelMatrix*instanceMatrix*vec4(position,1.);vDepth=world.z;gl_Position=projectionMatrix*viewMatrix*world;}`,
-    fragmentShader: `varying vec2 vUv;varying vec3 vTint;varying float vDepth;uniform float uTime;uniform float uEnergy;void main(){vec2 p=vUv*2.-1.;float glow=exp(-p.y*p.y*5.5)*pow(max(0.,1.-abs(p.x)),.5);float edge=1.-smoothstep(.7,1.,abs(p.y));float charge=.78+.22*sin(vDepth*.12+uTime*.8);gl_FragColor=vec4(vTint,glow*edge*(.10+uEnergy*.045)*charge);}`,
+    fragmentShader: `varying vec2 vUv;varying vec3 vTint;varying float vDepth;uniform float uTime;uniform float uEnergy;uniform float uCameraZ;uniform float uRead;void main(){vec2 p=vUv*2.-1.;float glow=exp(-p.y*p.y*5.5)*pow(max(0.,1.-abs(p.x)),.5);float edge=1.-smoothstep(.7,1.,abs(p.y));float charge=.78+.22*sin(vDepth*.12+uTime*.8);float depth=max(0.,uCameraZ-vDepth);float atmosphere=exp(-depth*depth*.00065);gl_FragColor=vec4(vTint,glow*edge*(.085+uEnergy*.035)*charge*atmosphere*(1.-uRead*.48));}`,
   }));
   haloMaterial.forceSinglePass = true;
   const haloPlane = geometry('signal-halo', () => new THREE.PlaneGeometry(1, 1));
@@ -110,11 +110,11 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   }
   conduitHalos.instanceMatrix.needsUpdate = true; conduitHalos.computeBoundingSphere(); tunnel.add(conduitHalos);
 
-  const ribbonUniforms = { uTime: { value: 0 }, uEnergy: { value: 0 }, uStation: { value: -36 }, uRead: { value: 0 } };
+  const ribbonUniforms = { uTime: { value: 0 }, uEnergy: { value: 0 }, uStation: { value: -36 }, uRead: { value: 0 }, uCameraZ: { value: 14 } };
   const ribbonMaterial = material(new THREE.ShaderMaterial({
     uniforms: ribbonUniforms, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
     vertexShader: `varying vec2 vUv;varying float vDepth;void main(){vUv=uv;vDepth=position.z;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
-    fragmentShader: `varying vec2 vUv;varying float vDepth;uniform float uTime;uniform float uEnergy;uniform float uStation;uniform float uRead;void main(){float pulse=pow(.5+.5*sin(vUv.y*68.-uTime*1.12),18.);float edge=pow(1.-abs(vUv.x*2.-1.),.6);float calm=1.-(1.-smoothstep(1.,7.,abs(vDepth-uStation)))*uRead*.72;vec3 c=mix(vec3(1.,.08,.025),vec3(.92,.86,.69),pulse*.8);gl_FragColor=vec4(c*(.66+pulse*.7+uEnergy*.18),edge*.36*calm);}`,
+    fragmentShader: `varying vec2 vUv;varying float vDepth;uniform float uTime;uniform float uEnergy;uniform float uStation;uniform float uRead;uniform float uCameraZ;void main(){float pulse=pow(.5+.5*sin(vUv.y*68.-uTime*1.12),18.);float edge=pow(1.-abs(vUv.x*2.-1.),.6);float calm=1.-(1.-smoothstep(4.,20.,abs(vDepth-uStation)))*uRead*.82;float depth=max(0.,uCameraZ-vDepth);float atmosphere=exp(-depth*depth*.00065);vec3 c=mix(vec3(1.,.302,.196),vec3(.92,.90,.84),pulse*.6);gl_FragColor=vec4(c*(.60+pulse*.5+uEnergy*.12),edge*.28*calm*atmosphere);}`,
   }));
   ribbonMaterial.forceSinglePass = true;
   for (let lane = 0; lane < 7; lane++) {
@@ -207,6 +207,9 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
       const fin = new THREE.Group(); root.add(fin); box(fin, 0, 0, 0, .62, .19, .9, graphite); box(fin, 0, .105, 0, .58, .025, .95, j % 2 ? ivory : red); fins.push(fin);
     }
     const ribs = instanced(root, graphite, 14, () => {}); ribs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    // These instances slide sideways during assembly. The initial identity
+    // matrices do not describe their bounds; keep the entire travel envelope.
+    ribs.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, -.85), 9.2);
     const slats: THREE.Group[] = [];
     for (let j = 0; j < 12; j++) {
       const slat = new THREE.Group(); root.add(slat); box(slat, 0, -4.75, 0, 1.22, 9.5, .035, charcoal); box(slat, -.60, -4.75, .025, .014, 9.5, .035, alloy); slats.push(slat);
@@ -291,10 +294,14 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     const approach = passagePose(state), cameraZ = approach.position[2];
     thresholds.update(cameraZ, time, Boolean(state.compact), reducedMotion);
     instruments.update({ elapsed: time, delta: dt, reducedMotion, active, inspecting: inspection.expanded, audio: state.audio });
+    const reading = passageReading(state);
     signalUniforms.uTime.value = time; signalUniforms.uEnergy.value = Math.min(1, state.energy || 0); signalUniforms.uPointer.value.set(pointerX, pointerY); signalUniforms.uCameraZ.value = cameraZ;
+    readingAmount += ((reading ? 1 : 0) - readingAmount) * (reducedMotion ? 1 : 1 - Math.exp(-dt * 8));
+    signalUniforms.uRead.value = readingAmount;
+    conduitHalos.visible = !state.compact && state.quality !== 'light';
     ribbonUniforms.uTime.value = time; ribbonUniforms.uEnergy.value = Math.min(1, state.energy || 0);
     ribbonUniforms.uStation.value = PASSAGE_CHAPTERS[Math.max(0, active)]?.center[2] ?? -36;
-    ribbonUniforms.uRead.value = state.progress > .36 && state.progress < .76 && active >= 0 ? 1 : 0;
+    ribbonUniforms.uRead.value = readingAmount; ribbonUniforms.uCameraZ.value = cameraZ;
     portals.forEach((portal, i) => {
       const distance = cameraZ - portal.position.z; portal.visible = distance > -12 && distance < 130;
       if (!portal.visible) return;
@@ -315,7 +322,10 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
       const selected = inspection.expanded && inspection.station === spec.id, rate = reducedMotion ? 1 : 1 - Math.exp(-dt * 12);
       chapter.inspection += ((selected ? 1 : 0) - chapter.inspection) * rate; chapter.turn += ((selected ? inspection.rotation : 0) - chapter.turn) * rate;
       const ex = chapter.inspection;
-      chapter.exhibit.rotation.y = chapter.turn; chapter.exhibit.scale.setScalar(1 + ex * .6);
+      chapter.exhibit.rotation.y = chapter.turn; chapter.exhibit.scale.setScalar(1 + ex * .5);
+      // Bring the object into the open space beneath the screen instead of
+      // enlarging it against the viewport edge. Media and camera never move.
+      chapter.exhibit.position.set(spec.exhibit[0] + (3.35 - spec.exhibit[0]) * ex, spec.exhibit[1] + .40 * ex, spec.exhibit[2]);
       // Freeze the authored orientation progressively; multiplying an absolute
       // elapsed angle would unwind several revolutions when Inspect opens.
       const objectYaw = reducedMotion ? 0 : (chapter.movement.rotation.y + dt * .055 * (1 - ex)) % (Math.PI * 2);

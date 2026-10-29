@@ -13,7 +13,7 @@ async function run(name,options,work){const context=await browser.newContext({vi
 try{
 await run('desktop-mechanisms',{},async page=>{
   await page.waitForTimeout(900);await page.screenshot({path:`${out}/opening.png`});
-  check('Depth text preserves the exact headline', (await page.locator('.tunnel-hero h1').innerText()).replace(/\s/g,'')==='CULTURE.WITHOUTBORDERS.');
+  check('Depth text preserves the exact accessible headline', await page.locator('.tunnel-hero h1').getAttribute('aria-label')==='CULTURE. WITHOUT BORDERS.');
   check('Letters settle to crisp stationary type',await page.locator('.tunnel-hero .depth-letter').first().evaluate(el=>getComputedStyle(el).transform==='matrix(1, 0, 0, 1, 0, 0)'||getComputedStyle(el).transform==='none'));
   const button=page.getByRole('button',{name:'Unfold the relay',exact:true});
   const before=await button.boundingBox();await page.mouse.move(before.x+before.width/2,before.y+before.height/2);await page.mouse.down();await page.waitForTimeout(140);

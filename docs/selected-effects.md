@@ -1,6 +1,6 @@
 # Selected effects: the mechanical Passage and connected discoveries
 
-This is an extension of the existing [Passage](passage-architecture.md) and [living tunnel](tunnel-life.md), following the user's selection of all proposed effects. It preserves the Monumental identity, native scroll, six chapters, exact 38–74% reading hold, catalogue, content provenance and conventional controls. The shared token frontmatter and sidecar component primitives remain unchanged. `PRODUCT.md` and `src/styles.css` are unchanged by this extension's documentation. The governing surface contract is [Passage](../.impeccable/surfaces/passage.md).
+This is an extension of the existing [Passage](passage-architecture.md) and [living tunnel](tunnel-life.md), following the user's selection of all proposed effects. It preserves the Monumental identity, native scroll, six chapters, exact 38–74% reading hold, catalogue, content provenance and conventional controls. The shared token frontmatter and sidecar component primitives remain unchanged. The governing surface contract is [Passage](../.impeccable/surfaces/passage.md). The subsequent [29 October refinement](passage-polish.md) records the inspection, reading, accessibility, discovery and playback-recovery improvements and their separate verification.
 
 ## Selection and control map
 
@@ -34,7 +34,7 @@ Inspection freezes automatic Passage time and pointer effects while allowing exp
 
 Music binds one analyser to the existing local preview element. No microphone or external stream is used. The source is the original synthetic score in the motion study, not an artist performance. Ordinary platter rotation is authored mechanical movement; only the labelled audio response uses measured sound. The study is silent until enabled, follows master sound/volume, and disables when Music is left, a full player opens, the document becomes hidden or its binding is destroyed. Closing the player does not automatically resume it. Failure to create/resume the audio graph shows an unavailable state and leaves story playback accessible.
 
-The personal constellation uses the shared scheduler and pauses when offscreen, hidden, hovered, focused, explicitly paused, under full playback or in reduced motion. It displays at most four destinations per scene and four orbiting films per destination; pagination and the complete readable collection preserve access to the remaining saved data. An empty collection invites the visitor to save something rather than inventing a personal history.
+The personal constellation uses the shared scheduler and pauses when offscreen, hidden, hovered, focused, explicitly paused, under full playback or in reduced motion. The refinement displays at most two destination groups per page at widths of 500px or less and four on wider screens, with up to four orbiting films per destination. The current range is visible, page selection remains aligned with the visible groups, and removing saved data clamps pagination to the remaining destinations. Pause preserves the orbit phase. Pagination and the complete readable collection preserve access to the remaining saved data. An empty collection invites the visitor to save something rather than inventing a personal history.
 
 ## Responsive and accessibility fallback
 
@@ -42,9 +42,9 @@ The existing compact boundary remains width below 980px, height below 660px, asp
 
 Reduced motion settles depth text, suppresses decorative movement and uses direct navigation/poster presentation. Global motion preferences and OS preferences both apply. World, Time, Cinema and My World retain semantic controls; constellation movement cannot be enabled while reduced motion is active. WebGL failure/context loss restores readable content and completes pending navigation without requiring the visitor to interact with 3D geometry. An unavailable media source retains a poster and working story/navigation controls.
 
-## Verification record and limits
+## Original selected-effects verification and limits
 
-These are recorded local results. This documentation pass inspected current source and saved artifacts; it did not independently rerun browser, build or test suites. Evidence counts describe their named runs, not a blanket claim that all historical checks were green.
+These are the original extension's recorded local results. This documentation pass inspected current source and saved artifacts; it did not independently rerun browser, build or test suites. Evidence counts describe their named runs, not a blanket claim that all historical checks were green. The subsequent refinement's 182-test build and focused checks are recorded separately in [Passage refinement](passage-polish.md#verification-and-finish-review).
 
 | Evidence | Recorded result and scope |
 | --- | --- |
@@ -68,4 +68,6 @@ No generated raster assets were added. Existing motion-study, destination-photog
 
 ## Delivery status
 
-This document records the locally built and reviewed implementation. Publication and public-site verification are separate release steps; the local evidence above does not establish their completion.
+The original selected-effects implementation was published as Sites version 47 from source `bf95fcabce89625608d52cbf0f662623b52218ef`. Its GitHub release commit is `8f61bd2d88598c0fd1b9b004d27d2590d44a32de`. The earlier local-only delivery wording is superseded by this recorded release status.
+
+The subsequent [Passage refinement](passage-polish.md) is a locally built, tested and reviewed release candidate. Its publication and public verification are separate from the completed version 47 release; no newer public version is claimed by this document.

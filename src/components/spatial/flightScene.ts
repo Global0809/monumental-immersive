@@ -6,6 +6,7 @@ import { getSpatialPreferences, subscribeSpatialPreferences } from '../../servic
 import { createDroneFamily } from './droneModels';
 import { createSpiralField } from './spiralField';
 import { getTunnelFrame, tunnelCompact } from '../../services/tunnelJourney';
+import { passageReading } from '../../services/passageJourney';
 import { getPassageMediaBounds, subscribePassageMediaBounds } from '../../services/passageProtection';
 import { droneActivity, type DroneActivity } from '../../services/droneBehaviour';
 import { createDroneDock } from './droneDock';
@@ -128,7 +129,7 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
     const offsets = state.inspecting ? inspectOffsets : homeOffsets;
     const spread = state.inspecting ? 1 : hero ? .85 : .49;
     const passage = getTunnelFrame();
-    const reading = state.home && passage.active >= 0 && passage.progress >= .36 && passage.progress <= .76;
+    const reading = state.home && passageReading(passage);
     const tending = !still && !state.inspecting && !reading && !compact && state.formation === 'escort';
     const tendingMember = Math.floor(t / 18) % 4;
     const selectedActivity = droneActivity(tending ? t : 17, tending ? tendingMember : -1, activities[tendingMember]);

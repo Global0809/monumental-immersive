@@ -1,5 +1,6 @@
 .personal-constellation{color:#efeee9;min-width:0}
 .personal-constellation__sky{position:relative;height:420px;perspective:850px;background:radial-gradient(ellipse at 45% 48%,#1c201c,#080909 72%);overflow:hidden;isolation:isolate}
+.personal-constellation__page-status{position:absolute;top:14px;left:16px;color:#a9aaa6;font-size:10px;line-height:1.5;font-variant-numeric:tabular-nums;z-index:4}
 .personal-constellation__cluster{position:absolute;width:0;height:0;transform-style:preserve-3d}
 .personal-constellation__threads{position:absolute;left:-110px;top:-110px;width:220px;height:220px;pointer-events:none;overflow:visible;stroke:#efeee93b;stroke-width:.8}
 .personal-constellation__cluster.is-selected .personal-constellation__threads{stroke:#ff4d3285}
@@ -7,7 +8,7 @@
 .personal-constellation__anchor i{width:9px;height:9px;border-radius:50%;background:#efeee9}
 .personal-constellation__cluster.is-selected .personal-constellation__anchor{border-color:#ff4d32}
 .personal-constellation__cluster.is-selected .personal-constellation__anchor i{background:#ff4d32}
-.personal-constellation__anchor>span{position:absolute;top:48px;left:50%;transform:translateX(-50%);width:125px;font:500 21px/1 var(--display);text-transform:uppercase;background:#080909e8;padding:5px 2px;pointer-events:none}
+.personal-constellation__anchor>span{position:absolute;top:110px;left:50%;transform:translateX(-50%);width:125px;font:500 21px/1 var(--display);text-transform:uppercase;background:#080909e8;padding:5px 2px;pointer-events:none}
 .personal-constellation__anchor small{display:block;margin-top:5px;font:10px/1.4 var(--font-body,'DM Sans Variable',sans-serif);color:#a9aaa6;text-transform:none}
 .personal-constellation__story{position:absolute;left:-23px;top:-23px;width:46px;height:46px;padding:0;background:#151715;border:1px solid #efeee957;box-shadow:3px 7px 10px #0008;z-index:1}
 .personal-constellation__story img{width:100%;height:100%;object-fit:cover;display:block}
@@ -18,6 +19,7 @@
 .personal-constellation__toolbar{display:flex;align-items:center;gap:8px;padding:12px 0 18px;border-bottom:1px solid #efeee927}
 .personal-constellation__toolbar p{flex:1;font-size:11px;line-height:1.65;color:#a9aaa6;max-width:42ch}
 .personal-constellation__toolbar button{flex:0 0 44px;width:44px;height:44px;display:grid;place-items:center;background:none;border:1px solid #efeee940;color:#efeee9}
+.personal-constellation__toolbar button:disabled{opacity:.4;cursor:default}
 .personal-constellation__collection{padding-top:20px}
 .personal-constellation__collection h3{font:500 32px/1 var(--display);text-transform:uppercase}
 .personal-constellation__collection p{font-size:12px;line-height:1.7;color:#a9aaa6;margin:10px 0 14px}
@@ -29,7 +31,8 @@
 .personal-constellation__collection small{display:block;color:#a9aaa6;font-size:11px;margin-top:5px}
 .personal-constellation__collection li>button:last-child,.personal-constellation__collection li>a{display:grid;place-items:center;flex:0 0 44px;min-height:44px;background:none;border:0;color:#efeee9}
 .personal-constellation__empty{padding:25px 0;color:#a9aaa6;font-size:14px;line-height:1.7}
-@media(max-width:500px){.personal-constellation__sky{height:390px}.personal-constellation__anchor>span{width:100px;font-size:19px}.personal-constellation__story,.personal-constellation__anchor{width:44px;height:44px;left:-22px;top:-22px}}
+@media(max-width:500px){.personal-constellation__sky{height:390px}.personal-constellation__sky[data-groups="2"]{height:460px}.personal-constellation__anchor>span{top:104px;width:125px;font-size:19px}.personal-constellation__story,.personal-constellation__anchor{width:44px;height:44px;left:-22px;top:-22px}}
+.personal-constellation__sky:is([data-groups="3"],[data-groups="4"]){height:460px}
 
 .personal-monument__arrangement label[hidden]{display:none}
 

@@ -128,6 +128,17 @@ export default function CollectionTheater({ category, items, onWatch, reducedMot
   }, [previewing, preview?.src]);
 
   useEffect(() => {
+    if (!previewing || previewReady) return;
+    const epoch = previewEpoch.current;
+    const timeout = window.setTimeout(() => {
+      if (epoch !== previewEpoch.current) return;
+      setPreviewFailed(true);
+      stopPreview();
+    }, 12000);
+    return () => window.clearTimeout(timeout);
+  }, [previewing, previewReady, preview?.src]);
+
+  useEffect(() => {
     const element = root.current;
     const panel = screen.current;
     const mirrored = reflection.current;
@@ -213,12 +224,13 @@ export default function CollectionTheater({ category, items, onWatch, reducedMot
         touch.current = null;
       }} onTouchCancel={() => { touch.current = null; }}>
         <div className="ct-screen" ref={screen}>
-          <div className="ct-screen-surface">
+          <div className="ct-screen-surface" aria-busy={previewing && !previewReady}>
             <img className="ct-screen-image" src={active.poster} alt="" fetchPriority="high"/>
             {previewing && preview && <video key={preview.id} ref={media} src={preview.src} muted playsInline loop preload="none" className={previewReady ? 'is-ready' : ''} aria-label={`Silent ${formatOf(preview).toLowerCase()}: ${preview.title}`} onPlaying={() => setPreviewReady(true)} onError={() => { setPreviewFailed(true); stopPreview(); }}/>} 
             {!previewing && <button className="ct-screen-play" aria-label={`Play ${active.title}`} onClick={() => { stopPreview(); onWatch(active); }}><Play size={22} weight="fill"/></button>}
-            {canPreview && <button className="ct-preview" aria-pressed={previewing} onClick={previewing ? stopPreview : startPreview}>{previewing ? <Pause size={12} weight="fill"/> : <Play size={12} weight="fill"/>}{previewing ? 'Stop preview' : preview?.tags.includes('trailer') ? 'Preview trailer' : 'Silent preview'}<SpeakerSlash size={13}/></button>}
-            {previewFailed && <span className="ct-preview-message" role="status">Preview unavailable. Open the film to watch.</span>}
+            {canPreview && <button className="ct-preview" aria-pressed={previewing} onClick={previewing ? stopPreview : startPreview}>{previewing ? <Pause size={12} weight="fill"/> : <Play size={12} weight="fill"/>}{previewing ? previewReady ? 'Stop preview' : 'Cancel preview' : preview?.tags.includes('trailer') ? 'Preview trailer' : 'Silent preview'}<SpeakerSlash size={13}/></button>}
+            {previewing && !previewReady && <span className="ct-preview-message ct-preview-message--loading" role="status">Loading silent preview…</span>}
+            {previewFailed && <span className="ct-preview-message" role="status">Preview unavailable. Try again or watch the film.</span>}
           </div>
           <div className="ct-screen-edge" aria-hidden="true"/>
           <span className="ct-screen-caption"><span>MONUMENTAL / {String(index + 1).padStart(2, '0')}</span><span>{formatOf(active)}</span></span>

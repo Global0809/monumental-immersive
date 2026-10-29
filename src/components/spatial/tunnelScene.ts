@@ -47,7 +47,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   Object.assign(canvas.style,{width:'100%',height:'100%',display:'block',touchAction:'pan-y',pointerEvents:'none'});host.appendChild(canvas);
   renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.06;
   renderer.setClearColor(0x080909,1);
-  const scene=new THREE.Scene();scene.background=new THREE.Color(0x080909);scene.fog=new THREE.FogExp2(0x080909,.009);
+  const scene=new THREE.Scene();scene.background=new THREE.Color(0x080909);scene.fog=new THREE.FogExp2(0x080909,.021);
   const camera=new THREE.PerspectiveCamera(59,1,.16,165),look=new THREE.Vector3();
   const projectedCorner=new THREE.Vector3();
   const cssScene=new THREE.Scene(),css=new CSS3DRenderer();
@@ -203,7 +203,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     scene.environmentIntensity=preferences.cutaway?.95:.4+preferences.light*.003;
     studySound.setActive(inPassage&&frame.active===3&&media.getSnapshot().ready&&!compact&&!state.reducedMotion&&!state.paused);
     const spectrum=studySound.sample();
-    architecture.update({active:frame.active,progress:frame.progress,elapsed,delta:dt,reducedMotion:state.reducedMotion||compact,compact,inspection,pointer,energy:scrollEnergy,audio:spectrum});
+    architecture.update({active:frame.active,progress:frame.progress,elapsed,delta:dt,reducedMotion:state.reducedMotion||compact,compact,quality:preferences.quality,inspection,pointer,energy:scrollEnergy,audio:spectrum});
     host.dataset.passageAudioEnergy=spectrum.rms.toFixed(4);
     const lifeEnabled=inPassage&&!compact&&!state.reducedMotion;
     if(lifeEnabled&&!inspection.expanded)pulse.advance(dt);

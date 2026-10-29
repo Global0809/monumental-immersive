@@ -275,6 +275,21 @@ html[data-motion=reduced] .ms-queue-meter i{animation:none}
   font-size: 11px;
   line-height: 1.5;
 }
+.ms-player-recovery {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px 24px;
+  padding: 18px;
+  border-block: 1px solid var(--player-line);
+  background: var(--player-bg);
+  color: var(--player-text);
+}
+.ms-player-recovery strong { font-size: 14px; font-weight: 600; }
+.ms-player-recovery p { margin: 5px 0 0; color: var(--player-muted); font-size: 12px; line-height: 1.5; }
+.ms-player-recovery-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.ms-player-recovery-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .ms-player-notice button,
 .ms-player-resume button {
   color: var(--player-accent);
