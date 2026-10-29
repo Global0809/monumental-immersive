@@ -4,7 +4,7 @@ import './depth-text.css';
 /** One visible text source: letters arrive briefly in depth, then settle.
  * The uninterrupted reading layer prevents glyph-by-glyph announcements.
  * A station's inert state gates arrival, so travelling panels never ghost. */
-export default function DepthText({ text, className = '' }: { text: string; className?: string }) {
+export default function DepthText({ text, className = '', living = false }: { text: string; className?: string; living?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const element = ref.current;
@@ -23,5 +23,5 @@ export default function DepthText({ text, className = '' }: { text: string; clas
     return () => { observer.disconnect(); mutation.disconnect(); };
   }, [text]);
   let count = 0;
-  return <span ref={ref} className={`depth-text ${className}`}><span className="depth-text-readable">{text}</span><span className="depth-text-visual" aria-hidden="true">{text.split(/(\s+)/).map((word, index) => /\s/.test(word) ? word : <span className="depth-word" key={index}>{Array.from(word).map((letter, i) => <span className="depth-letter" key={i} style={{ animationDelay: `${Math.min(260, count++ * 14)}ms` }}>{letter}</span>)}</span>)}</span></span>;
+  return <span ref={ref} className={`depth-text ${className}`}><span className="depth-text-readable">{text}</span><span className="depth-text-visual" aria-hidden="true">{text.split(/(\s+)/).map((word, index) => /\s/.test(word) ? word : <span className="depth-word" key={index}>{Array.from(word).map((letter, i) => <span className="depth-letter" key={i} style={{ animationDelay: `${Math.min(260, count++ * 14)}ms` }}>{living ? <span className="living-type-glyph">{letter}<span className="living-type-ink">{letter}</span></span> : letter}</span>)}</span>)}</span></span>;
 }

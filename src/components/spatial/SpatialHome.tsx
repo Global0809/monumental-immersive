@@ -25,9 +25,18 @@ import DepthText from '../DepthText';
 import { getPassageSound, subscribePassageSound, setPassageSoundEnabled } from '../../services/passageSound';
 import { getTunnelFrame, getTunnelInspection, setTunnelFrame, setTunnelInspection, setTunnelPanels, subscribeTunnelFrame, subscribeTunnelInspection, tunnelChapterZ, tunnelEntranceZ, tunnelCompact, TUNNEL_CHAPTER_UNITS, TUNNEL_HERO_UNITS } from '../../services/tunnelJourney';
 import PassageCompactMedia, { PassageMediaCaption } from './passageCompactMedia';
+import { useLivingType } from './useLivingType';
 import './tunnel-journey.css';
+import './living-type.css';
 
 gsap.registerPlugin(ScrollTrigger);
+function LivingWords({ text, offset = 0 }: { text: string; offset?: number }) {
+  let wordIndex=offset;
+  return <>{text.split(/(\s+)/).map((word,index)=>/\s/.test(word)?word:<span className="living-type-word" key={index} style={{'--word-index':wordIndex++} as CSSProperties}>{word}</span>)}</>;
+}
+function LivingAction({ text }: { text: string }) {
+  return <span className="living-action-label"><span className="living-action-face">{text}</span><span className="living-action-reprise" aria-hidden="true">{text}</span></span>;
+}
 function Station({ index, onWatch, compact, reducedMotion }: { index: number; onWatch: (video: Video) => void; compact: boolean; reducedMotion: boolean }) {
   const inspection = useSyncExternalStore(subscribeTunnelInspection, getTunnelInspection);
   const studySound = useSyncExternalStore(subscribePassageSound, getPassageSound);
@@ -106,6 +115,7 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
   const metrics = useRef<{ top: number; height: number }[]>([]);
   const layoutRefreshFrame = useRef(0), stationJumpFrame = useRef(0);
   const reading = compact || spatial.unavailable;
+  useLivingType(hero, { enabled: (spatial.ready || spatial.unavailable) && !spatial.travelling, reducedMotion, compact: reading });
   useEffect(() => () => setTunnelRelay(false), []);
   // The absolutely positioned disclosure changes without resizing the page.
   // Refresh the crew's existing content mask after React commits its new bounds.
@@ -281,10 +291,10 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
   return <div ref={root} className="spatial-home-content tunnel-journey" data-compact={reading} data-ready={spatial.ready} data-travelling={!!spatial.travelling} inert={!!spatial.travelling}
     style={{ '--tunnel-hero-height': `${TUNNEL_HERO_UNITS * 100}svh`, '--tunnel-chapter-height': `${TUNNEL_CHAPTER_UNITS * 100}svh` } as CSSProperties}>
     <div className="tunnel-hero-checkpoint"><section className="tunnel-hero" data-text-motion="off" ref={hero}>
-      <div className="tunnel-hero-copy"><h1 aria-label="CULTURE. WITHOUT BORDERS."><DepthText text="CULTURE."/><br/><span><DepthText text="WITHOUT"/></span><br/><DepthText text="BORDERS"/><span className="tunnel-full-stop" aria-hidden="true">.</span></h1>
-        <p>Every film opens a world.<br/>Go inside. See where it takes you.</p>
-        <button className="tunnel-entry-button" onClick={() => goToStation(0)} data-cursor="ENTER"><span>ENTER THE WORLD</span><ArrowRight size={23}/></button>
-        <a className="tunnel-browse" href={href('/category/movies')}>Browse the films <ArrowUpRight size={14}/></a>
+      <div className="tunnel-hero-copy"><h1 aria-label="CULTURE. WITHOUT BORDERS."><DepthText text="CULTURE." living/><br/><span className="living-type-outline"><DepthText text="WITHOUT" living/></span><br/><DepthText text="BORDERS" living/><span className="tunnel-full-stop" aria-hidden="true">.</span></h1>
+        <p className="living-copy"><LivingWords text="Every film opens a world."/><br/><LivingWords text="Go inside. See where it takes you." offset={5}/></p>
+        <button className="tunnel-entry-button" onClick={() => goToStation(0)} data-cursor="ENTER" data-mechanical-press><LivingAction text="ENTER THE WORLD"/><ArrowRight size={23}/></button>
+        <a className="tunnel-browse" href={href('/category/movies')}><LivingAction text="Browse the films"/><ArrowUpRight size={14}/></a>
       </div>
       <div className="tunnel-hero-caption" aria-hidden="true"><span>AN OPEN WORLD<br/>OF ENTERTAINMENT</span><i/><span>MONUMENTAL<br/>STREAMS</span></div>
       {!reading && !reducedMotion && <div className="tunnel-relay-control" data-expanded={life.relayOpen}>

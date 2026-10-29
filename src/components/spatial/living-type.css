@@ -1,0 +1,48 @@
+/* The existing .depth-letter owns the arrival. Its nested glyph owns the
+   live response, so neither animation can overwrite the other. */
+.tunnel-hero .living-type-glyph {
+  position:relative;display:inline-block;transform-origin:50% 80%;
+  transform:perspective(700px) translate3d(var(--type-x,0px),var(--type-y,0px),0) rotateY(var(--type-r,0deg)) rotateX(var(--type-rx,0deg));
+}
+.tunnel-hero .living-type-ink {
+  position:absolute;inset:0;pointer-events:none;color:#ff4d32;-webkit-text-stroke:0;
+  opacity:calc(var(--type-energy,0) * .76);
+  clip-path:inset(calc((1 - var(--type-energy,0)) * 100%) 0 0);
+}
+.tunnel-hero .living-type-outline .living-type-ink {color:#efeee9;opacity:var(--type-energy,0)}
+.tunnel-hero .tunnel-full-stop {display:inline-block;transform:scale(calc(1 + var(--signal-energy,0) * .14));transform-origin:50% 75%}
+.tunnel-hero .living-type-word {
+  display:inline-block;translate:0 var(--word-y,0px);
+  animation:monumental-word-arrival 440ms cubic-bezier(.16,1,.3,1) both;
+  animation-delay:calc(var(--word-index,0) * 24ms);
+}
+@keyframes monumental-word-arrival {from{transform:translateY(.35em);opacity:.6}to{transform:none;opacity:1}}
+
+/* Two visual faces, one accessible name and a stationary target. */
+.tunnel-hero .living-action-label {display:inline-grid;overflow:hidden;line-height:1.55;vertical-align:middle}
+.tunnel-hero .living-action-face,.tunnel-hero .living-action-reprise {
+  grid-area:1/1;white-space:nowrap;transition:transform 430ms cubic-bezier(.16,1,.3,1);
+}
+.tunnel-hero .living-action-reprise {transform:translateY(115%) skewY(6deg)}
+.tunnel-hero :is(.tunnel-entry-button,.tunnel-browse):is(:hover,:focus-visible) .living-action-face {transform:translateY(-115%) skewY(-6deg)}
+.tunnel-hero :is(.tunnel-entry-button,.tunnel-browse):is(:hover,:focus-visible) .living-action-reprise {transform:none}
+.tunnel-hero .tunnel-entry-button {position:relative}
+.tunnel-hero .tunnel-entry-button:hover {transform:none}
+.tunnel-hero :is(.tunnel-entry-button,.tunnel-browse)>svg {transition:transform 430ms cubic-bezier(.16,1,.3,1)}
+.tunnel-hero .tunnel-entry-button:is(:hover,:focus-visible)>svg {transform:translateX(5px)}
+.tunnel-hero .tunnel-browse {position:relative}
+.tunnel-hero .tunnel-browse::after {content:'';position:absolute;left:0;bottom:9px;width:calc(100% - 34px);height:1px;background:currentColor;transform:scaleX(0);transform-origin:left;transition:transform 430ms cubic-bezier(.16,1,.3,1)}
+.tunnel-hero .tunnel-browse:is(:hover,:focus-visible)::after {transform:scaleX(1)}
+.tunnel-hero .tunnel-browse:is(:hover,:focus-visible)>svg {transform:translate(3px,-3px)}
+.tunnel-hero[data-living-type=paused] .living-type-word {animation-play-state:paused}
+.tunnel-hero[data-living-type=reduced] :is(.living-type-glyph,.living-type-word,.tunnel-full-stop,.living-action-face,.living-action-reprise),
+html[data-motion=reduced] .tunnel-hero :is(.living-type-glyph,.living-type-word,.tunnel-full-stop,.living-action-face,.living-action-reprise) {animation:none!important;transform:none!important;translate:none!important;transition:none!important}
+.tunnel-hero[data-living-type=reduced] :is(.living-type-ink,.living-action-reprise),html[data-motion=reduced] .tunnel-hero :is(.living-type-ink,.living-action-reprise) {display:none}
+.tunnel-hero[data-living-type=reduced] :is(.tunnel-entry-button,.tunnel-browse)>svg,
+html[data-motion=reduced] .tunnel-hero :is(.tunnel-entry-button,.tunnel-browse)>svg,
+.tunnel-hero[data-living-type=reduced] .tunnel-browse::after,html[data-motion=reduced] .tunnel-hero .tunnel-browse::after {transform:none!important;transition:none!important}
+@media(prefers-reduced-motion:reduce) {
+  .tunnel-hero :is(.living-type-glyph,.living-type-word,.tunnel-full-stop,.living-action-face,.living-action-reprise) {animation:none!important;transform:none!important;translate:none!important;transition:none!important}
+  .tunnel-hero :is(.living-type-ink,.living-action-reprise) {display:none}
+  .tunnel-hero :is(.tunnel-entry-button,.tunnel-browse)>svg,.tunnel-hero .tunnel-browse::after {transform:none!important;transition:none!important}
+}

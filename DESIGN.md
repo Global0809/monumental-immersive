@@ -145,6 +145,8 @@ Mechanical depth comes from visible wall thickness, recessed screens, hinge pins
 
 ## Interaction edition
 
+Opening typography acts as part of the Passage's signal system. Separate inner glyph layers articulate near the pointer while the existing letter wrappers retain arrival ownership. An occasional signal reveals ivory inside the outline line and red ink inside solid type. Supporting words move less than display letters. Entry and browse labels turn inside fixed targets, including on keyboard focus. Keep the exact words and readable resting state; suspend decorative motion when hidden, obscured or beyond the entrance, and use the static reduced-motion presentation. See [Living opening type](docs/living-type.md).
+
 The Passage structural reveal is a finite world-space cut into physical shell materials. A narrow satin edge reveals recessed supports, graphite housings, cable runs and collars under the existing scene lighting. Keep this machinery behind the shell, use a bounded nearby instance pool, and exclude copy, controls and footage. Clear the reveal during travel, inspection and playback; compact and reduced-motion presentations omit it. Avoid grainy masks, fluorescent wire cages, bright outlining and full-screen color filters. See [X-ray refinement](docs/xray-refinement.md).
 
 The Passage now unfolds side-mounted displays inside a continuous mechanical spiral, while the globe exposes actual catalogue connections. The Time Machine supports a contact sheet and direct era comparison. These interactions retain conventional controls beside spatial gestures. The homepage's silent previews, inspection controls, saved-story state and direct destination routes stay connected to the existing catalogue.
