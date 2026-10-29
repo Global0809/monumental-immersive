@@ -42,10 +42,10 @@ export function createTunnelAtmosphere() {
         float phase = aTraits.x;
         // Nested currents give neighboring lights a shared fluid motion.
         float stream = sin(p.z * .19 + uTime * .24) + cos(p.y * .32 - uTime * .18);
-        float orbitAngle = uTime * .025 + sin(p.z * .025 + uTime * .07) * .08;
+        float orbitAngle = uTime * .035 + sin(p.z * .025 + uTime * .09) * .13;
         p.xy = mat2(cos(orbitAngle),-sin(orbitAngle),sin(orbitAngle),cos(orbitAngle))*p.xy;
-        p.x += sin(p.z * .17 + uTime * .22 + stream) * .24;
-        p.y += sin(p.x * .21 - uTime * .19 + phase * .35) * .19;
+        p.x += sin(p.z * .17 + uTime * .22 + stream) * .34;
+        p.y += sin(p.x * .21 - uTime * .19 + phase * .35) * .28;
         p.z += cos(p.x * .16 + uTime * .18 + stream) * .24;
         float signalDistance = (p.z - (uSignal.x - 4.0 - uSignal.y * 36.0)) / 7.0;
         float signal = exp(-signalDistance * signalDistance) * uSignal.z * (1.0 - smoothstep(5.0, 8.0, uSignal.y));
@@ -64,12 +64,12 @@ export function createTunnelAtmosphere() {
         float charge = uPointer.w;
 
         // Hover parts the air; quick sweeps pull it into a curved wake.
-        vec2 drift = (radial * .085 + tangent * .09 + velocity * .035) * influence;
+        vec2 drift = (radial * .075 + tangent * .14 + velocity * .045) * influence;
         float wake = 0.0;
         for (int i = 0; i < 4; i++) {
           vec2 delta = (screen - uTrail[i].xy) * metric;
           float field = exp(-dot(delta, delta) * 8.0) * uTrail[i].z;
-          drift += (vec2(-delta.y, delta.x) * .28 + velocity * .018) * field;
+          drift += (vec2(-delta.y, delta.x) * .42 + velocity * .026) * field;
           wake += field;
         }
 

@@ -19,6 +19,7 @@ import { playSound } from '../services/audio';
 import { notify } from '../services/feedback';
 import FilmCard, { SaveButton, filmFormat } from './FilmCard';
 import './catalogue-browser.css';
+import DepthText from './DepthText';
 const StoryConstellation = lazy(() => import('./spatial/StoryConstellation'));
 const CollectionTheater = lazy(() => import('./spatial/CollectionTheater'));
 
@@ -28,8 +29,9 @@ export default function CatalogueBrowser({ category, params, onWatch, immersive 
   const [draft,setDraft] = useState(query);
   const [composing,setComposing] = useState(false);
   const [pickedId,setPickedId] = useState('');
-  const [theaterOpen,setTheaterOpen] = useState(false);
+  const [theaterOpen,setTheaterOpen] = useState(category === 'Movies');
   const [compactFilters,setCompactFilters] = useState(false);
+  useEffect(()=>setTheaterOpen(category === 'Movies'),[category]);
   const filterPanel = useRef<HTMLDialogElement>(null);
   const filterButton = useRef<HTMLButtonElement>(null);
   const filterTitle = useId();
@@ -124,7 +126,7 @@ export default function CatalogueBrowser({ category, params, onWatch, immersive 
     {category !== 'Kids' && <section className="category-open-rooms" aria-label="Available collections"><div><h3>Meanwhile, the world is open.</h3><span>Available in the preview collection</span></div><div>{suggestedRooms.map(room => <a key={room.name} href={href('/category/' + room.name.toLowerCase())}><img src={room.items[0].poster} alt="" loading="lazy"/><span><strong>{room.name}</strong><small>{room.items.length} ready to watch</small></span><ArrowUpRight size={19}/></a>)}</div></section>}
   </section>;
   return <section className={`browse-page page-section ${hasTheater ? 'browse-page--theater' : ''}`}>
-    <div className="page-title-row"><div><h1>{category === 'Movies' ? 'Cinema.' : category || 'Find your next story.'}</h1><p>{category ? categoryCopy[category] : 'A place, a period, a sound. Follow what moves you.'}</p></div>{followControl}</div>
+    <div className="page-title-row"><div><h1><DepthText text={category === 'Movies' ? 'Cinema.' : category || 'Find your next story.'}/></h1><p>{category ? categoryCopy[category] : 'A place, a period, a sound. Follow what moves you.'}</p></div>{followControl}</div>
     {category && leadingStory && !hasTheater && <article className="catalogue-feature" aria-label="Featured selection"><a href={href('/film/' + leadingStory.id)} aria-label={`Details: ${leadingStory.title}`}><img src={leadingStory.poster} alt="" fetchPriority="high"/></a><div><span>{filmFormat(leadingStory)} · {durationLabel(leadingStory.duration)} · Free to watch</span><h2>{leadingStory.title}</h2><p>{leadingStory.description}</p><div><button className="button button-primary" onClick={() => onWatch(leadingStory)}><Play size={17} weight="fill"/>Watch this story</button><SaveButton video={leadingStory} small/>{canOpenTheater && <button className="text-link" onClick={() => setTheaterOpen(true)}>Enter the screening room <ArrowUpRight size={16}/></button>}</div></div></article>}
     {hasTheater && <button className="text-link catalogue-close-theater" onClick={() => setTheaterOpen(false)}>Return to the collection <X size={16}/></button>}
     {hasTheater && <Suspense fallback={<div className="collection-theater-loading" aria-label="Preparing the screening room"/>}><CollectionTheater category={category!} items={featured} onWatch={onWatch} reducedMotion={reducedMotion} onBrowse={() => { search.current?.closest('form')?.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'start' }); search.current?.focus({ preventScroll: true }); }}/></Suspense>}

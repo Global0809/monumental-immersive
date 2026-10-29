@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { gsap } from 'gsap';
 import { ArrowDown } from '@phosphor-icons/react/dist/csr/ArrowDown';
 import { ArrowLeft } from '@phosphor-icons/react/dist/csr/ArrowLeft';
@@ -187,7 +187,7 @@ export default function CollectionTheater({ category, items, onWatch, reducedMot
     playSound('select', { intensity: .35 });
   };
 
-  return <section className="collection-theater" ref={root} aria-labelledby={titleId}>
+  return <section className={`collection-theater ${category === 'Movies' ? 'collection-theater--gallery' : ''} ${reducedMotion ? 'is-calm' : ''}`} ref={root} aria-labelledby={titleId}>
     <div className="ct-topline"><span><i aria-hidden="true"/>{category.toLowerCase() === 'music' ? 'The listening room' : 'The screening room'}</span><button onClick={onBrowse}>Explore the collection <ArrowDown size={13}/></button></div>
     <div className="ct-stage" tabIndex={0} aria-label="Featured stories. Use the left and right arrow keys to browse." onKeyDown={event => {
       if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || selection.length < 2 || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
@@ -229,7 +229,7 @@ export default function CollectionTheater({ category, items, onWatch, reducedMot
     </div>
     <div className="ct-selection">
       <div className="ct-selection-heading"><span>Choose your next story</span><div className="ct-pagination"><span aria-hidden="true">{String(index + 1).padStart(2, '0')}<i>/ {String(selection.length).padStart(2, '0')}</i></span><button aria-label="Previous featured story" disabled={selection.length < 2} onClick={() => step(-1)}><ArrowLeft size={17}/></button><button aria-label="Next featured story" disabled={selection.length < 2} onClick={() => step(1)}><ArrowRight size={17}/></button></div></div>
-      <div className="ct-filmstrip" ref={filmstrip} aria-label="Featured stories">{selection.map((item, itemIndex) => <button key={item.id} onClick={() => choose(item.id)} aria-pressed={item.id === active.id} aria-label={`Feature ${item.title}, ${formatOf(item)}`}><span className="ct-thumbnail"><img src={item.poster} alt="" loading="lazy"/><span>{String(itemIndex + 1).padStart(2, '0')}</span></span><span className="ct-thumbnail-copy"><strong>{titleOf(item)}</strong><small>{formatOf(item)} · {durationLabel(item.duration)}</small></span></button>)}</div>
+      <div className="ct-filmstrip" ref={filmstrip} aria-label="Featured stories" onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const buttons=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button'));const current=buttons.indexOf(event.target as HTMLButtonElement);const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(current+(event.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;buttons[next]?.click();buttons[next]?.focus({preventScroll:true});}}>{selection.map((item, itemIndex) => <button key={item.id} style={{'--poster-distance':Math.abs(itemIndex-index),'--poster-side':Math.sign(itemIndex-index)} as CSSProperties} onClick={() => choose(item.id)} aria-pressed={item.id === active.id} aria-label={`Feature ${item.title}, ${formatOf(item)}`}><span className="ct-thumbnail"><img src={item.poster} alt="" loading="lazy"/><span>{String(itemIndex + 1).padStart(2, '0')}</span></span><span className="ct-thumbnail-copy"><strong>{titleOf(item)}</strong><small>{formatOf(item)} · {durationLabel(item.duration)}</small></span></button>)}</div>
     </div>
     <span className="ct-sr-only" aria-live="polite">Featured: {active.title}, {index + 1} of {selection.length}.</span>
   </section>;

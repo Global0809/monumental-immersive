@@ -5,7 +5,7 @@
 .tunnel-hero{--hero-progress:0;position:fixed;inset:0;z-index:3;padding:clamp(112px,16vh,164px) 5.2vw 104px;opacity:calc(1 - var(--hero-progress));transform:translate3d(0,calc(var(--hero-progress) * -48px),0);pointer-events:none}
 .tunnel-hero-copy{width:44%;max-width:650px}
 .tunnel-hero h1{font-family:'Barlow Condensed',sans-serif;font-size:clamp(78px,8.4vw,138px);font-weight:600;line-height:.84;letter-spacing:-.025em;margin:0 0 28px;text-wrap:initial}
-.tunnel-hero h1>span:not(.tunnel-full-stop){-webkit-text-stroke:1px #efeee9;color:transparent}
+.tunnel-hero h1>span:not(.tunnel-full-stop):not(.depth-text){-webkit-text-stroke:1px #efeee9;color:transparent}
 .tunnel-full-stop{color:#ff4d32}
 .tunnel-hero-copy>p{font-size:clamp(15px,1.2vw,18px);line-height:1.65;color:#d1d2ca;margin:0 0 25px}
 .tunnel-entry-button{display:flex;align-items:center;justify-content:space-between;gap:36px;padding:18px 22px;background:#ff4d32;color:#080909;border:0;min-width:252px;font-size:11px;font-weight:700;letter-spacing:.08em;pointer-events:auto;transition:background .2s,transform .25s}
@@ -45,7 +45,7 @@
 .tunnel-panel button:active{transform:none}
 .tunnel-panel-heading{position:relative;margin:0 0 20px;padding:0 0 0 8px}
 .tunnel-panel h2{font-family:'Barlow Condensed',sans-serif;font-size:64px;line-height:.93;letter-spacing:-.02em;font-weight:600;margin:0;text-wrap:initial;text-shadow:1px 2px 1px #080909,3px 7px 15px #000b}
-.tunnel-panel h2 span{color:#d7d8cf}
+.tunnel-panel h2>span:not(.depth-text){color:#d7d8cf}
 .tunnel-panel-copy{padding-right:15px}
 .tunnel-panel-copy p{position:relative;font-size:18px;line-height:1.55;color:#daddd3;max-width:43ch;margin:0 0 14px;padding:15px 18px 16px;background:var(--plate);border-top:1px solid var(--plate-edge);box-shadow:6px 9px 17px #0008}
 .tunnel-enter-room{display:inline-flex;justify-content:space-between;gap:28px;align-items:center;min-height:54px;min-width:258px;margin-left:12px;color:#efeee9;background:#101212f5;border-top:1px solid #efeee969;border-bottom:1px solid #ff4d32;padding:14px 18px;font-size:16px;font-weight:500;text-decoration:none;box-shadow:4px 7px 12px #0007;transition:color .2s,background .2s,border-color .2s}
@@ -109,6 +109,19 @@ html[data-spatial-passage=departing] .tunnel-css-world{opacity:0;pointer-events:
 .tunnel-progress{position:absolute;top:-1px;left:0;right:0;height:2px;pointer-events:none}
 .tunnel-progress i{display:block;height:100%;background:#ff4d32;transform:scaleX(var(--journey-progress,0));transform-origin:left}
 .tunnel-mobile-station{display:none}
+.tunnel-study-sound{margin-top:15px;max-width:400px}
+.tunnel-study-sound>button{display:flex;align-items:center;gap:10px;min-height:44px;padding:10px 13px;background:#080909e8;border:1px solid #efeee947;color:#efeee9;font-size:13px}
+.tunnel-study-sound>button[aria-pressed=true]{border-color:#ff4d32}
+.tunnel-study-sound>button svg{color:#ff795f}
+.tunnel-study-sound>small{display:block;color:#bcc0b6;font-size:11px;line-height:1.5;margin-top:6px}
+.tunnel-relay-parts{margin-top:12px;padding:13px 14px;background:#080909ed;border:1px solid #efeee932;max-width:310px;pointer-events:auto}
+.tunnel-relay-parts>span{display:block;font-size:12px;color:#bdbdb5;margin-bottom:7px}
+.tunnel-relay-parts>div{display:flex;gap:3px}
+.tunnel-relay-control .tunnel-relay-parts button{min-width:44px;min-height:44px;padding:8px;border:1px solid #efeee925;background:#111212;color:#efeee9;font-size:12px;justify-content:center;cursor:pointer}
+.tunnel-relay-control .tunnel-relay-parts button:hover{border-color:#ff4d32}
+.tunnel-relay-control .tunnel-relay-parts button[aria-pressed=true]{color:#080909;background:#ff4d32;border-color:#ff4d32}
+.tunnel-relay-control .tunnel-relay-parts .tunnel-relay-reassemble{margin-top:8px;min-height:40px;width:100%;gap:12px}
+@media(max-height:820px){.tunnel-relay-control{top:53%}}
 .tunnel-journey button:focus-visible,.tunnel-panel :is(a,button):focus-visible{outline:2px solid #ff795f;outline-offset:5px}
 .tunnel-panel ::selection,.tunnel-hero ::selection{background:#ff4d32;color:#080909}
 /* The compact image is the same ambient decoder used by the WebGL scene. */

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { TunnelLifeFrame } from '../../services/tunnelLife';
 import { tunnelStationZ } from '../../services/tunnelJourney';
+import { mechanismAwakening, relayPartIndex } from '../../services/passageMechanisms';
 
 const TAU = Math.PI * 2;
 const clamp = (v: number) => Math.max(0, Math.min(1, v));
@@ -18,8 +19,12 @@ export function createTunnelRelays(scene: THREE.Scene) {
   const mechanism = new THREE.Group(); hero.add(mechanism);
   const dummy = new THREE.Object3D(), unit = new THREE.Object3D();
   const matrix = new THREE.Matrix4();
+  const rodStart = new THREE.Vector3(), rodEnd = new THREE.Vector3(), rodDirection = new THREE.Vector3(), rodAxis = new THREE.Vector3(0, 1, 0);
   const hitObjects: THREE.Object3D[] = [], hits: THREE.Intersection[] = [];
   let destroyed = false, expanded = false, opening = 0, phase = 0, pointerX = 0, pointerY = 0, boundsDirty = true;
+  let selectedPart: number | null = null;
+  let partPull: number | null = null;
+  const partAmounts = new Float32Array(6), lastParts = new Float32Array(6);
 
   const ownGeometry = <T extends THREE.BufferGeometry>(g: T) => { geometries.add(g); return g; };
   const ownMaterial = <T extends THREE.Material>(m: T) => { materials.add(m); return m; };
@@ -29,6 +34,8 @@ export function createTunnelRelays(scene: THREE.Scene) {
   const brushed = ownMaterial(new THREE.MeshStandardMaterial({ color: 0x646d67, metalness: .86, roughness: .38 }));
   const signal = ownMaterial(new THREE.MeshStandardMaterial({ color: 0xff4d32, emissive: 0xff4d32, emissiveIntensity: .35, metalness: .45, roughness: .3 }));
   const lamp = ownMaterial(new THREE.MeshBasicMaterial({ color: 0xff6148, toneMapped: false }));
+  chrome.userData.passageShell = true;
+  brushed.userData.passageInternal = true;
 
   function contour(points: readonly (readonly [number, number])[], depth: number, bevel: number) {
     const shape = new THREE.Shape();
@@ -76,11 +83,13 @@ export function createTunnelRelays(scene: THREE.Scene) {
   function finish(mesh: THREE.InstancedMesh) { mesh.instanceMatrix.needsUpdate = true; }
   const shells = batch(mechanism, leaf, chrome, 6, true);
   const inlays = batch(mechanism, inlay, ivory, 6, true);
+  shells.name = 'relay-shell-components'; inlays.name = 'relay-shell-inlays';
   const shoulders = batch(mechanism, shoulder, dark, 6, true);
   const barrels = batch(mechanism, cylinder, brushed, 6);
   const shafts = batch(mechanism, cylinder, chrome, 6);
   const pivots = batch(mechanism, smallCylinder, dark, 12);
   const indicators = batch(mechanism, box, lamp, 6);
+  const internals = batch(mechanism, box, brushed, 30);
   const collars = batch(mechanism, collarGeometry, brushed, 3, true);
   const cage = batch(mechanism, box, ivory, 6);
   const gimbals = [new THREE.Mesh(gimbalGeometry, chrome), new THREE.Mesh(gimbalGeometry, dark), new THREE.Mesh(innerGimbalGeometry, ivory)];
@@ -111,23 +120,32 @@ export function createTunnelRelays(scene: THREE.Scene) {
   finish(collars); finish(cage);
 
   function writeHero() {
-    const spread = opening * .48;
     for (let i = 0; i < 6; i++) {
       const angle = i * TAU / 6, c = Math.cos(angle), s = Math.sin(angle);
+      const part = partAmounts[i], spread = opening * .48 + part * .78;
       // Inner and outer sleeves remain connected during an exploded inspection.
-      const leafZ = Math.sin(opening * Math.PI / 2) * (i % 2 ? .32 : -.16);
-      dummy.position.set(c * spread, s * spread, leafZ); dummy.rotation.set(0, (i % 2 ? -1 : 1) * opening * .26, angle); dummy.scale.set(1, 1, 1); put(shells, i);
+      const leafZ = Math.sin(opening * Math.PI / 2) * (i % 2 ? .32 : -.16) + part * .72;
+      dummy.position.set(c * spread, s * spread, leafZ); dummy.rotation.set(0, (i % 2 ? -1 : 1) * (opening * .26 + part * .2), angle); dummy.scale.set(1, 1, 1); put(shells, i);
       dummy.position.z += .16; put(inlays, i);
       dummy.position.set(c * spread * .42, s * spread * .42, -.20); dummy.rotation.set(0, 0, angle); dummy.scale.set(1, 1, 1); put(shoulders, i);
       dummy.position.set(c * .93, s * .93, -.025); dummy.rotation.set(0, 0, angle - Math.PI / 2); dummy.scale.set(.088, .61, .088); put(barrels, i);
-      dummy.position.set(c * (1.13 + spread * .5), s * (1.13 + spread * .5), .035); dummy.scale.set(.045, .57 + spread, .045); put(shafts, i);
+      rodStart.set(c * 1.1, s * 1.1, .035); rodEnd.set(c * (1.25 + spread), s * (1.25 + spread), leafZ + .14);
+      rodDirection.subVectors(rodEnd, rodStart); dummy.position.copy(rodStart).add(rodEnd).multiplyScalar(.5);
+      dummy.scale.set(.045, Math.max(.14, rodDirection.length()), .045); dummy.quaternion.setFromUnitVectors(rodAxis, rodDirection.normalize()); put(shafts, i);
       for (let j = 0; j < 2; j++) {
         const radius = j ? 1.25 + spread : .73;
         dummy.position.set(c * radius, s * radius, j ? leafZ + .14 : .05); dummy.rotation.set(Math.PI / 2, 0, 0); dummy.scale.set(.115, .12, .115); put(pivots, i * 2 + j);
       }
       dummy.position.set(c * (1.64 + spread), s * (1.64 + spread), leafZ + .21); dummy.rotation.set(0, 0, angle + Math.PI / 2); dummy.scale.set(.19, .024, .02); put(indicators, i);
+      // Real folded cooling fins sit behind each shell; pulling a component
+      // reveals material thickness, the piston and the ribbed substructure.
+      for (let j = 0; j < 5; j++) {
+        const r = 1.06 + j * .125 + spread * .46;
+        dummy.position.set(c * r, s * r, -.28 + part * .20); dummy.rotation.set(0, 0, angle);
+        dummy.scale.set(.035, .26 + j * .014, .25); put(internals, i * 5 + j);
+      }
     }
-    finish(shells); finish(inlays); finish(shoulders); finish(barrels); finish(shafts); finish(pivots); finish(indicators);
+    finish(shells); finish(inlays); finish(shoulders); finish(barrels); finish(shafts); finish(pivots); finish(indicators); finish(internals);
     boundsDirty = true;
   }
   writeHero();
@@ -144,6 +162,13 @@ export function createTunnelRelays(scene: THREE.Scene) {
     pointerY += (frame.pointer[1] - pointerY) * follow;
     opening += ((expanded ? 1 : 0) - opening) * (1 - Math.exp(-dt * 6));
     if (Math.abs(opening - (expanded ? 1 : 0)) < .0001) opening = expanded ? 1 : 0;
+    let partsChanged = false;
+    for (let i = 0; i < 6; i++) {
+      const target = expanded && selectedPart === i ? partPull ?? 1 : 0;
+      partAmounts[i] += (target - partAmounts[i]) * (1 - Math.exp(-dt * 7));
+      if (Math.abs(partAmounts[i] - target) < .0001) partAmounts[i] = target;
+      if (Math.abs(lastParts[i] - partAmounts[i]) > .00001) { partsChanged = true; lastParts[i] = partAmounts[i]; }
+    }
     const departure = smooth((10 - frame.cameraZ) / 10.5);
     hero.visible = frame.active < 0 && frame.cameraZ > -.65 && !frame.inspection;
     if (hero.visible) {
@@ -158,7 +183,7 @@ export function createTunnelRelays(scene: THREE.Scene) {
       core.rotation.set(phase * .09, phase * .16, phase * .05);
       const impulse = frame.pulse.strength * Math.exp(-Math.max(0, frame.pulse.age) * 2.9);
       signal.emissiveIntensity = .28 + .10 * (Math.sin(phase * 1.9) * .5 + .5) + clamp(frame.energy) * .18 + impulse * .65;
-      if (Math.abs(lastOpening - opening) > .00001) { writeHero(); lastOpening = opening; }
+      if (Math.abs(lastOpening - opening) > .00001 || partsChanged) { writeHero(); lastOpening = opening; }
     }
 
     const p = frame.progress;
@@ -172,7 +197,7 @@ export function createTunnelRelays(scene: THREE.Scene) {
       const scale = visible ? .29 * travelWeight * smooth((distance + 4) / 6) * (1 - smooth((distance - 48) / 16)) : 0;
       unit.position.set(a.x, a.y, a.z); unit.rotation.set(.20 + Math.sin(i * 2) * .35, Math.cos(i * 3) * .4, a.angle + phase * (i % 2 ? .06 : -.06)); unit.scale.setScalar(scale); unit.updateMatrix();
       for (let j = 0; j < 6; j++) {
-        const angle = j * TAU / 6, open = .06 + .08 * (Math.sin(phase * .8 + i) * .5 + .5);
+        const angle = j * TAU / 6, open = .035 + .16 * mechanismAwakening(phase, i * 6 + j);
         dummy.position.set(Math.cos(angle) * open, Math.sin(angle) * open, 0); dummy.rotation.set(0, 0, angle); dummy.scale.set(1, 1, 1); dummy.updateMatrix(); matrix.multiplyMatrices(unit.matrix, dummy.matrix); travelLeaves.setMatrixAt(i * 6 + j, matrix);
         dummy.position.z = .16; dummy.updateMatrix(); matrix.multiplyMatrices(unit.matrix, dummy.matrix); travelInlays.setMatrixAt(i * 6 + j, matrix);
         dummy.position.set(Math.cos(angle), Math.sin(angle), -.06); dummy.rotation.set(0, 0, angle - Math.PI / 2); dummy.scale.set(.08, .8, .08); dummy.updateMatrix(); matrix.multiplyMatrices(unit.matrix, dummy.matrix); travelShafts.setMatrixAt(i * 6 + j, matrix);
@@ -185,7 +210,16 @@ export function createTunnelRelays(scene: THREE.Scene) {
 
   return {
     update,
-    setExploded(open: boolean) { expanded = open; },
+    setExploded(open: boolean) { expanded = open; if (!open) { selectedPart = null; partPull = null; } },
+    setSelectedPart(index: number | null) { const next = relayPartIndex(index); if (selectedPart !== next) partPull = null; selectedPart = next; },
+    setPartPull(amount: number | null) { partPull = amount !== null && Number.isFinite(amount) ? clamp(amount) : null; },
+    hitPart(raycaster: THREE.Raycaster): number | null {
+      if (destroyed || !root.visible || !hero.visible || hero.scale.x < .08) return null;
+      hero.updateWorldMatrix(true, true);
+      if (boundsDirty) { shells.computeBoundingSphere(); inlays.computeBoundingSphere(); shoulders.computeBoundingSphere(); boundsDirty = false; }
+      hits.length = 0; raycaster.intersectObjects([shells, inlays, shoulders], false, hits);
+      const part = relayPartIndex(hits[0]?.instanceId ?? null); hits.length = 0; return part;
+    },
     hitTest(raycaster: THREE.Raycaster) {
       if (destroyed || !root.visible || !hero.visible || hero.scale.x < .08) return false;
       hero.updateWorldMatrix(true, true);

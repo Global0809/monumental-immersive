@@ -10,6 +10,9 @@ export default function StoryTransition({ reducedMotion }: { reducedMotion: bool
     let frame = 0;
     const clear = () => { cancelAnimationFrame(frame); motion?.kill(); motion = null; cover?.remove(); cover = null; };
     const click = (event: MouseEvent) => {
+      // The immersive navigator carries the same cover through its continuous
+      // portal; two independent handoffs would fight over the arrival.
+      if (document.querySelector('.monumental-spatial')) return;
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       const link = (event.target as Element).closest<HTMLAnchorElement>('a[data-transition-film]');
       if (!link) return;

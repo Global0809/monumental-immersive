@@ -5,11 +5,14 @@ import { commitRoute, href } from '../../services/router';
 import { playSound } from '../../services/audio';
 import { enterSpatialWorld, getSpatialState, setSpatialFocus, setSpatialTravelling, spatialPortals, spatialRoomForPath, useSpatial } from '../../services/spatial';
 import { spatialPassagePlan } from '../../services/spatialNavigation';
+import { getDestination } from '../../services/exploration';
+import { portalContext } from '../../services/portalContext';
+import { assetUrl } from '../../services/assets';
 import type { SpatialSceneController } from './scene';
 import { editorialPageLabel } from '../GlobalNavigation';
 import './spatial-navigation.css';
 
-type Journey = { from: string; title: string; path: string; room: string; crossRoom: boolean };
+type Journey = { from: string; title: string; path: string; room: string; crossRoom: boolean; label: string; image: string; identity: string };
 
 /** One owner for link intent, camera departure and DOM arrival. No duplicate
  * pages, screenshots of content, scroll hijack or independent loading theatre. */
@@ -47,6 +50,8 @@ export default function SpatialNavigator({ path, reducedMotion, paused, controll
     const cancel = () => { revision.current++; controller.current?.cancelTravel(); finish(); };
     cancelRef.current = cancel;
     const navigate = (destination: string, params: Record<string, string | undefined> = {}) => {
+      const carried = portalContext(destination, params, getDestination());
+      params = carried.params;
       const settings = current.current;
       const plan = spatialPassagePlan(settings.path, destination, settings.reducedMotion);
       if (!plan.changed) {
@@ -82,17 +87,17 @@ export default function SpatialNavigator({ path, reducedMotion, paused, controll
         commitRoute(destination, params);
       };
       pending.current = { hash: targetHash, commit };
-      setJourney({ from: editorialPageLabel(settings.path), title: destination === '/' ? 'The Passage' : editorialPageLabel(destination), path: destination, room: plan.room, crossRoom: plan.crossRoom });
+      setJourney({ from: editorialPageLabel(settings.path), title: destination === '/' ? 'The Passage' : editorialPageLabel(destination), path: destination, room: plan.room, crossRoom: plan.crossRoom, label: carried.label, image: carried.image, identity: carried.identity });
       setSpatialTravelling(plan.room);
       document.documentElement.dataset.spatialPassage = 'departing';
       const main = document.getElementById('main');
       if (main) main.inert = true;
       const stage = document.querySelector('.route-stage');
       motion.current = gsap.context(() => {
-        gsap.to(stage, { opacity: 0, y: -10, duration: .2, ease: 'power2.in' });
+        gsap.to(stage, { opacity: 0, duration: .24, ease: 'power2.in' });
         if (passage.current) {
           gsap.fromTo(passage.current, { opacity: 0 }, { opacity: 1, duration: .18 });
-          gsap.fromTo(passage.current.querySelector('.spatial-passage-frames'), { scale: .78, opacity: 0 }, { scale: 1.16, opacity: 1, duration: plan.duration / 1000, ease: 'power2.inOut' });
+          gsap.fromTo(passage.current.querySelector('.spatial-passage-frames'), { z: -120, opacity: 0 }, { z: 720, opacity: 1, duration: plan.duration / 1000, ease: 'power2.in' });
           gsap.fromTo(passage.current.querySelector('.spatial-passage-progress i'), { scaleX: 0 }, { scaleX: 1, duration: plan.duration / 1000, ease: 'none' });
         }
       }, passage);
@@ -147,8 +152,11 @@ export default function SpatialNavigator({ path, reducedMotion, paused, controll
       motion.current?.revert();
       motion.current = gsap.context(() => {
         const tl = gsap.timeline({ onComplete: finish });
-        tl.fromTo(stage, { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: .38, ease: 'power3.out', clearProps: 'opacity,transform' }, 0);
-        if (passage.current) tl.to(passage.current, { opacity: 0, duration: .22 }, 0);
+        tl.fromTo(stage, { opacity: .15 }, { opacity: 1, duration: .38, ease: 'power3.out', clearProps: 'opacity,transform' }, 0);
+        if (passage.current) {
+          tl.to(passage.current.querySelector('.spatial-passage-frames'), { z: 1150, duration: .38, ease: 'power2.out' }, 0);
+          tl.to(passage.current, { opacity: 0, duration: .32 }, .04);
+        }
       }, passage);
     };
     // Lazy page code gets a real readiness check, not a second timed animation.
@@ -164,9 +172,9 @@ export default function SpatialNavigator({ path, reducedMotion, paused, controll
   useEffect(() => { if (spatial.unavailable) pending.current?.commit(); }, [spatial.unavailable]);
 
   return <>
-    <div className="spatial-passage" ref={passage} data-active={!!journey} data-cross-room={journey?.crossRoom} aria-hidden={!journey}>
-      <div className="spatial-passage-frames" aria-hidden="true"><i/><i/><i/></div>
-      <div className="spatial-passage-caption"><span className="spatial-passage-origin">{journey?.from}<ArrowRight size={15}/></span><strong role="status">{journey?.title}</strong><div className="spatial-passage-progress" aria-hidden="true"><i/></div><button onClick={() => pending.current?.commit()} tabIndex={journey ? 0 : -1}>Enter now <ArrowRight size={16}/></button></div>
+    <div className="spatial-passage" ref={passage} data-active={!!journey} data-cross-room={journey?.crossRoom} data-carried-identity={journey?.identity || undefined} aria-hidden={!journey}>
+      <div className="spatial-passage-frames" aria-hidden="true"><i/><i/><i/><i/><i/></div>
+      <div className="spatial-passage-caption">{journey?.image && <img className="spatial-passage-carried" src={assetUrl(journey.image)} alt=""/>}<span className="spatial-passage-origin">{journey?.from}<ArrowRight size={15}/></span><strong role="status">{journey?.label || journey?.title}</strong>{journey?.label && <span className="spatial-passage-destination">{journey.title}</span>}<div className="spatial-passage-progress" aria-hidden="true"><i/></div><button onClick={() => pending.current?.commit()} tabIndex={journey ? 0 : -1}>Enter now <ArrowRight size={16}/></button></div>
     </div>
   </>;
 }

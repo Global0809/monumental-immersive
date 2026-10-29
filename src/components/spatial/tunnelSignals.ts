@@ -56,8 +56,11 @@ export function createTunnelSignals(scene: THREE.Scene) {
     attribute vec3 aLife;
     float lifeHinge() {
       float passing = exp(-pow((aLife.x - (uLifeCameraZ - 13.0)) / 13.0, 2.0));
-      float wave = pow(.5 + .5 * sin(aLife.x * .13 + aLife.y * 1.7 + uLifeTime * .62), 3.0);
-      return -.035 - min(.38, (wave * .12 + passing * (.08 + uLifeEnergy * .09)
+      // Each mechanism attends, adjusts and settles, with a long quiet interval.
+      // Seeded phase offsets avoid a uniform wall of continually flapping fins.
+      float cycle = mod(uLifeTime + aLife.x * .21 + aLife.y * 2.71 + 760.0, 19.0);
+      float awake = smoothstep(0.0, 1.4, cycle) * (1.0 - smoothstep(2.7, 4.6, cycle));
+      return -.035 - min(.38, (awake * .23 + passing * (.035 + uLifeEnergy * .09)
         + lifePointer(aLife.y) * passing * .1 + lifeWave(aLife.x) * .26) * lifeQuiet(aLife.x));
     }
     vec3 lifeRotate(vec3 p) {
@@ -95,7 +98,7 @@ export function createTunnelSignals(scene: THREE.Scene) {
           .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= .42 + vLifeCharge * .8;');
       }
     };
-    material.customProgramCacheKey = () => `monumental-life-vanes-v1-${material.type}`;
+    material.customProgramCacheKey = () => `monumental-life-vanes-v2-${material.type}`;
   }
   const vanes = new THREE.InstancedMesh(vaneGeometry, vaneMaterial, VANE_ROWS * VANE_LANES);
   const edges = new THREE.InstancedMesh(edgeGeometry, edgeMaterial, VANE_ROWS * VANE_LANES);
@@ -105,7 +108,7 @@ export function createTunnelSignals(scene: THREE.Scene) {
     matrix.position.set(Math.cos(angle) * 8.26, Math.sin(angle) * 8.26, traits[i * 3]);
     matrix.rotation.set(0, 0, angle - Math.PI / 2); matrix.scale.set(1, 1, 1); matrix.updateMatrix();
     vanes.setMatrixAt(i, matrix.matrix); edges.setMatrixAt(i, matrix.matrix);
-    color.set(i % 6 === 0 ? 0xaaa79d : 0xff4d32); edges.setColorAt(i, color);
+    color.set(0xff4d32); edges.setColorAt(i, color);
   }
   for (const mesh of [vanes, edges]) { mesh.instanceMatrix.needsUpdate = true; mesh.frustumCulled = false; root.add(mesh); instances.push(mesh); }
 

@@ -5,8 +5,8 @@ export type TunnelLifeFrame = {
   pulse: { age: number; originZ: number; strength: number };
   compact: boolean; reducedMotion: boolean; inspection: boolean; quality: string;
 };
-export type TunnelLifeState = Readonly<{ relayOpen: boolean; signal: number }>;
-let state: TunnelLifeState = Object.freeze({ relayOpen: false, signal: 0 });
+export type TunnelLifeState = Readonly<{ relayOpen: boolean; relayPart: number | null; signal: number }>;
+let state: TunnelLifeState = Object.freeze({ relayOpen: false, relayPart: null, signal: 0 });
 const listeners = new Set<() => void>();
 export const getTunnelLife = () => state;
 export function subscribeTunnelLife(listener: () => void) {
@@ -15,7 +15,11 @@ export function subscribeTunnelLife(listener: () => void) {
 }
 function publish(next: TunnelLifeState) { state = Object.freeze(next); listeners.forEach(listener => listener()); }
 export function setTunnelRelay(open: boolean) {
-  if (open !== state.relayOpen) publish({ ...state, relayOpen: open });
+  if (open !== state.relayOpen || (!open && state.relayPart !== null)) publish({ ...state, relayOpen: open, relayPart: open ? state.relayPart : null });
+}
+export function selectTunnelRelayPart(part: number | null) {
+  const selected = part !== null && Number.isInteger(part) && part >= 0 && part < 6 ? part : null;
+  if (state.relayPart !== selected || (selected !== null && !state.relayOpen)) publish({ ...state, relayOpen: selected !== null || state.relayOpen, relayPart: selected });
 }
 export function sendTunnelSignal() { publish({ ...state, signal: state.signal + 1 }); }
 

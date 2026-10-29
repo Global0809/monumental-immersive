@@ -5,8 +5,10 @@ import { createFrameCadence } from '../../services/frameCadence';
 import { getSpatialPreferences, subscribeSpatialPreferences } from '../../services/spatialPreferences';
 import { createDroneFamily } from './droneModels';
 import { createSpiralField } from './spiralField';
-import { tunnelCompact } from '../../services/tunnelJourney';
+import { getTunnelFrame, tunnelCompact } from '../../services/tunnelJourney';
 import { getPassageMediaBounds, subscribePassageMediaBounds } from '../../services/passageProtection';
+import { droneActivity, type DroneActivity } from '../../services/droneBehaviour';
+import { createDroneDock } from './droneDock';
 
 export type FlightFormation = 'escort' | 'orbit';
 type FlightState = { home: boolean; reducedMotion: boolean; paused: boolean; inspecting: boolean; docked: boolean; formation: FlightFormation; selected: string };
@@ -47,6 +49,9 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
   const fill = new THREE.DirectionalLight(0xb7c6c1, 1.3); fill.position.set(5, 1, 4); scene.add(fill);
   const rim = new THREE.DirectionalLight(0xff7658, .7); rim.position.set(1, -3, -2); scene.add(rim);
   const family = createDroneFamily(); scene.add(family.root);
+  const serviceDock = createDroneDock(scene), dockPosition = new THREE.Vector3();
+  const activities: DroneActivity[] = Array.from({ length: 4 }, () => ({ perch: 0, inspect: 0, signal: 0, state: 'fly' }));
+  const rotorTurns = [0, 0, 0, 0];
   const bodyScales = family.members.map(member => member.root.scale.x);
   const spiral = createSpiralField(); scene.add(spiral.root);
   const velocities = family.members.map(() => new THREE.Vector3());
@@ -94,7 +99,9 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
   }
   function scheduleProtection() { if (!protectionRequest && !disposed) protectionRequest = requestAnimationFrame(protect); }
   function collectProtection() {
-    protectedNodes = [...document.querySelectorAll('main video,main .film-image,main .cultural-atlas__viewport,main input,main textarea,main select,main h1,main h2,main h3,main p,main button,main a,main [data-flight-protected]')];
+    // Spatial galleries animate their children inside fixed bounds. Protect
+    // those bounded surfaces once, rather than reading moving posters each frame.
+    protectedNodes = [...document.querySelectorAll('main video,main img,main .film-image,main .cultural-atlas__viewport,main .ct-filmstrip,main .ct-screen-surface,main .personal-constellation__sky,main input,main textarea,main select,main h1,main h2,main h3,main p,main button,main a,main [data-flight-protected]')];
     scheduleProtection();
   }
   function render(time: number) {
@@ -120,8 +127,19 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
     const inspectOffsets = compact ? [[-viewW * .23, 1.35], [viewW * .23, 1.25], [-viewW * .2, -1.4], [viewW * .22, -1.35]] : [[-viewW * .3, .55], [-viewW * .09, -.25], [viewW * .15, .5], [viewW * .32, -.25]];
     const offsets = state.inspecting ? inspectOffsets : homeOffsets;
     const spread = state.inspecting ? 1 : hero ? .85 : .49;
+    const passage = getTunnelFrame();
+    const reading = state.home && passage.active >= 0 && passage.progress >= .36 && passage.progress <= .76;
+    const tending = !still && !state.inspecting && !reading && !compact && state.formation === 'escort';
+    const tendingMember = Math.floor(t / 18) % 4;
+    const selectedActivity = droneActivity(tending ? t : 17, tending ? tendingMember : -1, activities[tendingMember]);
+    const dockMargin = family.members[tendingMember].span * adultScale * .65;
+    dockPosition.set(
+      clamp(centerX * viewW / 2 + homeOffsets[tendingMember][0] * spread, -viewW / 2 + dockMargin, viewW / 2 - dockMargin),
+      clamp(centerY * viewH / 2 + homeOffsets[tendingMember][1] * spread - .2 * adultScale, -viewH / 2 + dockMargin + .25, viewH / 2 - dockMargin - .9), 0);
+    serviceDock.root.position.copy(dockPosition); serviceDock.root.scale.setScalar(adultScale);
     for (let i = 0; i < 4; i++) {
       const member = family.members[i], target = targets[i], velocity = velocities[i];
+      const routine = droneActivity(tending ? t : 17, tending ? i : -1, activities[i]);
       let x = offsets[i][0] * spread, y = offsets[i][1] * spread;
       let z = Math.sin(t * .36 + i * 1.9) * .3;
       if (state.formation === 'orbit' && !still) {
@@ -147,6 +165,11 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
           target.y += (parent.y - targets[i - 2].y) * .3;
         }
       }
+      if (routine.perch > 0) {
+        target.x = lerp(target.x, dockPosition.x, routine.perch);
+        target.y = lerp(target.y, dockPosition.y + .08 * adultScale, routine.perch);
+        target.z = lerp(target.z, dockPosition.z, routine.perch);
+      }
       // Size-aware bounds keep every member in view on narrow and short screens.
       const margin = member.span * adultScale * .65;
       target.x = clamp(target.x, -viewW / 2 + margin, viewW / 2 - margin);
@@ -163,11 +186,17 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
       const selected = state.inspecting && state.selected === member.id;
       scales[i] = still ? adultScale : lerp(scales[i], adultScale * (selected ? 1.11 : 1), smooth);
       member.root.scale.setScalar(scales[i] * bodyScales[i]);
-      member.root.rotation.set(.38 + py * .07 + Math.sin(t * .55 + i) * .035, -.25 + px * .32 + Math.sin(t * .38 + i) * .16, clamp(-velocity.x * .25, -.22, .22));
-      member.gimbal.rotation.y = px * .4; member.gimbal.rotation.x = -py * .18;
-      member.signal.emissiveIntensity = selected ? .8 : .38 + Math.sin(t * 1.8 + i) * .09;
-      for (let r = 0; r < member.rotors.length; r++) member.rotors[r].rotation.y = t * (i < 2 ? 11 : 14) * (r ? -1 : 1);
+      member.root.rotation.set(lerp(.38 + py * .07 + Math.sin(t * .55 + i) * .035, .07, routine.perch), lerp(-.25 + px * .32 + Math.sin(t * .38 + i) * .16, -.1, routine.perch), clamp(-velocity.x * .25, -.22, .22) * (1 - routine.perch));
+      member.gimbal.rotation.y = px * .4 * (1 - routine.perch) + routine.inspect * .45;
+      member.gimbal.rotation.x = -py * .18 * (1 - routine.perch) + routine.inspect * .38;
+      const reply = i === (tendingMember + 1) % 4 ? selectedActivity.signal * .28 : 0;
+      member.signal.emissiveIntensity = selected ? .8 : .32 + routine.signal * .38 + reply + Math.sin(t * 1.8 + i) * .05;
+      if (!still) rotorTurns[i] += dt * (i < 2 ? 11 : 14) * (1 - routine.perch * .88);
+      for (let r = 0; r < member.rotors.length; r++) member.rotors[r].rotation.y = rotorTurns[i] * (r ? -1 : 1);
     }
+    const activity = activities[tendingMember];
+    serviceDock.update(family.members[tendingMember].root.position, family.members[(tendingMember + 1) % 4].root.position, activity.signal, activity.inspect, tending && activity.state !== 'fly');
+    initialHost.dataset.activity = tending ? activity.state : 'fly';
     positioned = true;
     // The same phase survives routes. The camera and DOM are never moved by it.
     // Passage architecture supplies its own depth and air. The overlay current
@@ -232,7 +261,7 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
       cancelVisualFrame(request); cancelAnimationFrame(protectionRequest); resizeObserver.disconnect(); contentObserver.disconnect(); unsubscribe();unsubscribeMedia();
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerout', leave); window.removeEventListener('blur', resetPointer);
       window.removeEventListener('scroll', scroll); document.removeEventListener('visibilitychange', visibility); document.removeEventListener('load', collectProtection, true);
-      canvas.removeEventListener('webglcontextlost', lostContext); family.dispose(); spiral.dispose(); environment.dispose(); scene.clear(); renderer.dispose(); renderer.forceContextLoss(); canvas.remove();mediaMask.remove();
+      canvas.removeEventListener('webglcontextlost', lostContext); family.dispose(); serviceDock.destroy(); spiral.dispose(); environment.dispose(); scene.clear(); renderer.dispose(); renderer.forceContextLoss(); canvas.remove();mediaMask.remove();
     },
   };
 }

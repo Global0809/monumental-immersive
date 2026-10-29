@@ -14,18 +14,19 @@ import { createFrameCadence } from '../services/frameCadence';
 import { notify } from '../services/feedback';
 import { filmFormat } from './FilmCard';
 import './personal-monument.css';
+import PersonalConstellation from './PersonalConstellation';
 
-type Arrangement = 'orbit' | 'column' | 'unfolded';
+type Arrangement = 'constellation' | 'orbit' | 'column' | 'unfolded';
 type Preferences = { arrangement: Arrangement; spacing: number };
 type Part = { key: string; kind: 'place' | 'film' | 'journey'; title: string; place?: Place; film?: Video; journey?: Journey; films: Video[] };
 type SceneActions = { rotate: (amount: number) => void; reset: () => void; redraw: () => void };
-const PREF_KEY = 'monumental.personal-monument.v1';
-const DEFAULTS: Preferences = { arrangement: 'orbit', spacing: 50 };
+const PREF_KEY = 'monumental.personal-monument.v2';
+const DEFAULTS: Preferences = { arrangement: 'constellation', spacing: 50 };
 
 function readPreferences(): Preferences {
   try {
     const stored = JSON.parse(localStorage.getItem(PREF_KEY) || 'null');
-    return { arrangement: ['orbit', 'column', 'unfolded'].includes(stored?.arrangement) ? stored.arrangement : 'orbit', spacing: typeof stored?.spacing === 'number' && Number.isFinite(stored.spacing) ? Math.max(0, Math.min(100, stored.spacing)) : 50 };
+    return { arrangement: ['constellation', 'orbit', 'column', 'unfolded'].includes(stored?.arrangement) ? stored.arrangement : 'constellation', spacing: typeof stored?.spacing === 'number' && Number.isFinite(stored.spacing) ? Math.max(0, Math.min(100, stored.spacing)) : 50 };
   } catch { return DEFAULTS; }
 }
 
@@ -87,11 +88,11 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
     }, { rootMargin: '100px', threshold: 0 });
     observer.observe(element);
     return () => { state.current.visible = false; observer.disconnect(); };
-  }, [parts.length > 0]);
+  }, [parts.length > 0, preferences.arrangement === 'constellation']);
 
   useEffect(() => {
     const element = surface.current;
-    if (!entered || !element || !parts.length) return;
+    if (!entered || !element || !parts.length || preferences.arrangement === 'constellation') return;
     const host = element;
     let disposed = false;
     let cleanup = () => {};
@@ -278,7 +279,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
       };
     })().catch(() => { cleanup(); if (!disposed) setFallback(true); });
     return () => { disposed = true; cleanup(); };
-  }, [entered, sculptureParts]);
+  }, [entered, sculptureParts, preferences.arrangement === 'constellation']);
 
   function reset() {
     setPreferences(DEFAULTS); setPaused(true); actions.current?.reset();
@@ -306,7 +307,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
     <div className="personal-monument__intro"><h2 id={headingId}>A FORM<br/>OF YOUR OWN.</h2><p>A sculpture made from what you collect. Every piece leads back to a place, a film or a journey you chose.</p></div>
     {!parts.length ? <div className="personal-monument__empty"><div className="personal-monument__empty-form" aria-hidden="true"><span/><span/><span/></div><div><h3>Your first story gives it shape.</h3><p>Save a film to add a chrome segment. Collect a destination to place an anchor. Save a journey to connect them.</p><a className="button button-light" href={href('/search')}>Find a story <ArrowUpRight/></a><a className="text-link" href={href('/world')}>Collect a place <ArrowUpRight size={16}/></a></div></div> : <>
       <div className="personal-monument__body">
-        <div className="personal-monument__workshop">
+        <div className="personal-monument__workshop">{preferences.arrangement === 'constellation' ? <PersonalConstellation saved={viewer.saved} savedPlaces={viewer.savedPlaces} reducedMotion={reducedMotion} onChoose={key=>chooseRef.current(key)} onWatch={onWatch}/> : <>
           <div ref={surface} className={`personal-monument__scene ${ready && !fallback ? 'is-ready' : ''}`} tabIndex={0} role="group" aria-label="Your interactive collection sculpture" aria-describedby={instructionsId} onKeyDown={event => {
             if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); actions.current?.rotate(event.key === 'ArrowLeft' ? -.32 : .32); }
             if (event.key === 'Home') { event.preventDefault(); actions.current?.reset(); }
@@ -316,7 +317,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
           </div>
           <div className="personal-monument__toolbar"><p id={instructionsId}>Drag to rotate. Select a piece.<br/>Arrow keys rotate; Home resets the view. The list below selects every piece.</p><div><button aria-label="Rotate sculpture left" onClick={() => actions.current?.rotate(-.38)} disabled={fallback}><ArrowLeft size={17}/></button><button aria-label={paused || reducedMotion ? 'Start sculpture rotation' : 'Pause sculpture rotation'} aria-pressed={!paused && !reducedMotion} disabled={reducedMotion || fallback} onClick={() => setPaused(value => !value)}>{paused || reducedMotion ? <Play size={17}/> : <Pause size={17}/>}</button><button aria-label="Rotate sculpture right" onClick={() => actions.current?.rotate(.38)} disabled={fallback}><ArrowRight size={17}/></button></div></div>
           {parts.length > 24 && <p className="personal-monument__motion-note">Showing pieces {sculptureOffset + 1}–{Math.min(parts.length, sculptureOffset + 24)} of {parts.length}. Select any piece in the list to bring its group into view.</p>}
-          {reducedMotion && <p className="personal-monument__motion-note">Automatic rotation is off for reduced motion. Drag or use the arrow controls to inspect.</p>}
+          {reducedMotion && <p className="personal-monument__motion-note">Automatic rotation is off for reduced motion. Drag or use the arrow controls to inspect.</p>}</>}
         </div>
         <div className="personal-monument__detail" id={detailId}>
           {selected && <><div className="personal-monument__selected-title" aria-live="polite"><span>{typeLabel[selected.kind]}</span><h3>{selected.title}</h3></div>
@@ -329,7 +330,7 @@ export default function PersonalMonument({ onWatch, reducedMotion = false }: { o
           {!selected && <p>No {filter === 'place' ? 'places' : filter === 'film' ? 'films' : 'journeys'} are saved in this view. Choose another filter or add something from the collection.</p>}
         </div>
       </div>
-      <div className="personal-monument__arrangement"><fieldset><legend>Arrange your sculpture</legend><div>{(['orbit', 'column', 'unfolded'] as const).map(arrangement => <button key={arrangement} aria-pressed={preferences.arrangement === arrangement} onClick={() => { setPreferences(value => ({ ...value, arrangement })); setResetMessage(''); }}>{arrangement === 'orbit' ? 'Orbit' : arrangement === 'column' ? 'Column' : 'Unfold'}</button>)}</div></fieldset><label>Spacing <span>{preferences.spacing}%</span><input type="range" min="0" max="100" value={preferences.spacing} onChange={event => { setPreferences(value => ({ ...value, spacing: Number(event.target.value) })); setResetMessage(''); }}/></label><button data-sound-owned className="text-link" onClick={reset}><ArrowCounterClockwise size={17}/>Reset arrangement</button></div>
+      <div className="personal-monument__arrangement"><fieldset><legend>Arrange your sculpture</legend><div>{(['constellation', 'orbit', 'column', 'unfolded'] as const).map(arrangement => <button key={arrangement} aria-pressed={preferences.arrangement === arrangement} onClick={() => { setPreferences(value => ({ ...value, arrangement })); setResetMessage(''); }}>{arrangement === 'constellation' ? 'Constellation' : arrangement === 'orbit' ? 'Orbit' : arrangement === 'column' ? 'Column' : 'Unfold'}</button>)}</div></fieldset><label hidden={preferences.arrangement === 'constellation'}>Spacing <span>{preferences.spacing}%</span><input type="range" min="0" max="100" value={preferences.spacing} onChange={event => { setPreferences(value => ({ ...value, spacing: Number(event.target.value) })); setResetMessage(''); }}/></label><button data-sound-owned className="text-link" onClick={reset}><ArrowCounterClockwise size={17}/>Reset arrangement</button></div>
       <div className="personal-monument__map"><div className="personal-monument__map-heading"><h3>The pieces of your world.</h3><div aria-label="Filter sculpture pieces">{(['all', 'place', 'film', 'journey'] as const).map(kind => <button key={kind} aria-pressed={filter === kind} onClick={() => setFilter(kind)}>{kind === 'all' ? 'All pieces' : kind === 'place' ? 'Places' : kind === 'film' ? 'Films' : 'Journeys'}</button>)}</div></div>{visibleParts.length ? <div className="personal-monument__pieces">{visibleParts.map(part => <button data-sound-owned className={`personal-monument__piece is-${part.kind}`} key={part.key} aria-pressed={selected?.key === part.key} aria-controls={detailId} onClick={() => pickPart(part)}><i aria-hidden="true"/><span><small>{typeLabel[part.kind]}</small><strong>{part.title}</strong></span><ArrowUpRight size={16}/></button>)}</div> : <p>No {filter === 'place' ? 'destinations' : filter === 'film' ? 'films' : 'journeys'} saved yet. Add one to give your sculpture a new part.</p>}</div>
     </>}
     <p className="personal-monument__storage">{persistentStorage && preferencesStored ? 'Collection and arrangement are saved only in this browser. No account sync.' : 'Your sculpture is available for this visit; browser storage is unavailable.'} Resetting the arrangement keeps your collection.</p>

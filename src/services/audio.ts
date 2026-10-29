@@ -16,7 +16,8 @@ const buffers = new Map<string, Promise<AudioBuffer | null>>();
 const requests = new Set<AbortController>();
 let cueEpoch = 0, roomEpoch = 0, roomPending = false, cueSerial = 0, mainSerial = 0;
 const variations = new Map<SoundType, number>();
-let playbackActive = false;
+let playbackActive = false, studyPlaybackActive = false;
+const mediaOwnsSound = () => playbackActive || studyPlaybackActive;
 let scene: AmbientScene = 'home';
 let unsupported = false;
 let installed = false;
@@ -72,7 +73,7 @@ function stopAmbient() {
   setTimeout(() => { sources.forEach(source => source.disconnect()); nodes.forEach(node => node.disconnect()); }, 150);
 }
 function loadBuffer(name: SoundType | `room-${AmbientScene}`): Promise<AudioBuffer | null> {
-  if (!context || !getViewer().sound || getViewer().masterVolume === 0 || document.hidden || playbackActive) return Promise.resolve(null);
+  if (!context || !getViewer().sound || getViewer().masterVolume === 0 || document.hidden || mediaOwnsSound()) return Promise.resolve(null);
   const cached = buffers.get(name); if (cached) return cached;
   const audio = context, controller = new AbortController(); requests.add(controller);
   const request = fetch(sonicAsset(name), { signal: controller.signal }).then(response => {
@@ -86,13 +87,13 @@ function loadBuffer(name: SoundType | `room-${AmbientScene}`): Promise<AudioBuff
 }
 function startAmbient() {
   const viewer = getViewer();
-  if (!context || !ambience || context.state !== 'running' || !viewer.sound || !viewer.ambient || !viewer.masterVolume || playbackActive || document.hidden || ambientSources.length || roomPending) return;
+  if (!context || !ambience || context.state !== 'running' || !viewer.sound || !viewer.ambient || !viewer.masterVolume || mediaOwnsSound() || document.hidden || ambientSources.length || roomPending) return;
   const epoch = roomEpoch, audio = context; roomPending = true;
   void loadBuffer(`room-${scene}`).then(buffer => {
     if (epoch !== roomEpoch || context !== audio) return;
     roomPending = false;
     const current = getViewer();
-    if (!buffer || !ambience || audio.state !== 'running' || !current.sound || !current.ambient || !current.masterVolume || playbackActive || document.hidden) return;
+    if (!buffer || !ambience || audio.state !== 'running' || !current.sound || !current.ambient || !current.masterVolume || mediaOwnsSound() || document.hidden) return;
     const root = audio.createGain(); root.gain.value = 0; root.connect(ambience); ambientRoot = root;
     const source = audio.createBufferSource(); source.buffer = buffer; source.loop = true; source.connect(root);
     ambientSources = [source]; ambientNodes = [root]; source.start(); ramp(root.gain, .8, .7);
@@ -107,7 +108,7 @@ function syncPreferences() {
   const next = [viewer.sound, viewer.masterVolume, viewer.ambient, viewer.ambientMix].join('/');
   if (next === preferences) { emitState(); return; }
   preferences = next;
-  if (master) ramp(master.gain, viewer.sound && !playbackActive && !document.hidden ? viewer.masterVolume * 0.36 : 0);
+  if (master) ramp(master.gain, viewer.sound && !mediaOwnsSound() && !document.hidden ? viewer.masterVolume * 0.36 : 0);
   if (ambience) ramp(ambience.gain, viewer.ambientMix * 0.5, 0.15);
   if (!viewer.sound || !viewer.ambient || viewer.masterVolume === 0) stopAmbient(); else startAmbient();
   if (!viewer.sound || viewer.masterVolume === 0) { stopCues(); scheduleSuspend(); }
@@ -157,7 +158,7 @@ function buildGraph() {
 }
 function prepareAudio(): boolean {
   installLifecycle();
-  if (typeof window === 'undefined' || !getViewer().sound || getViewer().masterVolume === 0 || document.hidden || playbackActive || unsupported) return false;
+  if (typeof window === 'undefined' || !getViewer().sound || getViewer().masterVolume === 0 || document.hidden || mediaOwnsSound() || unsupported) return false;
   const activated = navigator.userActivation ? navigator.userActivation.isActive : now() < trustedGestureUntil;
   if (!context && (!activated || !buildGraph())) return false;
   if (!context || !master) return false;
@@ -168,7 +169,7 @@ function prepareAudio(): boolean {
     if (!resumePromise) resumePromise = resuming.resume().then(() => {
       if (context !== resuming || !master) return;
       resumePromise = null;
-      if (!getViewer().sound || playbackActive || document.hidden) { if (master) ramp(master.gain, 0); return; }
+      if (!getViewer().sound || mediaOwnsSound() || document.hidden) { if (master) ramp(master.gain, 0); return; }
       ramp(master.gain, getViewer().masterVolume * 0.36);
       startAmbient(); emitState();
       const queued = pendingCue; pendingCue = null; if (queued) playSound(queued.type, queued.options);
@@ -193,14 +194,22 @@ export function setAmbientScene(next: AmbientScene) {
 export function setPlaybackActive(active: boolean): void {
   playbackActive = active;
   if (active) { stopCues(); stopAmbient(); }
-  if (master) ramp(master.gain, active || !getViewer().sound || document.hidden ? 0 : getViewer().masterVolume * 0.36, 0.015);
+  if (master) ramp(master.gain, mediaOwnsSound() || !getViewer().sound || document.hidden ? 0 : getViewer().masterVolume * 0.36, 0.015);
   if (!active) startAmbient();
   emitState();
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('monumental:playback', { detail: { active } }));
 }
+/** A user-enabled local sound study owns the score bus without announcing a
+ * full-player event (which would suspend the study's own video decoder). */
+export function setStudyAudioActive(active: boolean): void {
+  studyPlaybackActive = active;
+  if (active) { stopCues(); stopAmbient(); }
+  if (master) ramp(master.gain, mediaOwnsSound() || !getViewer().sound || document.hidden ? 0 : getViewer().masterVolume * .36, .015);
+  if (!mediaOwnsSound()) startAmbient();
+}
 /** Reads the real post-dynamics output. It is silent before opt-in and during media. */
 export function readSoundLevel() {
-  if (!analyser || !analyserData || context?.state !== 'running' || playbackActive || !getViewer().sound || document.hidden) return { rms: 0, peak: 0 };
+  if (!analyser || !analyserData || context?.state !== 'running' || mediaOwnsSound() || !getViewer().sound || document.hidden) return { rms: 0, peak: 0 };
   analyser.getFloatTimeDomainData(analyserData);
   let squares = 0; let peak = 0;
   for (const value of analyserData) { squares += value * value; peak = Math.max(peak, Math.abs(value)); }
@@ -208,13 +217,13 @@ export function readSoundLevel() {
 }
 /** Borrowed waveform buffer for the studio oscilloscope; do not mutate it. */
 export function readSoundWaveform(): Float32Array<ArrayBuffer> | null {
-  if (!analyser || !analyserData || context?.state !== 'running' || playbackActive || !getViewer().sound || document.hidden) return null;
+  if (!analyser || !analyserData || context?.state !== 'running' || mediaOwnsSound() || !getViewer().sound || document.hidden) return null;
   analyser.getFloatTimeDomainData(analyserData);
   return analyserData;
 }
 /** One cached buffer voice per interaction; no synthesis or animation loop. */
 export function playSound(type: SoundType = 'select', options: SoundOptions = {}): void {
-  if (!Object.hasOwn(sonicScore, type) || typeof document === 'undefined' || playbackActive || document.hidden || !getViewer().sound || getViewer().masterVolume === 0) return;
+  if (!Object.hasOwn(sonicScore, type) || typeof document === 'undefined' || mediaOwnsSound() || document.hidden || !getViewer().sound || getViewer().masterVolume === 0) return;
   const time = now(), quiet = ['hover', 'tick', 'drag', 'sculpture-turn'].includes(type);
   const cooldown = type === 'hover' ? 450 : quiet ? 110 : 140;
   if (time - (lastCue.get(type) ?? -Infinity) < cooldown || (!quiet && time - lastMain < 65) || (quiet && time - lastMain < 220) || activeCues.size >= 5) return;
@@ -228,7 +237,7 @@ export function playSound(type: SoundType = 'select', options: SoundOptions = {}
   const take = variations.get(type) ?? 0; variations.set(type, (take + 1) % 5);
   const rate = clamp(options.pitch, .5, 2, 1) * [1, .989, 1.008, .996, 1.014][take];
   void loadBuffer(type).then(buffer => {
-    if (!buffer || epoch !== cueEpoch || audio !== context || !effects || audio.state !== 'running' || playbackActive || document.hidden || !getViewer().sound || getViewer().masterVolume === 0) return;
+    if (!buffer || epoch !== cueEpoch || audio !== context || !effects || audio.state !== 'running' || mediaOwnsSound() || document.hidden || !getViewer().sound || getViewer().masterVolume === 0) return;
     // A slow download must never replay an obsolete action after the next interaction.
     if (serial < mainSerial || now() - time > (type === 'activate' || options.audition ? 1500 : 450) || activeCues.size >= 5) return;
     const source = audio.createBufferSource(); source.buffer = buffer; source.playbackRate.value = rate;
@@ -261,7 +270,7 @@ export function disposeAudio() {
     document.removeEventListener('visibilitychange', visibility); window.removeEventListener('pagehide', pageExit);
   }
   if (context) { context.onstatechange = null; void context.close().catch(() => {}); }
-  context = null; master = null; effects = null; ambience = null; analyser = null; analyserData = null; requests.forEach(request => request.abort()); requests.clear(); buffers.clear(); variations.clear(); playbackActive = false;
+  context = null; master = null; effects = null; ambience = null; analyser = null; analyserData = null; requests.forEach(request => request.abort()); requests.clear(); buffers.clear(); variations.clear(); playbackActive = false; studyPlaybackActive = false;
   installed = false; resumePromise = null; unsupported = false; preferences = ''; lastCue.clear(); lastMain = -Infinity; trustedGestureUntil = 0; emitState();
 }
 if (typeof window !== 'undefined') installLifecycle();

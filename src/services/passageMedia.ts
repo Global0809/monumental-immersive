@@ -1,5 +1,6 @@
 import { videos, places } from '../data/catalogue';
 import { prepareSeekableMedia } from './seekableMedia';
+import { releasePassageSound } from './passageSound';
 
 export type PassageChapterId = 'world' | 'time-machine' | 'movies' | 'music' | 'culture' | 'my-world';
 export type PassageMediaKind = 'motion-study' | 'film-trailer';
@@ -249,6 +250,7 @@ export function createPassageMediaController(environment: PassageMediaEnvironmen
     retry() { if (selected && terminal()) load(selected.chapterId, true); else resume(); },
     destroy() {
       if (destroyed) return;
+      releasePassageSound(video);
       destroyed = true; playAttempt += 1; pendingPlay = false;
       environment.documentEvents.removeEventListener('visibilitychange', visibility);
       environment.windowEvents.removeEventListener('monumental:playback', playback);

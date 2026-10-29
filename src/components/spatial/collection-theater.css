@@ -105,3 +105,19 @@
   .ct-screen { transform: none; }
   .collection-theater *, .collection-theater *::before, .collection-theater *::after { transition: none !important; animation: none !important; }
 }
+/* A shallow gallery: selected film advances, neighbours recede into the same shelf. */
+.collection-theater--gallery .ct-filmstrip{perspective:1000px;gap:18px;padding:32px 12px 30px;overflow-y:hidden;align-items:center}
+.collection-theater--gallery .ct-filmstrip>button{display:block;flex:0 0 clamp(160px,19vw,245px);max-width:245px;padding:0 0 12px;transform-style:preserve-3d;transform:translateZ(calc(min(var(--poster-distance),2)*-45px)) rotateY(calc(var(--poster-side)*-9deg)) scale(.92);transition:transform .65s cubic-bezier(.16,1,.3,1),border-color .3s,color .3s;scroll-snap-align:center}
+.collection-theater--gallery .ct-filmstrip>button[aria-pressed=true]{transform:translateZ(26px) scale(1);border-bottom-color:#ff4d32}
+.collection-theater--gallery .ct-thumbnail{display:block;width:100%;aspect-ratio:1.38;overflow:visible;background:#111212;box-shadow:6px 12px 22px #0007}
+.collection-theater--gallery .ct-thumbnail::after{content:'';position:absolute;inset:0;transform:translateZ(-7px) translateX(5px);background:#262a27;z-index:-1;pointer-events:none}
+.collection-theater--gallery .ct-thumbnail-copy{padding:14px 0 0}
+.collection-theater--gallery .ct-thumbnail-copy strong{font-size:25px}
+.collection-theater--gallery .ct-thumbnail-copy small{font-size:11px;line-height:1.5;margin-top:6px}
+.collection-theater--gallery .ct-filmstrip>button:focus-visible{outline:2px solid #ff4d32;outline-offset:6px}
+.collection-theater--gallery.is-calm .ct-filmstrip>button{transition:none;transform:none}
+@media(max-width:600px){.collection-theater--gallery .ct-filmstrip>button{flex-basis:165px}.collection-theater--gallery .ct-filmstrip{padding-inline:10px;gap:12px}.collection-theater--gallery .ct-thumbnail-copy strong{font-size:23px}}
+@media(prefers-reduced-motion:reduce){.collection-theater--gallery .ct-filmstrip>button{transition:none;transform:none}}
+/* Switch the icon and its contrasting face together; fading only the face briefly hides it. */
+.monumental-spatial .ct-pagination>button[data-mechanical-press]{transition:border-color .2s,box-shadow .12s}
+.ct-pagination>button>svg{color:inherit;fill:currentColor}

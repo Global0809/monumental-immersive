@@ -1,14 +1,19 @@
 /* Navigation remains in the shared header. This layer owns only the brief
    route handoff; Passage station navigation stays inside that experience. */
-.spatial-passage{position:fixed;z-index:9;inset:var(--header) 0 0;pointer-events:none;opacity:0;visibility:hidden;display:grid;place-items:center;overflow:hidden}
+.spatial-passage{position:fixed;z-index:9;inset:var(--header) 0 0;pointer-events:none;opacity:0;visibility:hidden;display:grid;place-items:center;overflow:hidden;perspective:800px;background:#080909b8}
 .spatial-passage[data-active=true]{visibility:visible}
-.spatial-passage-frames{position:absolute;inset:8% 12%;perspective:800px}
-.spatial-passage-frames i{position:absolute;inset:0;border:1px solid #efeee93b;box-shadow:inset 0 0 0 1px #08090966;transform:translateZ(0)}
-.spatial-passage-frames i:nth-child(2){inset:10% 8%;border-color:#efeee928;transform:translateZ(-70px)}
-.spatial-passage-frames i:nth-child(3){inset:20% 16%;border-color:#ff4d3266;transform:translateZ(-140px)}
+.spatial-passage-frames{position:absolute;inset:0;transform-style:preserve-3d;pointer-events:none}
+.spatial-passage-frames i{position:absolute;left:50%;top:46%;width:min(80vw,92vh);aspect-ratio:1;border:12px solid #4d5350;outline:1px solid #d5d2c666;border-radius:50%;box-shadow:inset 0 4px 2px #d5d2c655,0 10px 20px #0007;transform:translate(-50%,-50%) translateZ(0);backface-visibility:hidden}
+.spatial-passage-frames i::after{content:"";position:absolute;inset:5px;border:1px solid #ff4d32;border-radius:50%;border-bottom-color:transparent;border-right-color:transparent;transform:rotate(25deg)}
+.spatial-passage-frames i:nth-child(2){transform:translate(-50%,-50%) translateZ(-240px) rotate(36deg)}
+.spatial-passage-frames i:nth-child(3){transform:translate(-50%,-50%) translateZ(-480px) rotate(72deg)}
+.spatial-passage-frames i:nth-child(4){transform:translate(-50%,-50%) translateZ(-720px) rotate(108deg)}
+.spatial-passage-frames i:nth-child(5){transform:translate(-50%,-50%) translateZ(-960px) rotate(144deg)}
 .spatial-passage-caption{position:relative;text-align:center;background:#080909ec;padding:26px 36px;min-width:min(370px,85vw);max-width:85vw}
 .spatial-passage-origin{display:flex;justify-content:center;align-items:center;gap:12px;font-size:12px;color:#bcbdb7;margin-bottom:12px}
 .spatial-passage-caption strong{display:block;font-family:var(--display);font-size:clamp(38px,5.8vw,78px);font-weight:600;line-height:1.02;text-transform:uppercase;max-width:14ch;margin-inline:auto}
+.spatial-passage-carried{width:104px;height:58px;object-fit:cover;margin:0 auto 18px;display:block;border:1px solid #efeee943}
+.spatial-passage-destination{display:block;font-size:12px;color:#bcbdb7;margin-top:10px}
 .spatial-passage-progress{height:2px;width:110px;background:#efeee92b;margin:22px auto 12px}
 .spatial-passage-progress i{height:100%;display:block;background:var(--accent);transform-origin:left}
 .spatial-passage-caption button{pointer-events:auto;display:inline-flex;align-items:center;gap:10px;min-height:44px;color:#efeee9;background:none;border:0;font-size:12px;padding:8px 15px}

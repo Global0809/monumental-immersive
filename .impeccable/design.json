@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-28T10:35:00Z",
+  "generatedAt": "2026-10-29T10:44:58Z",
   "title": "Design System: Monumental Streams",
   "extensions": {
     "colorMeta": {
@@ -37,6 +37,7 @@
       "contract": "Continuous spiral tunnel with six alternating wall-mounted mechanical carriers; replaces the separate architectural rooms.",
       "reference": "https://globalgupta13-crypto.github.io/monumental-streams/#vision",
       "documentation": "docs/passage-architecture.md",
+      "selectedEffectsDocumentation": "docs/selected-effects.md",
       "chapterOrder": ["World", "Time Machine", "Cinema", "Music", "Culture", "My World"],
       "nativeScroll": { "heroViewportHeights": 1.6, "chapterViewportHeights": 2.85, "readingStart": 0.38, "readingEnd": 0.74, "finalChapterHoldsToEnd": true },
       "camera": { "fieldOfViewDegrees": 59, "near": 0.16, "far": 165, "firstStationZ": -36, "stationSpacing": 42, "readingOffsetZ": 11.5 },
@@ -95,7 +96,7 @@
   ],
   "narrative": {
     "northStar": "A Living Atlas of Culture",
-    "overview": "The implemented world combines assertive editorial typography with physical, interactive objects. A dark stage and bright signal accent frame the content; the continuous mechanical Passage, geographic globe and overlapping era frames supply depth. This records the implemented design rather than prescribing a new direction.",
+    "overview": "The implemented world combines assertive editorial typography with physical, interactive objects. A dark stage and bright signal accent frame the content; the continuous mechanical Passage, geographic globe and overlapping era frames supply depth. Inspectable construction, precise instruments and connected story windows extend that world while preserving its reading surfaces and catalogue truth. This records the implemented design rather than prescribing a new direction.",
     "keyCharacteristics": [
       "Monumental condensed headlines with occasional outlined words.",
       "Thin rules, square media, deliberate negative space and visible content provenance.",
@@ -105,7 +106,7 @@
     "rules": [
       {
         "name": "The Passage Mechanism Rule",
-        "body": "Local relay articulation and wall signals share the existing camera and frame scheduler. They calm during chapter reading, freeze during inspection, pause under player/dialog or hidden-document suspension, and disappear in compact or reduced-motion mode.",
+        "body": "Local relay articulation, structural reveals and wall signals share the existing camera and frame scheduler. Automatic motion calms during chapter reading, freezes during inspection and pauses under player/dialog or hidden-document suspension. Compact and reduced-motion presentations retain semantic content and omit the animated Passage mechanisms.",
         "section": "elevation"
       }
     ],

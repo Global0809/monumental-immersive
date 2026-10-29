@@ -1,0 +1,30 @@
+/* The selected destination carries its actual stories out of the globe. */
+.atlas-story-threads{position:absolute;inset:0;width:100%;height:100%;z-index:2;overflow:visible;pointer-events:none;fill:none;stroke:#ff4d32;stroke-width:1}
+.atlas-story-windows{position:relative;z-index:3;display:flex;gap:12px;padding:24px 0 10px;justify-content:space-around;perspective:900px;align-items:flex-start}
+.atlas-story-windows article{flex:1;min-width:0;max-width:230px;background:#111212;transform-origin:50% 0;animation:atlas-window-open .7s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--window-index)*65ms)}
+.atlas-story-windows article>a{display:block;position:relative;color:#efeee9}
+.atlas-story-windows article img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
+.atlas-story-windows article>a>span{display:block;font:500 22px/1 var(--display);padding:10px 10px 0;text-transform:uppercase}
+.atlas-story-windows article>div{display:flex;align-items:center;justify-content:space-between;padding:2px 8px 5px;color:#a9aaa6}
+.atlas-story-windows small{font-size:11px;padding-left:2px}
+.atlas-story-windows button{display:grid;place-items:center;width:44px;height:44px;background:none;border:0;color:#efeee9}
+.atlas-story-windows button:hover{color:#ff4d32}
+.atlas-story-windows a:focus-visible,.atlas-story-windows button:focus-visible{outline:2px solid #ff4d32;outline-offset:3px}
+@keyframes atlas-window-open{from{transform:translate3d(0,-12px,-70px) rotateX(-16deg);opacity:.35}to{transform:none;opacity:1}}
+.atlas-story-windows.is-calm article{animation:none}
+/* Frames carry three physical archive layers. Each era settles, with no idle wobble. */
+.ex-archive-depth{position:absolute;inset:0;pointer-events:none;transform-style:preserve-3d;z-index:-1}
+.ex-archive-depth i{position:absolute;inset:0;background:#171918;border:1px solid #efeee94a;transform:translate3d(-7px,5px,-12px)}
+.ex-archive-depth i:nth-child(2){transform:translate3d(-14px,10px,-25px);border-color:#ff4d324a}
+.ex-archive-depth i:nth-child(3){transform:translate3d(-21px,15px,-38px);border-color:#efeee927}
+.ex-time .ex-era-frame{transform-style:preserve-3d;transition:transform .85s cubic-bezier(.16,1,.3,1),opacity .5s,border-color .3s;transform:translateX(calc(var(--era-offset)*168px)) translateY(calc(var(--era-distance)*9px)) translateZ(calc(var(--era-distance)*-145px)) rotateY(calc(var(--era-offset)*-12deg)) !important}
+.ex-time .ex-era-frame.is-active{transform:translateZ(32px) !important}
+.ex-time .ex-era-picture img{transition:transform .85s cubic-bezier(.16,1,.3,1);transform:translateX(calc(var(--era-offset)*-5px)) scale(1.06)}
+.ex-time .ex-era-frame.is-active .ex-era-picture img{transform:none}
+.ex-time .ex-era-room--contact .ex-archive-depth{display:none}
+.ex-time .ex-era-room--contact .ex-era-picture img{transform:none}
+.ex-time.ex-reduced .ex-era-frame,.ex-time.ex-reduced .ex-era-picture img{transition:none}
+@media(max-width:800px){.atlas-story-windows{gap:8px;padding:12px 0 8px}.atlas-story-windows article>a>span{font-size:20px}.atlas-story-threads{opacity:.6}.ex-time .ex-era-frame{transform:translateX(calc(var(--era-offset)*125px)) translateY(calc(var(--era-distance)*7px)) translateZ(calc(var(--era-distance)*-125px)) rotateY(calc(var(--era-offset)*-9deg)) !important}}
+@media(prefers-reduced-motion:reduce){.atlas-story-windows article{animation:none}.ex-time .ex-era-frame,.ex-time .ex-era-picture img{transition:none}}
+/* Reserve the fixed Flight invitation without displacing the primary heading. */
+@media(min-width:761px){.monumental-spatial :is(.ex-world,.ex-time) .ex-page-label{padding-right:160px}}

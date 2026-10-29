@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { typePressure, typeWordAt } from '../services/typeMotion';
 import './reactive-typography.css';
+import './depth-text.css';
 
 const headings = 'h1,h2,[data-text-motion="display"]';
 const copy = 'p,li,dt,dd,blockquote,figcaption,label,small';
@@ -24,6 +25,7 @@ export default function ReactiveTypography({ path, reducedMotion, paused }: {
     root.dataset.typeMotion = 'on';
     const ctx = gsap.context(() => {}, root);
     const registered = new Map<HTMLElement, string>();
+    const presses = new Set<HTMLElement>();
     const visible = new Set<HTMLElement>();
     const entered = new WeakSet<HTMLElement>();
     const animations = new Map<HTMLElement, Animation>();
@@ -91,6 +93,11 @@ export default function ReactiveTypography({ path, reducedMotion, paused }: {
         el.dataset.typeRole = el.matches(headings) ? 'display' : 'copy';
         intersection.observe(el);
       });
+      root.querySelectorAll<HTMLElement>('button,a.tunnel-enter-room,a.btn,a.button').forEach(el => {
+        if (el.closest('dialog,.ms-player-dialog,.spatial-passage,.ct-filmstrip,.personal-constellation') || el.matches('.ex-era-frame') || el.hasAttribute('data-mechanical-press')) return;
+        el.setAttribute('data-mechanical-press', ''); presses.add(el);
+      });
+      for (const el of presses) if (!el.isConnected) presses.delete(el);
       for (const el of visible) arrive(el);
       clearSignal();
       geometryDirty = true;
@@ -235,6 +242,7 @@ export default function ReactiveTypography({ path, reducedMotion, paused }: {
       alive = false; cancelAnimationFrame(frame); cancelAnimationFrame(scanFrame); mutation.disconnect(); intersection.disconnect(); resize.disconnect();
       clearSignal(); release(true); ctx.revert(); animations.forEach(animation => animation.cancel());
       registered.forEach((prior, el) => { if (prior) el.setAttribute('data-type-role', prior); else el.removeAttribute('data-type-role'); el.removeAttribute('data-type-pressure'); });
+      presses.forEach(el => el.removeAttribute('data-mechanical-press'));
       delete root.dataset.typeMotion;
       document.removeEventListener('pointermove', move); document.removeEventListener('pointerdown', down); document.removeEventListener('pointerup', up);
       document.removeEventListener('pointercancel', up); document.removeEventListener('pointerleave', reset);

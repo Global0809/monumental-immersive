@@ -113,6 +113,15 @@ for (const [key, value] of Object.entries(replacements)) Object.defineProperty(g
 const audio = await import('../src/services/audio.ts');
 const viewer = await import('../src/services/viewer.ts');
 
+test('sound study suppresses interface score without broadcasting a full-player event', async () => {
+  audio.setSoundEnabled(true); await settle();
+  const before = sources.length; let playbackEvents = 0;
+  const received = () => { playbackEvents++; }; windowMock.addEventListener('monumental:playback', received);
+  audio.setStudyAudioActive(true); audio.playSound('save'); await settle();
+  assert.equal(sources.length, before); assert.equal(playbackEvents, 0);
+  audio.setStudyAudioActive(false); windowMock.removeEventListener('monumental:playback', received);
+});
+
 async function settle() { for (let count = 0; count < 20; count++) await Promise.resolve(); }
 function advance(milliseconds: number) {
   const end = clock + milliseconds;

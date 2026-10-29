@@ -17,7 +17,10 @@ import { ArrowCounterClockwise } from '@phosphor-icons/react/dist/csr/ArrowCount
 import { MagnifyingGlassPlus } from '@phosphor-icons/react/dist/csr/MagnifyingGlassPlus';
 import { MagnifyingGlassMinus } from '@phosphor-icons/react/dist/csr/MagnifyingGlassMinus';
 import { Crosshair } from '@phosphor-icons/react/dist/csr/Crosshair';
-import { places } from "../data/catalogue";
+import { places, type Video } from "../data/catalogue";
+import { href } from "../services/router";
+import { durationLabel } from "../services/discovery";
+import "./discovery-spatial.css";
 import { playSound } from "../services/audio";
 import { resolveDragAxis, type DragAxis } from "../services/exploreInteraction";
 import "./atlas.css";
@@ -30,6 +33,8 @@ type AtlasProps = {
   connections?: string[];
   showConnections?: boolean;
   approaching?: boolean;
+  stories?: Video[];
+  onWatch?: (video: Video) => void;
 };
 type EarthData = { land: number[]; coast: number[][] };
 const RADIANS = Math.PI / 180;
@@ -51,6 +56,8 @@ export default function Atlas({
   connections = [],
   showConnections = true,
   approaching = false,
+  stories = [],
+  onWatch,
 }: AtlasProps) {
   const [systemReduced, setSystemReduced] = useState(
     () =>
@@ -59,6 +66,8 @@ export default function Atlas({
   );
   const calm = reducedMotion || systemReduced;
   const host = useRef<HTMLDivElement>(null);
+  const storyLines = useRef<(SVGPathElement | null)[]>([]);
+  const storyCount = useRef(0); storyCount.current = Math.min(3, stories.length);
   const destinationMenu = useRef<HTMLDetailsElement>(null);
   const markers = useRef(new Map<string, HTMLButtonElement>());
   const controls = useRef<{
@@ -260,6 +269,11 @@ export default function Atlas({
       ...place,
       position: coordinate(place.lat, place.lon),
     }));
+    const destinationLight = new THREE.Group();
+    const destinationHalo = new THREE.Mesh(new THREE.RingGeometry(.043,.052,40),new THREE.MeshBasicMaterial({color:0xff4d32,side:THREE.DoubleSide,depthWrite:false}));
+    const destinationCore = new THREE.Mesh(new THREE.SphereGeometry(.018,12,8),new THREE.MeshBasicMaterial({color:0xefeee9}));
+    destinationLight.add(destinationHalo,destinationCore);globe.add(destinationLight);
+    const surfaceNormal = new THREE.Vector3(), forwardNormal = new THREE.Vector3(0,0,1);
     const connectionGroup = new THREE.Group();
     globe.add(connectionGroup);
     const connectionPaths: { line: THREE.Line; points: THREE.Vector3[]; bead: THREE.Mesh }[] = [];
@@ -340,6 +354,16 @@ export default function Atlas({
         const x = ((projected.x + 1) * width) / 2;
         const y = ((1 - projected.y) * height) / 2;
         const isVisible = world.dot(towardCamera) > 0.12 && x >= clipLeft + 4 && x <= clipRight - 4 && y >= 4 && y <= height - 4;
+        if (destination.id === selectedRef.current) {
+          destinationLight.position.copy(destination.position).multiplyScalar(1.004);
+          destinationLight.quaternion.setFromUnitVectors(forwardNormal,surfaceNormal.copy(destination.position).normalize());
+          storyLines.current.forEach((path,index)=>{
+            if(!path)return;
+            const endX=width*(index+.5)/Math.max(1,storyCount.current),endY=height+24;
+            path.style.opacity=isVisible ? '.52' : '0';
+            path.setAttribute('d',`M ${x.toFixed(1)} ${y.toFixed(1)} C ${x.toFixed(1)} ${(y+80).toFixed(1)}, ${endX.toFixed(1)} ${(endY-80).toFixed(1)}, ${endX.toFixed(1)} ${endY}`);
+          });
+        }
         let presentation = labelPresentation.get(label);
         if (!presentation || presentation.visible !== isVisible) {
           label.style.visibility = isVisible ? "visible" : "hidden";
@@ -734,6 +758,7 @@ export default function Atlas({
     <div
       className={`cultural-atlas ${compact ? "cultural-atlas--compact" : ""} ${status === "fallback" ? "cultural-atlas--fallback" : ""} ${approaching ? "is-approaching" : ""}`}
     >
+      {stories.length > 0 && status !== 'fallback' && <svg className="atlas-story-threads" aria-hidden="true">{stories.slice(0,3).map((story,index)=><path key={story.id} ref={node=>{storyLines.current[index]=node;}}/>)}</svg>}
       <div
         className="cultural-atlas__viewport"
         ref={host}
@@ -748,6 +773,7 @@ export default function Atlas({
         }}
       >
         <div className="cultural-atlas__atmosphere" aria-hidden="true" />
+
         {status !== "fallback" && <div className="cultural-atlas__zoom" aria-label="Globe camera controls" data-sound-owned>
           <button onClick={() => zoom(1)} disabled={zoomLevel === 3} aria-label="Zoom globe in"><MagnifyingGlassPlus size={19} /></button>
           <span aria-live="polite">{zoomFactor.toFixed(2)}×</span>
@@ -793,6 +819,12 @@ export default function Atlas({
           </div>
         )}
       </div>
+      {stories.length > 0 && <div key={selected} className={`atlas-story-windows ${calm?'is-calm':''}`} aria-label={`Stories connected to ${places.find(place=>place.id===selected)?.name || 'this destination'}`}>
+        {stories.slice(0,3).map((story,index)=><article key={story.id} style={{'--window-index':index} as import('react').CSSProperties}>
+          <a href={href('/film/'+story.id)} data-transition-film={story.id} aria-label={`Read about ${story.title}`}><img src={story.poster} alt="" loading="lazy"/><span>{story.title}</span></a>
+          <div><small>{durationLabel(story.duration)}</small>{onWatch && <button aria-label={`Watch ${story.title} from the globe`} onClick={()=>onWatch(story)}><Play size={14} weight="fill"/></button>}</div>
+        </article>)}
+      </div>}
       <div className="cultural-atlas__footer">
         {status !== "fallback" && (
           <div className="cultural-atlas__controls" aria-label="Globe controls">

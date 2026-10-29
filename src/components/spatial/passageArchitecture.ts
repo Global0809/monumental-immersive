@@ -1,16 +1,20 @@
 import * as THREE from 'three';
 import { PASSAGE_CHAPTERS } from '../../services/passageChapters';
 import { passageStationMotion, passagePose } from '../../services/passageJourney';
+import { passageScreenExtension } from '../../services/passageMechanisms';
+import { createPassageThresholds } from './passageThresholds';
+import { createPassageInstruments } from './passageInstruments';
 
 type ArchitectureFrame = {
   active: number; progress: number; elapsed: number; reducedMotion: boolean; delta?: number;
   pointer?: readonly [number, number]; energy?: number; compact?: boolean;
+  audio?: { rms: number; bass: number; mid: number; treble: number };
   inspection: { station: string | null; expanded: boolean; rotation: number };
 };
 type ImageSurface = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 type Link = { body: THREE.Mesh; piston: THREE.Mesh; signal: THREE.Mesh };
 type Assembly = {
-  root: THREE.Group; media: ImageSurface; exhibit: THREE.Group; movement: THREE.Group;
+  root: THREE.Group; media: ImageSurface; screen: THREE.Group; screenSlides: THREE.Mesh[]; exhibit: THREE.Group; movement: THREE.Group;
   frames: THREE.Mesh[]; fins: THREE.Group[]; slats: THREE.Group[]; ribs: THREE.InstancedMesh;
   armRoot: THREE.Group; arms: Link[]; motors: THREE.Group[]; hub: THREE.Group;
   target: THREE.Vector3; inspection: number; turn: number; ribInspection: number; leafReveal: number;
@@ -36,16 +40,16 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   const alloy = material(new THREE.MeshStandardMaterial({ color: 0x565e59, metalness: .88, roughness: .29 }));
   const ribAlloy = material(new THREE.MeshStandardMaterial({ color: 0x222925, metalness: .72, roughness: .48, envMapIntensity: .30 }));
   const wallAlloy = material(new THREE.MeshStandardMaterial({ color: 0x101513, metalness: .34, roughness: .79, envMapIntensity: .20 }));
+  wallAlloy.userData.passageShell = true;
   const graphite = material(new THREE.MeshStandardMaterial({ color: 0x171b19, metalness: .78, roughness: .38 }));
   const charcoal = material(new THREE.MeshStandardMaterial({ color: 0x0d1110, metalness: .55, roughness: .48 }));
-  const ceramic = material(new THREE.MeshStandardMaterial({ color: 0xa7a194, metalness: .15, roughness: .48 }));
   const red = material(new THREE.MeshBasicMaterial({ color: 0xff4d32, toneMapped: false }));
   const ivory = material(new THREE.MeshBasicMaterial({ color: 0xd5d2c6, toneMapped: false }));
   const darkRed = material(new THREE.MeshBasicMaterial({ color: 0x63251d, toneMapped: false }));
   const unitBox = geometry('box', () => new THREE.BoxGeometry(1, 1, 1));
   const cylinder = geometry('cylinder', () => new THREE.CylinderGeometry(1, 1, 1, 10));
-  const sphere = geometry('sphere', () => new THREE.SphereGeometry(1, 20, 12));
   const tunnel = new THREE.Group(); tunnel.name = 'passage-continuous-tunnel'; scene.add(tunnel);
+  const thresholds = createPassageThresholds(scene);
   // Small deterministic brushed variation belongs to the broad structural
   // faces, not the polished carriers or image textures.
   const grainData = new Uint8Array(64 * 64 * 4); let grainSeed = 38217;
@@ -80,7 +84,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   const structuralRibs = instanced(tunnel, ribAlloy, ringCount * ringSides, (i, o) => ribTransform(i, o, 0));
   const conduits = instanced(tunnel, red, ringCount * ringSides, (i, o) => ribTransform(i, o, 1));
   const whiteColor = new THREE.Color(0xd5d2c6), redColor = new THREE.Color(0xff4d32);
-  for (let i = 0; i < conduits.count; i++) conduits.setColorAt(i, i % 5 === 0 ? whiteColor : redColor);
+  for (let i = 0; i < conduits.count; i++) conduits.setColorAt(i, redColor);
   // Use white base material so the per-instance ivory remains neutral.
   conduits.material = material(new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
   const wallFaces = instanced(tunnel, wallAlloy, ringCount * ringSides, (i, o) => ribTransform(i, o, 2));
@@ -209,6 +213,14 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     }
     const screen = new THREE.Group(); screen.name = `${spec.id}-cultural-window`; screen.position.fromArray(spec.media.position); screen.rotation.y = spec.media.yaw; root.add(screen);
     const w = spec.media.width, h = w * 9 / 16;
+    const housing = new THREE.Group(); housing.name = `${spec.id}-recessed-screen-housing`; housing.position.fromArray(spec.media.position); housing.rotation.y = spec.media.yaw; root.add(housing);
+    box(housing, 0, 0, -1.43, w + .42, h + .42, .16, charcoal);
+    const screenSlides: THREE.Mesh[] = [];
+    for (const side of [-1, 1]) {
+      box(housing, side * (w / 2 + .15), 0, -.77, .16, h + .35, 1.48, graphite);
+      screenSlides.push(box(housing, side * (w / 2 + .20), 0, -.64, .032, h * .78, 1.25, alloy));
+      box(housing, side * (w / 2 + .25), 0, -.72, .014, h * .58, .016, red);
+    }
     box(screen, 0, 0, -.10, w + .10, h + .10, .16, charcoal);
     for (const side of [-1, 1]) { box(screen, 0, side * (h / 2 + .06), -.01, w + .21, .075, .23, alloy); box(screen, side * (w / 2 + .06), 0, -.01, .075, h + .1, .23, graphite); }
     box(screen, -w / 2 + .66, -h / 2 - .125, .02, 1.25, .025, .025, red);
@@ -223,34 +235,13 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     const hub = new THREE.Group(); root.add(hub); hub.position.set(side * 7.15, -3.25, .18);
     ring(hub, .56, .045, alloy, Math.PI * 1.82); ring(hub, .39, .017, red, Math.PI * 1.7).rotation.y = .6;
     const core = new THREE.Mesh(geometry('hub-core', () => new THREE.IcosahedronGeometry(.18, 1)), ivory); hub.add(core);
-    return { root, media, exhibit, movement, frames, fins, slats, ribs, armRoot, arms, motors, hub, target: new THREE.Vector3(), inspection: 0, turn: 0, ribInspection: -1, leafReveal: -1 };
+    return { root, media, screen, screenSlides, exhibit, movement, frames, fins, slats, ribs, armRoot, arms, motors, hub, target: new THREE.Vector3(), inspection: 0, turn: 0, ribInspection: -1, leafReveal: -1 };
   });
   // Small, recognisable objects remain inspectable. Their movement is below the
   // camera/assembly transform and can never displace text or playback controls.
   chapters.forEach((chapter, index) => {
     const model = chapter.movement;
-    if (index === 0) {
-      const globe = new THREE.Mesh(sphere, graphite); globe.scale.setScalar(.65); model.add(globe);
-      for (let j = 0; j < 5; j++) { const meridian = ring(model, .675, .009, j === 0 ? red : alloy); meridian.rotation.y = j * Math.PI / 5; }
-      ring(model, .78, .012, ivory, Math.PI * 1.6).rotation.x = 1.0;
-    } else if (index === 1) {
-      for (let j = 0; j < 4; j++) { const layer = ring(model, .48 + j * .08, .028, j % 2 ? graphite : alloy, Math.PI * 1.72); layer.rotation.set(j * .38, j * .5, j * .4); }
-      const core = new THREE.Mesh(geometry('archive-core', () => new THREE.OctahedronGeometry(.23)), ceramic); model.add(core);
-    } else if (index === 2) {
-      for (const x of [-.30, .30]) {
-        const wheel = new THREE.Mesh(geometry('reel', () => new THREE.CylinderGeometry(.34, .34, .075, 32)), graphite); wheel.rotation.x = Math.PI / 2; wheel.position.x = x; model.add(wheel);
-        for (let j = 0; j < 5; j++) { const hole = new THREE.Mesh(geometry('reel-hole', () => new THREE.CircleGeometry(.065, 12)), ivory); hole.position.set(x + Math.cos(j * 1.256) * .2, Math.sin(j * 1.256) * .2, .045); model.add(hole); }
-      }
-      box(model, 0, -.43, 0, .95, .2, .25, alloy);
-    } else if (index === 3) {
-      for (let j = 0; j < 5; j++) { const record = ring(model, .25 + j * .09, j === 4 ? .025 : .012, j % 2 ? graphite : alloy); record.rotation.x = .3; }
-      const centre = new THREE.Mesh(geometry('record-label', () => new THREE.CircleGeometry(.19, 24)), red); centre.rotation.x = .3; model.add(centre);
-      ring(model, .73, .012, ivory, Math.PI * 1.4).rotation.y = .55;
-    } else if (index === 4) {
-      const vase = new THREE.Mesh(geometry('vase', () => new THREE.CylinderGeometry(.2, .35, .8, 9)), ceramic); model.add(vase);
-      ring(model, .20, .032, graphite).rotation.x = Math.PI / 2;
-      for (let j = 0; j < 3; j++) { const shard = box(model, .5 + j * .06, -.24 + j * .03, -.04 - j * .07, .45, .025, .6, j === 1 ? alloy : ceramic); shard.rotation.y = .3 + j * .2; }
-    } else {
+    if (index === 5) {
       for (let j = 0; j < 4; j++) { const band = ring(model, .45 + j * .07, .033, j === 1 ? red : alloy, Math.PI * 1.6); band.rotation.set(j * .58, j * .4, j * .65); }
       for (let j = 0; j < 3; j++) {
         const mount = new THREE.Group(); mount.position.set(1.25 + j * 1.6, -3.1, .7); mount.visible = false; chapter.root.add(mount); collectionMounts.push(mount);
@@ -258,6 +249,8 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
       }
     }
   });
+
+  const instruments = createPassageInstruments(chapters.map(chapter => chapter.movement));
 
   function configureTexture(texture: THREE.Texture) { texture.colorSpace = THREE.SRGBColorSpace; texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter; texture.generateMipmaps = false; textures.add(texture); }
   function setPoster(index: number, url: string) {
@@ -296,21 +289,33 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     pointerX += ((reducedMotion ? 0 : THREE.MathUtils.clamp(state.pointer?.[0] || 0, -1, 1)) - pointerX) * pointerRate;
     pointerY += ((reducedMotion ? 0 : THREE.MathUtils.clamp(state.pointer?.[1] || 0, -1, 1)) - pointerY) * pointerRate;
     const approach = passagePose(state), cameraZ = approach.position[2];
+    thresholds.update(cameraZ, time, Boolean(state.compact), reducedMotion);
+    instruments.update({ elapsed: time, delta: dt, reducedMotion, active, inspecting: inspection.expanded, audio: state.audio });
     signalUniforms.uTime.value = time; signalUniforms.uEnergy.value = Math.min(1, state.energy || 0); signalUniforms.uPointer.value.set(pointerX, pointerY); signalUniforms.uCameraZ.value = cameraZ;
     ribbonUniforms.uTime.value = time; ribbonUniforms.uEnergy.value = Math.min(1, state.energy || 0);
     ribbonUniforms.uStation.value = PASSAGE_CHAPTERS[Math.max(0, active)]?.center[2] ?? -36;
     ribbonUniforms.uRead.value = state.progress > .36 && state.progress < .76 && active >= 0 ? 1 : 0;
-    portals.forEach((portal, i) => { const distance = cameraZ - portal.position.z; portal.visible = distance > -12 && distance < 130; if (portal.visible) portal.rotation.z = i * .7 + time * (i % 2 ? -.018 : .022); });
+    portals.forEach((portal, i) => {
+      const distance = cameraZ - portal.position.z; portal.visible = distance > -12 && distance < 130;
+      if (!portal.visible) return;
+      // The mounting stays in place while the inner and outer rings counter-
+      // rotate at distinct rates. Reading content belongs to separate roots.
+      portal.rotation.z = i * .7;
+      portal.children.forEach((child, layer) => { child.rotation.z = time * (layer ? -.037 : .024); });
+    });
     entrance.visible = cameraZ > -18;
     chapters.forEach((chapter, i) => {
       const pose = passageStationMotion(i, state), spec = PASSAGE_CHAPTERS[i], side = i % 2 ? 1 : -1;
       chapter.root.visible = pose.visible&&!state.compact; chapter.armRoot.visible = pose.visible&&!state.compact;
       if (!chapter.root.visible) { dummy.scale.setScalar(0); dummy.updateMatrix(); mechanismGlow.setMatrixAt(i, dummy.matrix); return; }
       chapter.root.position.fromArray(pose.position); chapter.root.rotation.set(...pose.rotation);
+      const screenExtension = passageScreenExtension(pose.reveal);
+      chapter.screen.position.z = spec.media.position[2] - (1 - screenExtension) * 1.22;
+      chapter.screenSlides.forEach(slide => { slide.scale.z = .08 + screenExtension * 1.17; slide.position.z = -1.27 + slide.scale.z * .5; });
       const selected = inspection.expanded && inspection.station === spec.id, rate = reducedMotion ? 1 : 1 - Math.exp(-dt * 12);
       chapter.inspection += ((selected ? 1 : 0) - chapter.inspection) * rate; chapter.turn += ((selected ? inspection.rotation : 0) - chapter.turn) * rate;
       const ex = chapter.inspection;
-      chapter.exhibit.rotation.y = chapter.turn; chapter.exhibit.scale.setScalar(1 + ex * .17);
+      chapter.exhibit.rotation.y = chapter.turn; chapter.exhibit.scale.setScalar(1 + ex * .6);
       // Freeze the authored orientation progressively; multiplying an absolute
       // elapsed angle would unwind several revolutions when Inspect opens.
       const objectYaw = reducedMotion ? 0 : (chapter.movement.rotation.y + dt * .055 * (1 - ex)) % (Math.PI * 2);
@@ -343,7 +348,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   }
   function destroy() {
     if (destroyed) return; destroyed = true;
-    scene.remove(tunnel, contactLight); chapters.forEach(chapter => { scene.remove(chapter.root, chapter.armRoot); });
+    instruments.destroy(); thresholds.destroy(); scene.remove(tunnel, contactLight); chapters.forEach(chapter => { scene.remove(chapter.root, chapter.armRoot); });
     instances.forEach(mesh => mesh.dispose()); geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
     instances.clear(); geometries.clear(); materials.clear(); textures.clear(); cache.clear();
   }

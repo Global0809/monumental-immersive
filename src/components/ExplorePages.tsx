@@ -26,6 +26,8 @@ import { notify } from "../services/feedback";
 import "./explore.css";
 import "./world-editorial.css";
 import "./world-immersive.css";
+import "./discovery-spatial.css";
+import DepthText from "./DepthText";
 import { useWorldHorizon } from "./useWorldHorizon";
 import { selectDestination } from "../services/exploration";
 import { resolveDragAxis, type DragAxis } from "../services/exploreInteraction";
@@ -132,8 +134,8 @@ export function WorldPage({ params, reducedMotion, onWatch, onPlayJourney }: Exp
     <div className="ex-world-room world-expedition-stage">
       <div className="world-horizon" aria-hidden="true"><img key={selected.id} src={asset(selected.image)} alt="" fetchPriority="high" /></div>
       <section className="ex-orbit-stage" aria-label="Explore the cultural globe">
-        <div className="ex-world-heading"><h1 className="ex-world-title">NO BORDERS.</h1><p>Explore places through<br className="world-desktop-break"/> the stories they hold.</p></div>
-        <div className="ex-globe"><Suspense fallback={<div className="ex-atlas-loading"><span /><p>Bringing the world into focus</p></div>}><Atlas selected={selected.id} onSelect={selectPlace} reducedMotion={reducedMotion} connections={connections.map(connection => connection.place.id)} showConnections={linksVisible} approaching={cityEntering} /></Suspense></div>
+        <div className="ex-world-heading"><h1 className="ex-world-title"><DepthText text="NO BORDERS."/></h1><p>Explore places through<br className="world-desktop-break"/> the stories they hold.</p></div>
+        <div className="ex-globe"><Suspense fallback={<div className="ex-atlas-loading"><span /><p>Bringing the world into focus</p></div>}><Atlas selected={selected.id} onSelect={selectPlace} reducedMotion={reducedMotion} connections={connections.map(connection => connection.place.id)} showConnections={linksVisible} approaching={cityEntering} stories={available} onWatch={onWatch}/></Suspense></div>
         <div className="ex-orbit-caption"><span className="ex-signal-dot" /><span>{cityEntering ? "Miami. From planet to place." : "Choose a point. Follow its stories."}</span></div>
       </section>
       <aside className="ex-location" aria-label={`${selected.name} destination`}>
@@ -239,7 +241,7 @@ export function TimeMachinePage({ params, reducedMotion, onWatch, onPlayJourney 
   return <div ref={root} className={`ex-page ex-time ${reducedMotion ? "ex-reduced" : ""}`}>
     <header className="ex-page-label"><span>Time Machine</span><a href={href("/world", { place: place?.id, category: category === "All" ? undefined : category })}>Explore a place <ArrowUpRight size={16} /></a></header>
     <section className="ex-time-room" aria-label="Explore cultural eras">
-      <div className="ex-time-heading"><h1>GOOD STORIES<br />DON’T EXPIRE.</h1><p>Explore the period. <br />Understand the context.</p></div>
+      <div className="ex-time-heading"><h1><DepthText text="GOOD STORIES"/><br/><DepthText text="DON’T EXPIRE."/></h1><p>Explore the period. <br />Understand the context.</p></div>
       <div className="ex-era-toolbar"><div className="ex-view-switch" role="group" aria-label="Era presentation" data-sound-owned><button aria-pressed={!contactSheet} onClick={() => updateRoute("/time-machine", params, { view: "" })}><Stack size={16} /> Film strip</button><button aria-pressed={contactSheet} onClick={() => updateRoute("/time-machine", params, { view: "contact" })}><SquaresFour size={16} /> Contact sheet</button></div><span><strong>{period.label}</strong> · {playable.length} available {playable.length === 1 ? 'story' : 'stories'}<small>{contactSheet ? 'Choose an era below' : 'Drag sideways or use the arrow keys'}</small></span></div>
       <div className={`ex-era-room ${contactSheet ? "ex-era-room--contact" : ""}`} role="group" aria-label="Era explorer. Drag horizontally or use left and right arrow keys to select an era." tabIndex={0} data-sound-owned
         onPointerDown={event => { if (event.button === 0 && !contactSheet && !drag.current) { drag.current = { x: event.clientX, y: event.clientY, pointer: event.pointerId, axis: 'pending', moved: false }; dragClick.current = false; } }} onPointerMove={moveScrub} onPointerLeave={event => { if (drag.current && !drag.current.moved) finishScrub(event, true); }} onPointerUp={event => finishScrub(event)} onPointerCancel={event => finishScrub(event, true)}
@@ -251,7 +253,7 @@ export function TimeMachinePage({ params, reducedMotion, onWatch, onPlayJourney 
             const meta = eras[era.id];
             const offset = eraIndex - index; const playableCount = videos.filter(video => video.period === era.id && video.status === "available").length;
             const style = { "--era-offset": offset, "--era-distance": Math.abs(offset), zIndex: 10 - Math.abs(offset) } as CSSProperties;
-            return <button key={era.id} data-era={era.id} className={`ex-era-frame ${era.id === period.id ? "is-active" : ""}`} style={style} aria-pressed={era.id === period.id} onClick={() => selectPeriod(era.id)} aria-label={`Explore ${era.label}: ${meta.title.toLowerCase()}`}><span className="ex-film-perfs" aria-hidden="true" /><div className="ex-era-picture"><img src={asset(meta.image)} alt="" draggable={false} /><span className="ex-era-place">{meta.place}</span><span className="ex-era-number">{era.label}</span></div><span className="ex-era-frame-bottom">{meta.shorthand}<ArrowUpRight size={18} /></span><span className="ex-era-count">{playableCount} playable {playableCount === 1 ? "story" : "stories"}</span><span className="ex-film-perfs" aria-hidden="true" /></button>;
+            return <button key={era.id} data-era={era.id} className={`ex-era-frame ${era.id === period.id ? "is-active" : ""}`} style={style} aria-pressed={era.id === period.id} onClick={() => selectPeriod(era.id)} aria-label={`Explore ${era.label}: ${meta.title.toLowerCase()}`}><span className="ex-archive-depth" aria-hidden="true"><i/><i/><i/></span><span className="ex-film-perfs" aria-hidden="true" /><div className="ex-era-picture"><img src={asset(meta.image)} alt="" draggable={false} /><span className="ex-era-place">{meta.place}</span><span className="ex-era-number">{era.label}</span></div><span className="ex-era-frame-bottom">{meta.shorthand}<ArrowUpRight size={18} /></span><span className="ex-era-count">{playableCount} playable {playableCount === 1 ? "story" : "stories"}</span><span className="ex-film-perfs" aria-hidden="true" /></button>;
           })}
         </div>
         <span className="ex-era-image-note">{["1930s", "1970s", "1990s"].includes(period.id) ? "Contemporary imagery / historical context" : period.id === "now" ? "Contemporary culture / the story continues" : "Film release era / fictional worlds"}</span>
