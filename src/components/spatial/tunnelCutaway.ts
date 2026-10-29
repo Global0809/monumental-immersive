@@ -1,86 +1,177 @@
 import * as THREE from 'three';
 
-/** Screen-space inspection exposes real structure behind the lining. Only
- * explicitly marked shell materials are cut; no media, DOM or global filter. */
-export function createTunnelCutaway(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
-  const uniforms = { uLens: { value: new THREE.Vector4(-9999, -9999, 0, 1) } };
-  const header = 'uniform vec4 uLens;\n';
-  const field = `vec2 lensDelta=(gl_FragCoord.xy-uLens.xy)/max(uLens.z,1.); 
-    float lensAngle=atan(lensDelta.y,lensDelta.x);
-    float lensShape=1.+.045*cos(lensAngle*3.)+.025*sin(lensAngle*5.);
-    float lensDistance=length(lensDelta)/lensShape;
-    float lens=1.-smoothstep(.82,1.,lensDistance);`;
-  const originals: { material: THREE.MeshStandardMaterial; compile: THREE.MeshStandardMaterial['onBeforeCompile']; key: THREE.MeshStandardMaterial['customProgramCacheKey'] }[] = [];
+/** The probe intersects the lining in world space. A finite inspection volume
+ * exposes one bay, rather than erasing every surface beneath a screen circle. */
+export function liningIntersection(ray: THREE.Ray, target: THREE.Vector3) {
+  const { origin: o, direction: d } = ray, r = 8.97;
+  const a = d.x * d.x + d.y * d.y;
+  if (a < .0001) return false;
+  const b = o.x * d.x + o.y * d.y, c = o.x * o.x + o.y * o.y - r * r;
+  const discriminant = b * b - a * c;
+  if (discriminant < 0) return false;
+  const t = (-b + Math.sqrt(discriminant)) / a;
+  if (t < .1 || t > 56) return false;
+  ray.at(t, target);
+  return target.z < 20 && target.z > -313;
+}
+
+const declarations = 'uniform vec4 uSection; varying vec3 vSectionWorld;\n';
+const worldVertex = `#include <project_vertex>
+  vec4 sectionPosition=vec4(transformed,1.);
+  #ifdef USE_INSTANCING
+    sectionPosition=instanceMatrix*sectionPosition;
+  #endif
+  vSectionWorld=(modelMatrix*sectionPosition).xyz;`;
+const distanceField = 'float sectionDistance=length(vSectionWorld-uSection.xyz)-uSection.w;';
+
+export function createTunnelCutaway(scene: THREE.Scene, _renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera) {
+  const section = { value: new THREE.Vector4(0, 0, 0, 0) };
   const patched = new Set<THREE.Material>();
+  const originals: { material: THREE.MeshStandardMaterial; compile: THREE.MeshStandardMaterial['onBeforeCompile']; key: THREE.MeshStandardMaterial['customProgramCacheKey']; alpha: boolean }[] = [];
+  const relayShells: THREE.Mesh[] = [];
   function bindMaterials() {
     scene.traverse(object => {
       if (!(object instanceof THREE.Mesh)) return;
       const materials = Array.isArray(object.material) ? object.material : [object.material];
-      for (const mat of materials) {
-        if (!(mat instanceof THREE.MeshStandardMaterial) || !mat.userData.passageShell || mat.map || patched.has(mat)) continue;
-        patched.add(mat);
-        const compile = mat.onBeforeCompile, key = mat.customProgramCacheKey, prior = key.call(mat);
-        originals.push({ material: mat, compile, key });
-        mat.onBeforeCompile = (shader, activeRenderer) => {
-          compile.call(mat, shader, activeRenderer); shader.uniforms.uLens = uniforms.uLens;
-          shader.fragmentShader = header + shader.fragmentShader;
+      for (const material of materials) {
+        if (!(material instanceof THREE.MeshStandardMaterial) || !material.userData.passageShell || material.map) continue;
+        if (object.name === 'relay-shell-components' && !relayShells.includes(object)) relayShells.push(object);
+        if (patched.has(material)) continue;
+        patched.add(material);
+        const compile = material.onBeforeCompile, key = material.customProgramCacheKey, prior = key.call(material);
+        originals.push({ material, compile, key, alpha: material.alphaToCoverage });
+        // MSAA covers a sub-pixel cut edge. No screen-door noise, transparency
+        // sorting, bright ring, or second rendering pass is involved.
+        material.alphaToCoverage = true;
+        material.onBeforeCompile = (shader, activeRenderer) => {
+          compile.call(material, shader, activeRenderer);
+          shader.uniforms.uSection = section;
+          shader.vertexShader = 'varying vec3 vSectionWorld;\n' + shader.vertexShader.replace('#include <project_vertex>', worldVertex);
+          shader.fragmentShader = declarations + shader.fragmentShader;
           shader.fragmentShader = shader.fragmentShader.replace('#include <alphatest_fragment>', `#include <alphatest_fragment>
-            if(uLens.z>1.){${field}
-              float screenDoor=fract(dot(floor(gl_FragCoord.xy),vec2(.75487766,.56984029)));
-              if(lens>screenDoor) discard;
+            if(uSection.w>.001){${distanceField}
+              float aa=max(fwidth(sectionDistance),.001);
+              float coverage=smoothstep(-aa,aa,sectionDistance);
+              if(coverage<.001)discard;
+              diffuseColor.a*=coverage;
             }`);
+          shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
+            if(uSection.w>.001){${distanceField}
+              float edgeWidth=max(fwidth(sectionDistance)*1.6,.018);
+              float bevel=1.-smoothstep(0.,edgeWidth*2.2,sectionDistance);
+              // A satin cut lip follows the actual shell, never the empty air.
+              outgoingLight=mix(outgoingLight,outgoingLight*.4+vec3(.27,.28,.25),bevel*.65);
+            }
+            #include <opaque_fragment>`);
         };
-        mat.customProgramCacheKey = () => prior + '|passage-structural-cutaway-v1'; mat.needsUpdate = true;
+        material.customProgramCacheKey = () => prior + '|monumental-section-v3'; material.needsUpdate = true;
       }
     });
   }
-  const root = new THREE.Group(); root.name = 'passage-internal-trusses'; scene.add(root);
-  const material = new THREE.ShaderMaterial({ uniforms, transparent: false, depthWrite: true, toneMapped: false,
-    vertexShader: `varying vec3 vNormal;varying vec3 vWorld;void main(){vNormal=normalize(normalMatrix*mat3(instanceMatrix)*normal);vec4 w=modelMatrix*instanceMatrix*vec4(position,1.);vWorld=w.xyz;gl_Position=projectionMatrix*viewMatrix*w;}`,
-    fragmentShader: header + `varying vec3 vNormal;varying vec3 vWorld;void main(){${field}if(uLens.z<1.||lens<.02)discard;
-      float illumination=.32+.68*abs(dot(normalize(vNormal),normalize(vec3(-.3,.8,.7))));
-      vec3 metal=mix(vec3(.36,.39,.37),vec3(.82,.80,.73),illumination);
-      float junction=step(.91,fract(vWorld.z*.274));
-      gl_FragColor=vec4(mix(metal,vec3(1.,.302,.196),junction*.72),1.);
-      #include <colorspace_fragment>
-    }` });
-  const cylinder = new THREE.CylinderGeometry(1, 1, 1, 6);
-  const nodeGeometry = new THREE.IcosahedronGeometry(1, 0);
-  const beams = new THREE.InstancedMesh(cylinder, material, 90 * 6 * 3);
-  const nodes = new THREE.InstancedMesh(nodeGeometry, material, 90 * 6);
-  const dummy = new THREE.Object3D(), a = new THREE.Vector3(), b = new THREE.Vector3(), direction = new THREE.Vector3(), axis = new THREE.Vector3(0, 1, 0);
-  let index = 0;
-  const beam = (start: THREE.Vector3, end: THREE.Vector3, radius: number) => {
-    direction.subVectors(end, start); dummy.position.copy(start).add(end).multiplyScalar(.5);
-    dummy.quaternion.setFromUnitVectors(axis, direction.clone().normalize()); dummy.scale.set(radius, direction.length(), radius); dummy.updateMatrix(); beams.setMatrixAt(index++, dummy.matrix);
-  };
-  for (let row = 0; row < 90; row++) for (let lane = 0; lane < 6; lane++) {
-    const angle = lane * Math.PI / 3 + row * .058, z = 18 - row * 3.65, r = 9.45;
-    a.set(Math.cos(angle) * r, Math.sin(angle) * r, z); b.set(Math.cos(angle + .058) * r, Math.sin(angle + .058) * r, z - 3.65); beam(a, b, .045);
-    b.set(Math.cos(angle + Math.PI / 3) * r, Math.sin(angle + Math.PI / 3) * r, z); beam(a, b, .055);
-    b.set(Math.cos(angle + Math.PI / 3 + .058) * r, Math.sin(angle + Math.PI / 3 + .058) * r, z - 3.65); beam(a, b, .024);
-    dummy.position.copy(a); dummy.quaternion.identity(); dummy.scale.setScalar(.13); dummy.updateMatrix(); nodes.setMatrixAt(row * 6 + lane, dummy.matrix);
+
+  const root = new THREE.Group(); root.name = 'passage-service-bays'; root.visible = false; scene.add(root);
+  const geometries = new Set<THREE.BufferGeometry>(), materials: THREE.MeshStandardMaterial[] = [], batches: THREE.InstancedMesh[] = [];
+  function interior(color: number, metalness: number, roughness: number) {
+    const material = new THREE.MeshStandardMaterial({ color, metalness, roughness, envMapIntensity: .65, alphaToCoverage: true });
+    material.onBeforeCompile = shader => {
+      shader.uniforms.uSection = section;
+      shader.vertexShader = 'varying vec3 vSectionWorld;\n' + shader.vertexShader.replace('#include <project_vertex>', worldVertex);
+      shader.fragmentShader = declarations + shader.fragmentShader;
+      shader.fragmentShader = shader.fragmentShader.replace('#include <alphatest_fragment>', `#include <alphatest_fragment>
+        ${distanceField}
+        if(uSection.w<.001||sectionDistance>.85)discard;`);
+    };
+    material.customProgramCacheKey = () => 'monumental-service-bay-v3'; materials.push(material); return material;
   }
-  beams.instanceMatrix.needsUpdate = nodes.instanceMatrix.needsUpdate = true;
-  beams.computeBoundingSphere(); nodes.computeBoundingSphere(); root.add(beams, nodes); root.visible = false;
+  const titanium = interior(0x818781, .82, .34), graphite = interior(0x222a26, .62, .52);
+  const insulation = interior(0x742c23, .27, .61), fastener = interior(0xc4c5b9, .88, .27);
+  const rows = 90, lanes = 12, visibleRows = 7;
+  const templates = new Map<THREE.InstancedMesh, { matrices: Float32Array; instancesPerRow: number }>();
+  function batch(geometry: THREE.BufferGeometry, material: THREE.Material, instancesPerBay: number) {
+    const instancesPerRow = lanes * instancesPerBay;
+    geometries.add(geometry); const mesh = new THREE.InstancedMesh(geometry, material, visibleRows * instancesPerRow);
+    mesh.count = 0; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    templates.set(mesh, { matrices: new Float32Array(rows * instancesPerRow * 16), instancesPerRow });
+    batches.push(mesh); root.add(mesh); return mesh;
+  }
+  const rails = batch(new THREE.BoxGeometry(1, 1, 1), titanium, 2);
+  const housings = batch(new THREE.BoxGeometry(1, 1, 1), graphite, 1);
+  const cables = batch(new THREE.CylinderGeometry(1, 1, 1, 10), insulation, 2);
+  const collars = batch(new THREE.CylinderGeometry(1, 1, 1, 12), fastener, 4);
+  const dummy = new THREE.Object3D(), start = new THREE.Vector3(), end = new THREE.Vector3(), direction = new THREE.Vector3(), axis = new THREE.Vector3(0, 1, 0);
+  function put(mesh: THREE.InstancedMesh, index: number) { dummy.updateMatrix(); dummy.matrix.toArray(templates.get(mesh)!.matrices, index * 16); }
+  for (let row = 0; row < rows; row++) for (let lane = 0; lane < lanes; lane++) {
+    const index = row * lanes + lane, angle = lane * Math.PI / 6 + row * .058;
+    const radius = 8.8 + Math.sin(row * .46) * .34, z = 18 - row * 3.65 - 1.35;
+    const c = Math.cos(angle), s = Math.sin(angle), span = 2 * radius * Math.sin(Math.PI / 12) * .95;
+    // Twin flanges and a recessed chassis follow the same bay pitch as the
+    // outer wall. Their depth, fixings and cable routing survive camera travel.
+    for (let side = 0; side < 2; side++) {
+      dummy.position.set(c * (radius + .78), s * (radius + .78), z + (side ? 1.17 : -1.17));
+      dummy.rotation.set(0, 0, angle + Math.PI / 2); dummy.scale.set(span, .16, .12); put(rails, index * 2 + side);
+    }
+    dummy.position.set(c * (radius + 1.12), s * (radius + 1.12), z);
+    dummy.rotation.set(0, 0, angle + Math.PI / 2); dummy.scale.set(span * .92, .11, 2.4); put(housings, index);
+    for (let cable = 0; cable < 2; cable++) {
+      const offset = (cable ? 1 : -1) * .32;
+      start.set(c * (radius + .88) - s * offset, s * (radius + .88) + c * offset, z - 1.75);
+      end.copy(start); end.z += 3.5; direction.subVectors(end, start);
+      dummy.position.copy(start).add(end).multiplyScalar(.5); dummy.quaternion.setFromUnitVectors(axis, direction.normalize());
+      dummy.scale.set(.055, 3.5, .055); put(cables, index * 2 + cable);
+      for (let mount = 0; mount < 2; mount++) {
+        dummy.position.copy(start); dummy.position.z = z + (mount ? 1.17 : -1.17);
+        dummy.scale.set(.085, .12, .085); put(collars, index * 4 + cable * 2 + mount);
+      }
+    }
+  }
+  let firstVisibleRow = -1;
+  function selectRows(z: number) {
+    const focusRow = Math.round((18 - 1.35 - z) / 3.65);
+    const first = THREE.MathUtils.clamp(focusRow - Math.floor(visibleRows / 2), 0, rows - visibleRows);
+    if (first === firstVisibleRow) return;
+    firstVisibleRow = first;
+    // Full world-coordinate templates stay on the CPU. Only this seven-row
+    // window reaches the GPU; stable focus and relay inspection upload nothing.
+    for (const mesh of batches) {
+      const { matrices, instancesPerRow } = templates.get(mesh)!;
+      const offset = first * instancesPerRow * 16;
+      mesh.count = visibleRows * instancesPerRow;
+      mesh.instanceMatrix.array.set(matrices.subarray(offset, offset + mesh.count * 16));
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    }
+  }
   bindMaterials();
-  let x = -9999, y = -9999, strength = 0;
+  const raycaster = new THREE.Raycaster(), point = new THREE.Vector2(), focus = new THREE.Vector3(), view = new THREE.Vector3();
+  const hits: THREE.Intersection[] = [];
+  let strength = 0;
+  function reset() { strength = 0; section.value.w = 0; root.visible = false; }
   return {
-    bindMaterials,
-    update(pointer: readonly [number, number], enabled: boolean, width: number, height: number, delta: number) {
-      const ratio = renderer.getPixelRatio();
-      const follow = 1 - Math.exp(-Math.min(.05, delta) * 22);
-      strength += ((enabled ? 1 : 0) - strength) * follow;
-      // Cursor coordinates stay exact; only the lens opening is eased.
-      if (enabled) { x = (pointer[0] + 1) * width * .5; y = (pointer[1] + 1) * height * .5; }
-      const radius = Math.min(185, width * .14, height * .22) * ratio * strength;
-      uniforms.uLens.value.set(x * ratio, y * ratio, radius, ratio);
-      root.visible = radius > 1;
-      return root.visible;
+    bindMaterials, reset,
+    update(pointer: readonly [number, number], enabled: boolean, _width: number, height: number, delta: number) {
+      if (!enabled) { reset(); return false; }
+      point.set(pointer[0], pointer[1]); raycaster.setFromCamera(point, camera);
+      hits.length = 0;
+      for (const mesh of relayShells) {
+        let visible = true; for (let parent: THREE.Object3D | null = mesh; parent; parent = parent.parent) if (!parent.visible) visible = false;
+        if (visible) { mesh.updateWorldMatrix(true, false); mesh.raycast(raycaster, hits); }
+      }
+      hits.sort((a, b) => a.distance - b.distance);
+      const relay = hits[0];
+      if (relay) focus.copy(relay.point);
+      else if (!liningIntersection(raycaster.ray, focus)) { reset(); return false; }
+      if (!relay) selectRows(focus.z);
+      view.copy(focus).applyMatrix4(camera.matrixWorldInverse);
+      const focalLength = height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
+      const radius = relay ? .88 : THREE.MathUtils.clamp(155 * -view.z / focalLength, 1.2, 3.9);
+      strength += (1 - strength) * (1 - Math.exp(-Math.min(.05, delta) * 16));
+      section.value.set(focus.x, focus.y, focus.z, radius * strength);
+      root.visible = !relay && strength > .01;
+      return strength > .01;
     },
     destroy() {
-      for (const entry of originals) { entry.material.onBeforeCompile = entry.compile; entry.material.customProgramCacheKey = entry.key; entry.material.needsUpdate = true; }
-      scene.remove(root); beams.dispose(); nodes.dispose(); cylinder.dispose(); nodeGeometry.dispose(); material.dispose(); patched.clear();
+      for (const entry of originals) { entry.material.onBeforeCompile = entry.compile; entry.material.customProgramCacheKey = entry.key; entry.material.alphaToCoverage = entry.alpha; entry.material.needsUpdate = true; }
+      scene.remove(root); batches.forEach(mesh => mesh.dispose()); geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); templates.clear(); patched.clear(); relayShells.length = 0;
     },
   };
 }

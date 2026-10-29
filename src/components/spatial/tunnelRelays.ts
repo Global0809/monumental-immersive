@@ -34,7 +34,8 @@ export function createTunnelRelays(scene: THREE.Scene) {
   const brushed = ownMaterial(new THREE.MeshStandardMaterial({ color: 0x646d67, metalness: .86, roughness: .38 }));
   const signal = ownMaterial(new THREE.MeshStandardMaterial({ color: 0xff4d32, emissive: 0xff4d32, emissiveIntensity: .35, metalness: .45, roughness: .3 }));
   const lamp = ownMaterial(new THREE.MeshBasicMaterial({ color: 0xff6148, toneMapped: false }));
-  chrome.userData.passageShell = true;
+  const shellChrome = ownMaterial(chrome.clone());
+  shellChrome.userData.passageShell = true;
   brushed.userData.passageInternal = true;
 
   function contour(points: readonly (readonly [number, number])[], depth: number, bevel: number) {
@@ -81,7 +82,7 @@ export function createTunnelRelays(scene: THREE.Scene) {
   }
   function put(mesh: THREE.InstancedMesh, index: number) { dummy.updateMatrix(); mesh.setMatrixAt(index, dummy.matrix); }
   function finish(mesh: THREE.InstancedMesh) { mesh.instanceMatrix.needsUpdate = true; }
-  const shells = batch(mechanism, leaf, chrome, 6, true);
+  const shells = batch(mechanism, leaf, shellChrome, 6, true);
   const inlays = batch(mechanism, inlay, ivory, 6, true);
   shells.name = 'relay-shell-components'; inlays.name = 'relay-shell-inlays';
   const shoulders = batch(mechanism, shoulder, dark, 6, true);
@@ -99,7 +100,7 @@ export function createTunnelRelays(scene: THREE.Scene) {
 
   // The travel family shares five instanced draw calls across every gap.
   // Their world-space anchors never chase the camera or sit in reading scenes.
-  const relayCount = 5, travelLeaves = batch(travel, leaf, chrome, relayCount * 6);
+  const relayCount = 5, travelLeaves = batch(travel, leaf, shellChrome, relayCount * 6);
   const travelInlays = batch(travel, inlay, ivory, relayCount * 6);
   const travelShafts = batch(travel, cylinder, dark, relayCount * 6);
   const travelGimbals = batch(travel, gimbalGeometry, brushed, relayCount);

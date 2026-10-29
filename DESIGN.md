@@ -145,6 +145,8 @@ Mechanical depth comes from visible wall thickness, recessed screens, hinge pins
 
 ## Interaction edition
 
+The Passage structural reveal is a finite world-space cut into physical shell materials. A narrow satin edge reveals recessed supports, graphite housings, cable runs and collars under the existing scene lighting. Keep this machinery behind the shell, use a bounded nearby instance pool, and exclude copy, controls and footage. Clear the reveal during travel, inspection and playback; compact and reduced-motion presentations omit it. Avoid grainy masks, fluorescent wire cages, bright outlining and full-screen color filters. See [X-ray refinement](docs/xray-refinement.md).
+
 The Passage now unfolds side-mounted displays inside a continuous mechanical spiral, while the globe exposes actual catalogue connections. The Time Machine supports a contact sheet and direct era comparison. These interactions retain conventional controls beside spatial gestures. The homepage's silent previews, inspection controls, saved-story state and direct destination routes stay connected to the existing catalogue.
 
 The sound identity is synthesized from six material families, with meaningful selection, travel, memory and mechanical responses. Sound Studio makes volume and optional atmosphere explicit. A real waveform responds to the audio signal. Sound is off until enabled and stays quiet during film playback.
