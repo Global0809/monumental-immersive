@@ -47,6 +47,7 @@ class FakeBuffer {
   getChannelData() { return this.data; }
 }
 class FakeSource extends FakeNode {
+  loop = false;
   buffer: FakeBuffer | null = null;
   playbackRate = new FakeParam();
   onended: (() => void) | null = null;
@@ -303,4 +304,48 @@ test('a pending room cannot resume after full-player ownership', async () => {
   audio.setPlaybackActive(true); await finishDecode();
   assert.equal(sources.length, count);
   assert.ok(sources.every(source => !source.started || source.stopped));
+});
+
+test('portal travel has one motion voice with ambience off and releases at rest', async () => {
+  audio.setSoundEnabled(true); await settle();
+  assert.equal(viewer.getViewer().ambient, false);
+  advance(2000);
+  audio.setSonicMotion(.65, -.26); await settle();
+  const moving = sources.filter(source => source.loop && source.started && !source.stopped);
+  assert.equal(moving.length, 1);
+  const source = moving[0], firstRate = source.playbackRate.value;
+  for (let i = 0; i < 20; i++) { advance(35); audio.setSonicMotion(.9, .26); }
+  await settle();
+  assert.equal(sources.filter(source => source.loop && source.started && !source.stopped).length, 1);
+  assert.notEqual(source.playbackRate.value, firstRate);
+  advance(1000);
+  assert.equal(source.stopped, true, 'A stopped camera releases the voice without a rendering loop.');
+});
+
+test('portal motion stops for film ownership, mute and hidden tabs', async () => {
+  audio.setSoundEnabled(true); await settle(); advance(2000);
+  audio.setSonicMotion(.8, -.26); await settle();
+  const motion = sources.find(source => source.loop && !source.stopped)!;
+  assert.ok(motion);
+  audio.setPlaybackActive(true);
+  assert.equal(motion.stopped, true);
+  const count = sources.length;
+  audio.setSonicMotion(1, 0); await settle(); assert.equal(sources.length, count);
+  audio.setPlaybackActive(false); audio.setSonicMotion(.8, 0); await settle();
+  audio.setSoundEnabled(false);
+  assert.ok(sources.filter(source => source.loop).every(source => source.stopped));
+  audio.setSoundEnabled(true); await settle(); advance(2000);
+  audio.setSonicMotion(.8, 0); await settle();
+  documentMock.hidden = true; documentMock.dispatchEvent(new Event('visibilitychange'));
+  assert.ok(sources.filter(source => source.loop).every(source => source.stopped));
+});
+
+test('a delayed travel buffer cannot start after motion stopped or a film opened', async () => {
+  viewer.updateViewer({ sound: true }); audio.playSound('select'); await settle();
+  holdDecode = true; audio.setSonicMotion(.8, 0); await settle();
+  assert.ok(decodeWaiters.length);
+  audio.setSonicMotion(0, 0); await finishDecode();
+  assert.equal(sources.filter(source => source.loop).length, 0);
+  audio.setPlaybackActive(true); audio.setSonicMotion(1, 0); await settle();
+  assert.equal(sources.filter(source => source.loop).length, 0);
 });

@@ -5,6 +5,31 @@ import { createPassageArchitecture } from '../src/components/spatial/passageArch
 import { PASSAGE_CHAPTERS } from '../src/services/passageChapters.ts';
 import { passagePose, passageReading } from '../src/services/passageJourney.ts';
 
+function assertCarrierCulling(root: THREE.Group, index: number) {
+  const chassis = root.getObjectByName(`chapter-${index}-articulated-chassis`);
+  assert.ok(chassis, 'the physical carrier exists');
+  const matrix = new THREE.Matrix4(), point = new THREE.Vector3();
+  let batches = 0, parts = 0;
+  chassis.traverse(object => {
+    if (!(object instanceof THREE.InstancedMesh)) return;
+    batches++; parts += object.count;
+    const sphere = object.boundingSphere;
+    assert.ok(sphere && sphere.radius >= 9, 'moving carrier parts retain conservative culling bounds');
+    object.geometry.computeBoundingBox();
+    const box = object.geometry.boundingBox!;
+    for (let instance = 0; instance < object.count; instance++) {
+      object.getMatrixAt(instance, matrix);
+      assert.ok(matrix.elements.every(Number.isFinite), 'a carrier part never uploads an invalid pose');
+      for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+        point.set(x, y, z).applyMatrix4(matrix);
+        assert.ok(point.distanceTo(sphere.center) <= sphere.radius + .001, 'the culling sphere contains every articulated part');
+      }
+    }
+  });
+  assert.ok(batches > 0 && batches <= 16, 'mechanical detail remains batched within its rendering budget');
+  assert.ok(parts > 0, 'carrier batches contain physical parts');
+}
+
 test('inspection brings every object into a clear space below its original screen', () => {
   const scene = new THREE.Scene(), architecture = createPassageArchitecture(scene, () => {});
   const camera = new THREE.PerspectiveCamera(59, 1440 / 900, .16, 165);
@@ -28,8 +53,20 @@ test('inspection brings every object into a clear space below its original scree
       assert.ok(left > 560 && right < 1390, `${chapter.id} stays in its right-hand stage: ${left}–${right}`);
       assert.ok(top > 545 && bottom < 825, `${chapter.id} avoids the image and bottom navigation: ${top}–${bottom}`);
       assert.equal(assembly.media.material.opacity, 1, 'inspection never fades footage');
-      assert.ok(assembly.ribs.boundingSphere!.radius >= 9, 'moving ribs retain conservative culling bounds');
+      assertCarrierCulling(assembly.root, active);
     }
+  }
+  architecture.destroy();
+  assert.equal(scene.children.length, 0);
+});
+
+test('articulated carrier bounds contain the complete transformation and reverse traversal', () => {
+  const scene = new THREE.Scene(), architecture = createPassageArchitecture(scene, () => {});
+  const progress = [0, .1, .18, .25, .35, .5, .8, .9, 1];
+  for (let active = 0; active < 6; active++) for (const p of [...progress, ...progress.toReversed()]) {
+    architecture.update({ active, progress: p, elapsed: 0, delta: .05, reducedMotion: true,
+      inspection: { station: null, expanded: false, rotation: 0 } });
+    assertCarrierCulling(architecture.chapters[active].root, active);
   }
   architecture.destroy();
   assert.equal(scene.children.length, 0);

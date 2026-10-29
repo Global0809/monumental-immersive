@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { PASSAGE_CHAPTERS } from '../../services/passageChapters';
 import { passageStationMotion, passagePose, passageReading } from '../../services/passageJourney';
-import { passageScreenExtension } from '../../services/passageMechanisms';
+import { samplePassageAssembly } from '../../services/passageAssembly';
+import { createChapterAssemblyKit, type ChapterAssembly } from './chapterAssembly';
 import { createPassageThresholds } from './passageThresholds';
 import { createPassageInstruments } from './passageInstruments';
 
@@ -15,9 +16,9 @@ type ImageSurface = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 type Link = { body: THREE.Mesh; piston: THREE.Mesh; signal: THREE.Mesh };
 type Assembly = {
   root: THREE.Group; media: ImageSurface; screen: THREE.Group; screenSlides: THREE.Mesh[]; exhibit: THREE.Group; movement: THREE.Group;
-  frames: THREE.Mesh[]; fins: THREE.Group[]; slats: THREE.Group[]; ribs: THREE.InstancedMesh;
+  mechanics: ChapterAssembly;
   armRoot: THREE.Group; arms: Link[]; motors: THREE.Group[]; hub: THREE.Group;
-  target: THREE.Vector3; inspection: number; turn: number; ribInspection: number; leafReveal: number;
+  target: THREE.Vector3; inspection: number; turn: number;
 };
 
 /** One continuous, permanently constructed machine. The scroll controller owns
@@ -166,14 +167,6 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   }
   instanced(entrance, alloy, 12, (i, o) => { const a = i * Math.PI / 6; o.position.set(Math.cos(a) * 8.05, Math.sin(a) * 8.05, -.7); o.rotation.z = a; o.scale.set(.65, .3, 2.0); });
 
-  function outline(path: THREE.Shape | THREE.Path, w: number, h: number, corner: number) {
-    path.moveTo(-w / 2 + corner, -h / 2); path.lineTo(w / 2 - corner, -h / 2); path.lineTo(w / 2, -h / 2 + corner);
-    path.lineTo(w / 2, h / 2 - corner); path.lineTo(w / 2 - corner, h / 2); path.lineTo(-w / 2 + corner, h / 2);
-    path.lineTo(-w / 2, h / 2 - corner); path.lineTo(-w / 2, -h / 2 + corner); path.closePath();
-  }
-  const chassisShape = new THREE.Shape(); outline(chassisShape, 15.8, 10, 1.12);
-  const chassisHole = new THREE.Path(); outline(chassisHole, 15.48, 9.68, 1.02); chassisShape.holes.push(chassisHole);
-  const chassisGeometry = geometry('chassis', () => new THREE.ExtrudeGeometry(chassisShape, { depth: .24, bevelEnabled: true, bevelSize: .035, bevelThickness: .035, bevelSegments: 1, steps: 1 }));
   function imageSurface(parent: THREE.Object3D, width: number, height: number): ImageSurface {
     const mat = material(new THREE.MeshBasicMaterial({ color: 0x111513, toneMapped: false, fog: false, side: THREE.FrontSide }));
     const mesh = new THREE.Mesh(geometry(`image-${width}-${height}`, () => new THREE.PlaneGeometry(width, height)), mat); parent.add(mesh); return mesh;
@@ -198,22 +191,11 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   function moveArm(link: Link, a: THREE.Vector3, b: THREE.Vector3) {
     scratchC.copy(a).lerp(b, .64); connect(link.body, a, scratchC, .17); connect(link.piston, scratchC, b, .105); connect(link.signal, a, b, .018);
   }
+  const machined = material(new THREE.MeshStandardMaterial({ color: 0xadb5b1, metalness: .9, roughness: .24, envMapIntensity: 1.05 }));
+  const mechanismKit = createChapterAssemblyKit({ steel: machined, graphite, charcoal, red, ivory });
   const chapters: Assembly[] = PASSAGE_CHAPTERS.map((spec, index) => {
     const root = new THREE.Group(); root.name = `passage-architecture-${spec.id}`; scene.add(root);
-    const frames: THREE.Mesh[] = [];
-    for (let j = 0; j < 3; j++) { const mesh = new THREE.Mesh(chassisGeometry, j === 1 ? graphite : alloy); root.add(mesh); frames.push(mesh); }
-    const fins: THREE.Group[] = [];
-    for (let j = 0; j < 4; j++) {
-      const fin = new THREE.Group(); root.add(fin); box(fin, 0, 0, 0, .62, .19, .9, graphite); box(fin, 0, .105, 0, .58, .025, .95, j % 2 ? ivory : red); fins.push(fin);
-    }
-    const ribs = instanced(root, graphite, 14, () => {}); ribs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    // These instances slide sideways during assembly. The initial identity
-    // matrices do not describe their bounds; keep the entire travel envelope.
-    ribs.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, -.85), 9.2);
-    const slats: THREE.Group[] = [];
-    for (let j = 0; j < 12; j++) {
-      const slat = new THREE.Group(); root.add(slat); box(slat, 0, -4.75, 0, 1.22, 9.5, .035, charcoal); box(slat, -.60, -4.75, .025, .014, 9.5, .035, alloy); slats.push(slat);
-    }
+    const mechanics = mechanismKit.create(root, index);
     const screen = new THREE.Group(); screen.name = `${spec.id}-cultural-window`; screen.position.fromArray(spec.media.position); screen.rotation.y = spec.media.yaw; root.add(screen);
     const w = spec.media.width, h = w * 9 / 16;
     const housing = new THREE.Group(); housing.name = `${spec.id}-recessed-screen-housing`; housing.position.fromArray(spec.media.position); housing.rotation.y = spec.media.yaw; root.add(housing);
@@ -238,7 +220,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     const hub = new THREE.Group(); root.add(hub); hub.position.set(side * 7.15, -3.25, .18);
     ring(hub, .56, .045, alloy, Math.PI * 1.82); ring(hub, .39, .017, red, Math.PI * 1.7).rotation.y = .6;
     const core = new THREE.Mesh(geometry('hub-core', () => new THREE.IcosahedronGeometry(.18, 1)), ivory); hub.add(core);
-    return { root, media, screen, screenSlides, exhibit, movement, frames, fins, slats, ribs, armRoot, arms, motors, hub, target: new THREE.Vector3(), inspection: 0, turn: 0, ribInspection: -1, leafReveal: -1 };
+    return { root, media, screen, screenSlides, exhibit, movement, mechanics, armRoot, arms, motors, hub, target: new THREE.Vector3(), inspection: 0, turn: 0 };
   });
   // Small, recognisable objects remain inspectable. Their movement is below the
   // camera/assembly transform and can never displace text or playback controls.
@@ -316,8 +298,11 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
       chapter.root.visible = pose.visible&&!state.compact; chapter.armRoot.visible = pose.visible&&!state.compact;
       if (!chapter.root.visible) { dummy.scale.setScalar(0); dummy.updateMatrix(); mechanismGlow.setMatrixAt(i, dummy.matrix); return; }
       chapter.root.position.fromArray(pose.position); chapter.root.rotation.set(...pose.rotation);
-      const screenExtension = passageScreenExtension(pose.reveal);
+      const assembly = samplePassageAssembly(i, state);
+      const screenExtension = assembly.screen;
       chapter.screen.position.z = spec.media.position[2] - (1 - screenExtension) * 1.22;
+      chapter.screen.position.y = spec.media.position[1] + (1 - screenExtension) * .18;
+      chapter.screen.rotation.x = (1 - screenExtension) * .12;
       chapter.screenSlides.forEach(slide => { slide.scale.z = .08 + screenExtension * 1.17; slide.position.z = -1.27 + slide.scale.z * .5; });
       const selected = inspection.expanded && inspection.station === spec.id, rate = reducedMotion ? 1 : 1 - Math.exp(-dt * 12);
       chapter.inspection += ((selected ? 1 : 0) - chapter.inspection) * rate; chapter.turn += ((selected ? inspection.rotation : 0) - chapter.turn) * rate;
@@ -330,18 +315,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
       // elapsed angle would unwind several revolutions when Inspect opens.
       const objectYaw = reducedMotion ? 0 : (chapter.movement.rotation.y + dt * .055 * (1 - ex)) % (Math.PI * 2);
       chapter.movement.rotation.set(Math.sin(time * .18 + i) * .06 * (1 - ex), objectYaw, Math.sin(time * .15 + i) * .04 * (1 - ex));
-      // Frames open outside the editorial aperture; the front image and controls
-      // retain their exact authored position, including during inspection.
-      chapter.frames.forEach((frame, j) => { const stretch = 1 + j * .035 + ex * j * .035; frame.scale.set(stretch, stretch, 1); frame.position.set((j - 1) * ex * .16, (j - 1) * ex * .08, -.34 - j * (.52 + ex * .48)); frame.rotation.set(pointerY * j * .007, pointerX * j * .009, (j - 1) * (.012 + ex * .025)); });
-      chapter.fins.forEach((fin, j) => { const sx = j % 2 ? 1 : -1, sy = j < 2 ? -1 : 1; fin.position.set(sx * (7.05 + ex * .25), sy * (4.25 + ex * .18), -.2); fin.rotation.set(sy * (.1 + ex * .25) + pointerY * .045, sx * (.25 + ex * .35) + pointerX * .055, sx * sy * .4); });
-      if (Math.abs(chapter.ribInspection - ex) > .0001) {
-        for (let j = 0; j < 14; j++) { const sx = j < 7 ? -1 : 1; dummy.position.set(sx * (7.92 + ex * .15), ((j % 7) - 3) * .88, -.85); dummy.scale.set(.13, .06, .5 + ex * .7); dummy.rotation.set(0, sx * (.2 + ex * .2), 0); dummy.updateMatrix(); chapter.ribs.setMatrixAt(j, dummy.matrix); }
-        chapter.ribs.instanceMatrix.needsUpdate = true; chapter.ribInspection = ex;
-      }
-      if (Math.abs(chapter.leafReveal - pose.reveal) > .0001) {
-        chapter.slats.forEach((slat, j) => { const fold = THREE.MathUtils.smoothstep(pose.reveal, j * .014, .83 + j * .014); slat.position.set(((j + .5) / 12 - .5) * 14.8, 4.76, -.05); slat.rotation.x = fold * Math.PI / 2; slat.visible = fold < .999; });
-        chapter.leafReveal = pose.reveal;
-      }
+      chapter.mechanics.update(assembly, ex);
       // A tethered elbow follows the actual shared station transform. The arm
       // never assumes the panel is still on the original straight-axis plane.
       chapter.root.updateMatrixWorld(true); worldTarget.set(side * 7.15, -3.25, -.1).applyMatrix4(chapter.root.matrixWorld);
@@ -358,7 +332,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   }
   function destroy() {
     if (destroyed) return; destroyed = true;
-    instruments.destroy(); thresholds.destroy(); scene.remove(tunnel, contactLight); chapters.forEach(chapter => { scene.remove(chapter.root, chapter.armRoot); });
+    instruments.destroy(); thresholds.destroy(); mechanismKit.dispose(); scene.remove(tunnel, contactLight); chapters.forEach(chapter => { scene.remove(chapter.root, chapter.armRoot); });
     instances.forEach(mesh => mesh.dispose()); geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
     instances.clear(); geometries.clear(); materials.clear(); textures.clear(); cache.clear();
   }

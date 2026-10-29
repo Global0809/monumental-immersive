@@ -151,6 +151,44 @@ export function renderCue(type: SoundType): [Float32Array, Float32Array] {
       air(0, .48, .84, 100, 2200, -.25, .25); body(.045, casing, .22, -.15, .9, .035);
       weight(.17, .36); body(.21, memory, .23, .15, .75, .032);
       latch(.32, .08, .86, .38); break;
+    case 'assembly-release':
+      // The pressure unloads before paired catches withdraw from the frame.
+      air(0, .18, .86, 160, 2600, -.25, .3, 'impact');
+      latch(.006, -.32, 1.17, .63); latch(.048, .28, .97, .5);
+      body(.075, casing, .28, -.08, .86); body(.108, chrome, .12, .24, 1.08, .008);
+      air(.09, .2, .35, 420, 2300, .3, -.2, 'draw'); break;
+    case 'assembly-drive':
+      // Two loaded bearings articulate around a low pressure centre. The short
+      // actuation ends quickly when the visitor stops between assembly stages.
+      weight(.006, .3, -.08, .91); servo(.012, .39, 1.04, -.46, .38);
+      servo(.095, .32, .32, .35, -.25, true);
+      body(.07, chrome, .15, -.24, .79, .014);
+      body(.2, casing, .19, .23, 1.18, .01); latch(.36, .16, .92, .36); break;
+    case 'assembly-lock':
+      // Opposed clamps register into one chassis; a brief gasket breath leaves
+      // a dense physical endpoint without a musical success chime.
+      latch(.002, -.3, .77, .74); weight(.014, .62, 0, .9);
+      latch(.048, .3, .86, .62); body(.067, chrome, .25, .07, .76, .007);
+      air(.075, .18, .72, 120, 1400, .2, -.16, 'impact');
+      body(.13, contactBody, .17, 0, 1.09, .002); break;
+    case 'iris-open':
+      // Opposed collars unload, then eight blades sweep on a weighted bearing.
+      latch(.004, -.4, .78, .54); latch(.048, .39, .86, .48);
+      weight(.03, .38, 0, .81); servo(.075, .68, .88, -.56, .54);
+      air(.14, .66, 1.06, 75, 1720, .45, -.42, 'draw');
+      body(.23, chrome, .18, -.28, .69, .035);
+      body(.45, casing, .17, .32, 1.07, .018); latch(.72, .13, .8, .42); break;
+    case 'iris-close':
+      servo(.004, .51, .77, .54, -.51, true);
+      air(.08, .45, .91, 90, 1580, -.4, .4, 'draw');
+      body(.21, chrome, .14, .24, .78, .021);
+      weight(.43, .43, 0, .84); latch(.49, -.22, .72, .63); latch(.525, .23, .84, .42); break;
+    case 'threshold-pass':
+      // Air changes around the listener as the camera crosses a real aperture.
+      air(0, .53, 1.6, 70, 2100, -.55, .55, 'swell');
+      body(.065, pressure, .26, -.12, .87, .045);
+      body(.21, casing, .13, .29, .73, .033);
+      air(.28, .27, .48, 400, 1700, .4, -.2, 'draw'); break;
   }
   // Authored early reflections retain a clear dry centre, followed by a short room tail.
   const dryL = left.slice(), dryR = right.slice();
@@ -235,6 +273,43 @@ export function renderRoom(scene: AmbientScene): [Float32Array, Float32Array] {
   const gain = .12 / peak;
   for (const data of channels) for (let i = 0; i < data.length; i++) data[i] *= gain;
   return channels as [Float32Array, Float32Array];
+}
+
+/** A four-second circular field for motion, not a looping whoosh event. Layered
+ * low pressure, detuned bearing modes and irregular brushed-metal airflow are
+ * continuously shaped by actual camera velocity in the browser. */
+export function renderTravel(): [Float32Array, Float32Array] {
+  const duration = 4, n = SAMPLE_RATE * duration, cross = SAMPLE_RATE * .25;
+  const channels: [Float32Array, Float32Array] = [new Float32Array(n), new Float32Array(n)];
+  const rng = random(hash('monumental-portal-bearing-v1'));
+  const shared = Float32Array.from({ length: n + cross }, () => rng() * 2 - 1);
+  channels.forEach((channel, side) => {
+    const raw = new Float32Array(n + cross); let low = 0, body = 0, brush = 0;
+    for (let i = 0; i < raw.length; i++) {
+      const t = i / SAMPLE_RATE, phase = TAU * t / duration;
+      const noise = shared[i] * .8 + (rng() * 2 - 1) * .2;
+      low += .012 * (noise - low); body += .065 * (noise - body); brush += .19 * (noise - brush);
+      const load = .69 + .13 * Math.sin(phase * 3 + side * .38) + .09 * Math.sin(phase * 7 + 1.4);
+      const grain = .64 + .14 * Math.sin(phase * 19 + side * .3) + .08 * Math.cos(phase * 31);
+      raw[i] = (body - low) * load * 1.05 + (brush - body) * grain * .22
+        + Math.sin(TAU * 63.25 * t + side * .08) * .027
+        + Math.sin(TAU * 147.75 * t + .08 * Math.sin(phase * 2) + side * .2) * .018
+        + Math.sin(TAU * 351.5 * t + side * .29) * .008;
+    }
+    for (let i = 0; i < n; i++) {
+      const blend = i < cross ? .5 - .5 * Math.cos(Math.PI * i / cross) : 1;
+      channel[i] = raw[i] * blend + (i < cross ? raw[n + i] * (1 - blend) : 0);
+    }
+    const radius = 64, first = channel[n - radius], last = channel[radius];
+    for (let j = 0; j <= radius * 2; j++) {
+      const p = j / (radius * 2), at = (n - radius + j) % n, blend = Math.sin(Math.PI * p) ** 2;
+      channel[at] = mix(channel[at], mix(first, last, p), blend);
+    }
+  });
+  let peak = 0;
+  for (const data of channels) for (const sample of data) peak = Math.max(peak, Math.abs(sample));
+  for (const data of channels) for (let i = 0; i < data.length; i++) data[i] *= .29 / peak;
+  return channels;
 }
 
 export function wav(channels: Float32Array[]) {

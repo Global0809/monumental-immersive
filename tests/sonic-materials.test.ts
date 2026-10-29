@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { sonicScore, sonicScenes, type SoundType } from '../src/services/sonicScore.ts';
-import { renderCue, renderRoom, wav, SAMPLE_RATE } from '../scripts/sonic-materials.ts';
+import { renderCue, renderRoom, renderTravel, wav, SAMPLE_RATE } from '../scripts/sonic-materials.ts';
 
 test('every shipped cue matches its authored PCM, has headroom, zero endpoints and bounded DC', () => {
   const fingerprints = new Set<string>();
@@ -40,5 +40,20 @@ test('optional room loops remain quiet, stereo and continuous at the wrap', () =
       assert.ok(Math.sqrt(energy / data.length) > .015, `${scene}: field must retain audible body`);
       assert.ok(Math.abs(sum/data.length) < .001, `${scene}: DC offset`);
     }
+  }
+});
+
+test('the motion field is original stereo PCM with a quiet circular join and headroom', () => {
+  const channels = renderTravel();
+  assert.deepEqual(Buffer.from(wav(channels)), readFileSync(new URL('../public/audio/score-v2/portal-travel.wav', import.meta.url)));
+  assert.notDeepEqual(channels[0], channels[1]);
+  for (const channel of channels) {
+    let peak = 0, sum = 0, energy = 0;
+    for (const sample of channel) { assert.ok(Number.isFinite(sample)); peak = Math.max(peak, Math.abs(sample)); sum += sample; energy += sample * sample; }
+    assert.equal(channel.length, SAMPLE_RATE * 4);
+    assert.ok(peak <= .291 && peak > .2);
+    assert.ok(Math.abs(sum / channel.length) < .001);
+    assert.ok(Math.abs(channel[0] - channel.at(-1)!) < .002);
+    assert.ok(Math.sqrt(energy / channel.length) > .035);
   }
 });

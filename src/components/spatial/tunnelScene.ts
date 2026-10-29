@@ -6,7 +6,8 @@ import { requestVisualFrame, cancelVisualFrame } from '../../services/visualFram
 import { getSpatialPreferences, subscribeSpatialPreferences } from '../../services/spatialPreferences';
 import { getTunnelFrame, getTunnelPanels, getTunnelInspection, subscribeTunnelFrame, subscribeTunnelPanels, subscribeTunnelInspection, tunnelCompact, type TunnelPanelBinding } from '../../services/tunnelJourney';
 import { PASSAGE_CHAPTERS } from '../../services/passageChapters';
-import { passagePose, passageContentOpacity, passageStationMotion, passageWeaveMask, passageReading } from '../../services/passageJourney';
+import { passagePose, passageContentOpacity, passageStationMotion, passageReading } from '../../services/passageJourney';
+import { samplePassageAssembly } from '../../services/passageAssembly';
 import { acquirePassageMedia, PASSAGE_MEDIA } from '../../services/passageMedia';
 import { bindPassageSound } from '../../services/passageSound';
 import { getViewer, subscribeViewer } from '../../services/viewer';
@@ -78,7 +79,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     if(panel.attached){panel.transform=el.style.transform;cssScene.remove(panel.object);panel.binding.fallback.appendChild(el);}
     if(panel.style===null)el.removeAttribute('style');else el.setAttribute('style',panel.style);
     el.inert=panel.inert;if(panel.aria===null)el.removeAttribute('aria-hidden');else el.setAttribute('aria-hidden',panel.aria);
-    el.removeAttribute('data-tunnel-mounted');panel.attached=false;
+    el.removeAttribute('data-tunnel-mounted');el.removeAttribute('data-assembly-progress');el.removeAttribute('data-assembly-locked');panel.reveal=-1;panel.attached=false;
   }
   function syncPanels(){
     const spatial=!compact&&!unavailable&&!state.reducedMotion;
@@ -109,20 +110,26 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     if(state.paused||compact||unavailable)return;
     for(const panel of panels.values()){
       if(!panel.attached)continue;
-      const motion=passageStationMotion(panel.binding.index,frame),spec=PASSAGE_CHAPTERS[panel.binding.index];
+      const motion=passageStationMotion(panel.binding.index,frame),assembly=samplePassageAssembly(panel.binding.index,frame),spec=PASSAGE_CHAPTERS[panel.binding.index];
       const [x,y,z]=spec.panel.position,s=Math.sin(motion.rotation[1]),c=Math.cos(motion.rotation[1]);
       panel.object.position.set(motion.position[0]+x*c+z*s,motion.position[1]+y,motion.position[2]-x*s+z*c);
       panel.object.rotation.set(...motion.rotation);
       const opacity=state.room==='atrium'?passageContentOpacity(panel.binding.index,frame):0;
-      const readable=opacity>.99&&motion.reveal>=.999&&!travel&&document.documentElement.dataset.spatialPassage!=='departing';
+      const readable=opacity>.99&&assembly.lock>=.999&&!travel&&document.documentElement.dataset.spatialPassage!=='departing';
       const el=panel.binding.element;el.style.visibility=opacity>.001?'visible':'hidden';el.style.opacity=String(opacity);
-      if(panel.reveal!==motion.reveal){el.style.clipPath=passageWeaveMask(motion.reveal);panel.reveal=motion.reveal;}
+      if(panel.reveal!==assembly.deployment){
+        // Hardware clears first; whole readable words then resolve together.
+        // The semantic interface never becomes a sliced mechanical texture.
+        el.style.clipPath='none';el.dataset.assemblyProgress=assembly.deployment.toFixed(3);
+        el.dataset.assemblyLocked=String(assembly.lock>=.999);
+        panel.reveal=assembly.deployment;
+      }
       if(el.inert!==!readable)el.inert=!readable;
       const aria=String(!readable);if(el.getAttribute('aria-hidden')!==aria)el.setAttribute('aria-hidden',aria);
     }
   }
   function updateMediaProtection(){
-    if(compact||state.reducedMotion||unavailable||state.room!=='atrium'||frame.active<0||passageStationMotion(frame.active,frame).reveal<.01){setPassageMediaBounds(null);return;}
+    if(compact||state.reducedMotion||unavailable||state.room!=='atrium'||frame.active<0||samplePassageAssembly(frame.active,frame).screen<.01){setPassageMediaBounds(null);return;}
     const screen=architecture.chapters[frame.active].media;
     screen.updateWorldMatrix(true,false);
     const w=screen.geometry.parameters.width/2,h=screen.geometry.parameters.height/2;

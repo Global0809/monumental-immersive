@@ -1,5 +1,6 @@
 import { PASSAGE_CHAPTERS, type PassageVector } from './passageChapters';
 import { tunnelChapterZ, tunnelEntranceZ, type TunnelFrame } from './tunnelJourney';
+import { samplePassageAssembly } from './passageAssembly';
 
 export type PassagePose = { position: PassageVector; target: PassageVector; fov: number };
 export type PassageStationMotion = { position: PassageVector; rotation: PassageVector; extend: number; reveal: number; latch: number; visible: boolean };
@@ -47,7 +48,7 @@ export function passageWeaveMask(reveal:number):string {
 }
 export function passageContentOpacity(index:number,frame:Pick<TunnelFrame,'active'|'progress'>) {
   if(index!==frame.active)return 0;
-  return between(0,.12,passageStationMotion(index,frame).reveal);
+  return samplePassageAssembly(index,frame).content;
 }
 export function passageReading(frame:Pick<TunnelFrame,'active'|'progress'>) {
   return frame.active>=0&&frame.progress>=PASSAGE_READING_START&&(frame.progress<=PASSAGE_READING_END||frame.active===5);

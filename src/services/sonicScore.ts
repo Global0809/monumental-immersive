@@ -25,8 +25,15 @@ export const sonicScore = {
   scan: { duration: .79, peak: .5, material: 'Optical section' },
   signal: { duration: .83, peak: .55, material: 'Relay transmission' },
   arrival: { duration: 1.18, peak: .6, material: 'Spatial settlement' },
+  'assembly-release': { duration: .43, peak: .59, material: 'Sequential lock release' },
+  'assembly-drive': { duration: .64, peak: .61, material: 'Loaded hydraulic articulation' },
+  'assembly-lock': { duration: .54, peak: .63, material: 'Structural clamp registration' },
+  'iris-open': { duration: 1.12, peak: .6, material: 'Spiral aperture drive' },
+  'iris-close': { duration: .83, peak: .56, material: 'Aperture counterweight return' },
+  'threshold-pass': { duration: .68, peak: .53, material: 'Chamber pressure transfer' },
 } as const;
 export type SoundType = keyof typeof sonicScore;
 export type AmbientScene = 'home' | 'world' | 'time' | 'library' | 'cinema' | 'music' | 'culture' | 'collection';
 export const sonicScenes: AmbientScene[] = ['home', 'world', 'time', 'library', 'cinema', 'music', 'culture', 'collection'];
-export const sonicAsset = (name: SoundType | `room-${AmbientScene}`) => `${import.meta.env?.BASE_URL ?? '/'}audio/score-v2/${name}.wav`;
+export type SonicAsset = SoundType | `room-${AmbientScene}` | 'portal-travel';
+export const sonicAsset = (name: SonicAsset) => `${import.meta.env?.BASE_URL ?? '/'}audio/score-v2/${name}.wav`;

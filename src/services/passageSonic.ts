@@ -1,5 +1,7 @@
 import type { AmbientScene } from './sonicScore';
 import type { TunnelFrame } from './tunnelJourney';
+import { createAssemblyScore, type AssemblySound } from './assemblyScore';
+import { createPortalScore, type PortalSound } from './portalScore';
 
 const chapterRooms: readonly AmbientScene[] = ['world', 'time', 'cinema', 'music', 'culture', 'collection'];
 export const passageRoom = (active: number): AmbientScene => chapterRooms[active] ?? 'home';
@@ -18,6 +20,7 @@ type ScoreOutput = {
   room: (room: AmbientScene) => void;
   motion: (energy: number, pan: number) => void;
   arrival: (compact: boolean) => void;
+  mechanism?: (type: AssemblySound | PortalSound, pan: number, intensity: number) => void;
   schedule: (callback: () => void, delay: number) => () => void;
 };
 
@@ -25,6 +28,9 @@ type ScoreOutput = {
  * Motion is an impulse to the audio engine's own decay. Arrival waits for a
  * genuine reading position, so fast jumps do not chime at every skipped room. */
 export function createPassageScore(output: ScoreOutput) {
+  let physicalCue: [AssemblySound | PortalSound, number, number] | null = null;
+  const assembly = output.mechanism ? createAssemblyScore((...cue) => { physicalCue = cue; }) : null;
+  const portal = output.mechanism ? createPortalScore((...cue) => { if (!physicalCue) physicalCue = cue; }) : null;
   let previous: TunnelFrame | null = null;
   let previousTime = 0, intentUntil = -Infinity, lastMotion = -Infinity;
   let currentRoom: AmbientScene | null = null, travelled = false;
@@ -40,6 +46,11 @@ export function createPassageScore(output: ScoreOutput) {
       if (room !== currentRoom) { currentRoom = room; output.room(room); }
       const last = previous, dt = (now - previousTime) / 1000;
       previous = frame; previousTime = now;
+      physicalCue = null;
+      assembly?.sample(frame, now, allowed && now < intentUntil);
+      portal?.sample(frame, now, allowed && now < intentUntil);
+      const cue = physicalCue as [AssemblySound | PortalSound, number, number] | null;
+      if (cue) output.mechanism?.(cue[0], cue[1], cue[2]);
       if (!last) { arrived = frame.active; return; }
       if (!allowed || frame.compact !== last.compact) {
         clearArrival(); travelled = false; arrived = frame.active;
@@ -63,9 +74,11 @@ export function createPassageScore(output: ScoreOutput) {
         cancelArrival = null; pending = -2;
         if (disposed || previous?.active !== station) return;
         arrived = station; travelled = false; lastArrival = previousTime;
-        output.arrival(frame.compact);
+        // The physical final clamp already supplies the arrival when present.
+        // Compact and skipped/quiet mechanism paths retain the settled cue.
+        if (!assembly?.lockedRecently(station, previousTime)) output.arrival(frame.compact);
       }, 170);
     },
-    dispose() { disposed = true; clearArrival(); output.motion(0, 0); },
+    dispose() { disposed = true; clearArrival(); assembly?.reset(); portal?.reset(); output.motion(0, 0); },
   };
 }

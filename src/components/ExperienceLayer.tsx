@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowUp } from '@phosphor-icons/react/dist/csr/ArrowUp';
 import { Check } from '@phosphor-icons/react/dist/csr/Check';
 import { X } from '@phosphor-icons/react/dist/csr/X';
-import { playSound, setAmbientScene, setSonicMotion, type SoundType } from '../services/audio';
+import { getSonicState, subscribeSonicState, playSound, setAmbientScene, setSonicMotion, type SoundType } from '../services/audio';
 import { createPassageScore, routeSoundRoom } from '../services/passageSonic';
-import { getTunnelFrame, subscribeTunnelFrame } from '../services/tunnelJourney';
+import { getTunnelFrame, getTunnelInspection, subscribeTunnelFrame, subscribeTunnelInspection } from '../services/tunnelJourney';
 import type { Notice } from '../services/feedback';
 import './experience.css';
 import { usePersistentStorage } from '../services/viewer';
@@ -24,10 +24,11 @@ export default function ExperienceLayer({ path, reducedMotion }: { path: string;
     if (path !== '/') { setSonicMotion(0); return; }
     const score = createPassageScore({
       room: setAmbientScene, motion: setSonicMotion,
+      mechanism: (type, pan, intensity) => playSound(type, { pan, intensity }),
       arrival: compact => { if (!document.hidden) playSound('arrival', { intensity: compact ? .44 : .62 }); },
       schedule: (callback, delay) => { const timer = window.setTimeout(callback, delay); return () => window.clearTimeout(timer); },
     });
-    const update = () => score.sample(getTunnelFrame(), performance.now(), !document.hidden);
+    const update = () => score.sample(getTunnelFrame(), performance.now(), !document.hidden && !reducedMotion && !getSonicState().playback && !getTunnelInspection().expanded);
     const intent = (event: Event) => {
       if (!event.isTrusted || document.hidden) return;
       const target = event.target instanceof Element ? event.target : null;
@@ -37,15 +38,21 @@ export default function ExperienceLayer({ path, reducedMotion }: { path: string;
       score.arm(performance.now());
     };
     const unsubscribe = subscribeTunnelFrame(update);
+    const unsubscribeInspection = subscribeTunnelInspection(update);
+    let mediaPlaying = getSonicState().playback;
+    const unsubscribeSound = subscribeSonicState(() => {
+      const next = getSonicState().playback;
+      if (next !== mediaPlaying) { mediaPlaying = next; update(); }
+    });
     for (const type of ['wheel', 'touchmove', 'pointerdown', 'keydown']) window.addEventListener(type, intent, { passive: true, capture: true });
     document.addEventListener('visibilitychange', update);
     update();
     return () => {
-      unsubscribe(); score.dispose();
+      unsubscribe(); unsubscribeInspection(); unsubscribeSound(); score.dispose();
       for (const type of ['wheel', 'touchmove', 'pointerdown', 'keydown']) window.removeEventListener(type, intent, true);
       document.removeEventListener('visibilitychange', update);
     };
-  }, [path]);
+  }, [path, reducedMotion]);
 
   useEffect(() => {
     const receive = (e: Event) => { setNoticePaused(false); setNotice({ ...(e as CustomEvent<Notice>).detail, id: Date.now() }); };
