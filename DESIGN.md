@@ -107,6 +107,8 @@ Motion is purposeful: native scroll moves the Passage camera, unfolds its carrie
 
 The selected extension adds counter-rotating structural layers, occasional mechanical awakening, thick iris leaves and narrow signal edges. A pointer lens cuts only designated shell materials to reveal actual internal geometry. Curved particle currents, shell extraction, recessed screen travel and precision instruments use the incumbent scene rather than introducing another camera. Headline letters arrive with staggered depth, then settle without transforms. Audio-driven movement measures the explicitly enabled local score; ordinary mechanical rotation is separate from that measured response.
 
+The lining panels and iris leaves carry inset LED telemetry: local calculation streams, status traces and bounded refresh sweeps in ivory and signal red. A shared bitmap atlas and the incumbent scene clock keep the architecture active at idle. The display stays attached to the material through scroll, opening and X-ray; its detail recedes with distance and at reading positions. Compact and reduced-motion modes retain a static treatment. These decorative sequences do not represent live backend computation. See [Panel telemetry](docs/panel-telemetry.md).
+
 **The Passage Mechanism Rule.** Local relay articulation, structural reveals and wall signals share the existing camera and frame scheduler. Automatic motion calms during chapter reading, freezes during inspection and pauses under player/dialog or hidden-document suspension. Compact and reduced-motion presentations retain semantic content and omit the animated Passage mechanisms.
 
 ## Shapes

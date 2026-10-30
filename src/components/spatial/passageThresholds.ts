@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { PASSAGE_CHAPTERS } from '../../services/passageChapters';
 import { passageIrisOpening } from '../../services/passageMechanisms';
+import { createPanelTelemetry } from '../../services/panelTelemetry';
 
 /** Machined spiral apertures. All seven thresholds share six instanced draws;
  * their apertures follow the existing camera position, never a second clock. */
@@ -15,6 +16,7 @@ export function createPassageThresholds(scene: THREE.Scene) {
   const m = <T extends THREE.Material>(material: T) => { materials.push(material); return material; };
   const shell = m(new THREE.MeshStandardMaterial({ color: 0x424a45, metalness: .9, roughness: .31, envMapIntensity: .7 }));
   shell.userData.passageShell = true;
+  const telemetry = createPanelTelemetry(shell, { surface: 'iris' });
   const backing = m(new THREE.MeshStandardMaterial({ color: 0x141a17, metalness: .74, roughness: .4 }));
   const bearing = m(new THREE.MeshStandardMaterial({ color: 0x89918a, metalness: .92, roughness: .3 }));
   bearing.userData.passageInternal = true;
@@ -77,8 +79,8 @@ export function createPassageThresholds(scene: THREE.Scene) {
     outer.instanceMatrix.needsUpdate = inner.instanceMatrix.needsUpdate = true;
     if (leavesChanged) for (const mesh of [blades, edges, pistons, pins]) mesh.instanceMatrix.needsUpdate = true;
   }
-  return { update, destroy() {
-    if (disposed) return; disposed = true; scene.remove(root);
+  return { update, updateTelemetry: telemetry.update, setTelemetryProtection: telemetry.setProtection, destroy() {
+    if (disposed) return; disposed = true; scene.remove(root); telemetry.dispose();
     batches.forEach(mesh => mesh.dispose()); geometries.forEach(geometry => geometry.dispose()); materials.forEach(material => material.dispose()); root.clear();
   } };
 }

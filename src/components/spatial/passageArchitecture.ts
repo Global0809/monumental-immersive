@@ -7,10 +7,12 @@ import { createPassageThresholds } from './passageThresholds';
 import { createPassageInstruments } from './passageInstruments';
 import { createCinematicMaterials } from '../../services/cinematicMaterials';
 import { sampleCinematicLight } from '../../services/cinematicLight';
+import { createPanelTelemetry } from '../../services/panelTelemetry';
 
 type ArchitectureFrame = {
   active: number; progress: number; elapsed: number; reducedMotion: boolean; delta?: number;
   pointer?: readonly [number, number]; energy?: number; compact?: boolean; quality?: string;
+  pointerActive?: boolean; cameraZ?: number;
   audio?: { rms: number; bass: number; mid: number; treble: number };
   inspection: { station: string | null; expanded: boolean; rotation: number };
 };
@@ -52,6 +54,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   finishes.apply(wallAlloy, 'paint', 1.15);
   finishes.apply(graphite, 'paint', .9);
   finishes.apply(charcoal, 'paint', .7);
+  const panelTelemetry = createPanelTelemetry(wallAlloy);
   const red = material(new THREE.MeshBasicMaterial({ color: 0xff4d32, toneMapped: false }));
   const ivory = material(new THREE.MeshBasicMaterial({ color: 0xd5d2c6, toneMapped: false }));
   const darkRed = material(new THREE.MeshBasicMaterial({ color: 0x63251d, toneMapped: false }));
@@ -59,6 +62,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   const cylinder = geometry('cylinder', () => new THREE.CylinderGeometry(1, 1, 1, 10));
   const tunnel = new THREE.Group(); tunnel.name = 'passage-continuous-tunnel'; scene.add(tunnel);
   const thresholds = createPassageThresholds(scene);
+  const telemetryState = { time: 0, reading: 0, pointer: [0, 0] as [number, number], pointerActive: false, energy: 0, cameraZ: 14, calm: false, quality: 'balanced' };
   function box(parent: THREE.Object3D, x: number, y: number, z: number, w: number, h: number, depth: number, mat: THREE.Material = alloy) {
     const mesh = new THREE.Mesh(unitBox, mat); mesh.position.set(x, y, z); mesh.scale.set(w, h, depth); parent.add(mesh); return mesh;
   }
@@ -92,6 +96,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   const conduitMaterial = material(new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
   conduits.material = conduitMaterial;
   const wallFaces = instanced(tunnel, wallAlloy, ringCount * ringSides, (i, o) => ribTransform(i, o, 2));
+  wallFaces.name = 'passage-led-lining';
   const structuralTint = new THREE.Color();
   for (let i = 0; i < structuralRibs.count; i++) {
     const level = .48 + ((i * 17 + Math.floor(i / ringSides) * 5) % 13) / 24;
@@ -277,7 +282,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     const pointerRate = reducedMotion ? 1 : 1 - Math.exp(-dt * 8);
     pointerX += ((reducedMotion ? 0 : THREE.MathUtils.clamp(state.pointer?.[0] || 0, -1, 1)) - pointerX) * pointerRate;
     pointerY += ((reducedMotion ? 0 : THREE.MathUtils.clamp(state.pointer?.[1] || 0, -1, 1)) - pointerY) * pointerRate;
-    const approach = passagePose(state), cameraZ = approach.position[2];
+    const approach = passagePose(state), cameraZ = state.cameraZ ?? approach.position[2];
     thresholds.update(cameraZ, time, Boolean(state.compact), reducedMotion);
     instruments.update({ elapsed: time, delta: dt, reducedMotion, active, inspecting: inspection.expanded, audio: state.audio });
     const reading = passageReading(state);
@@ -290,6 +295,12 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     signalUniforms.uBreath.value = signalBreath;
     signalUniforms.uTime.value = time; signalUniforms.uEnergy.value = Math.min(1, state.energy || 0); signalUniforms.uPointer.value.set(pointerX, pointerY); signalUniforms.uCameraZ.value = cameraZ;
     readingAmount += ((reading ? 1 : 0) - readingAmount) * (reducedMotion ? 1 : 1 - Math.exp(-dt * 8));
+    telemetryState.time = time; telemetryState.reading = readingAmount;
+    telemetryState.pointer[0] = pointerX; telemetryState.pointer[1] = pointerY;
+    telemetryState.pointerActive = !!state.pointerActive && !inspection.expanded;
+    telemetryState.energy = Math.min(1, state.energy || 0); telemetryState.cameraZ = cameraZ;
+    telemetryState.calm = reducedMotion || !!state.compact; telemetryState.quality = state.quality || 'balanced';
+    panelTelemetry.update(telemetryState); thresholds.updateTelemetry(telemetryState);
     signalUniforms.uRead.value = readingAmount;
     conduitHalos.visible = !state.compact && state.quality !== 'light';
     ribbonUniforms.uTime.value = time; ribbonUniforms.uEnergy.value = Math.min(1, state.energy || 0);
@@ -343,9 +354,12 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   }
   function destroy() {
     if (destroyed) return; destroyed = true;
-    instruments.destroy(); thresholds.destroy(); mechanismKit.dispose(); finishes.dispose(); scene.remove(tunnel, contactLight); chapters.forEach(chapter => { scene.remove(chapter.root, chapter.armRoot); });
+    instruments.destroy(); thresholds.destroy(); panelTelemetry.dispose(); mechanismKit.dispose(); finishes.dispose(); scene.remove(tunnel, contactLight); chapters.forEach(chapter => { scene.remove(chapter.root, chapter.armRoot); });
     instances.forEach(mesh => mesh.dispose()); geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
     instances.clear(); geometries.clear(); materials.clear(); textures.clear(); cache.clear();
   }
-  return { chapters, entrance, update, setPoster, setActiveTexture, setCollection, destroy };
+  function setTelemetryProtection(rects: readonly { left: number; top: number; right: number; bottom: number }[]) {
+    panelTelemetry.setProtection(rects); thresholds.setTelemetryProtection(rects);
+  }
+  return { chapters, entrance, update, setPoster, setActiveTexture, setCollection, setTelemetryProtection, destroy };
 }

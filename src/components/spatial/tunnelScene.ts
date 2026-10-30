@@ -56,6 +56,8 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const scene=new THREE.Scene();scene.background=new THREE.Color(0x080909);scene.fog=new THREE.FogExp2(0x080909,.021);
   const camera=new THREE.PerspectiveCamera(59,1,.16,165),look=new THREE.Vector3();
   const projectedCorner=new THREE.Vector3();
+  const telemetryRects:CinematicRect[]=[],telemetryRectPool=Array.from({length:4},()=>({left:0,top:0,right:0,bottom:0}));
+  const telemetryElements=new Map<string,HTMLElement>();
   const cssScene=new THREE.Scene(),css=new CSS3DRenderer();
   css.domElement.className='tunnel-css-world';
   Object.assign(css.domElement.style,{position:'fixed',inset:'0',pointerEvents:'none',overflow:'clip',zIndex:'1'});
@@ -152,6 +154,27 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     }
     if(active>=4)syncCollection();
   }
+  function appendTelemetryProtection(element:HTMLElement|null){
+      if(!element||telemetryRects.length===4)return;
+      const bounds=element.getBoundingClientRect();
+      if(bounds.width<1||bounds.height<1||bounds.bottom<0||bounds.top>height||bounds.right<0||bounds.left>width)return;
+      const rect=telemetryRectPool[telemetryRects.length];
+      rect.left=clamp((bounds.left-8)/width,0,1);rect.right=clamp((bounds.right+8)/width,0,1);
+      rect.top=clamp((bounds.top-8)/height,0,1);rect.bottom=clamp((bounds.bottom+8)/height,0,1);
+      telemetryRects.push(rect);
+  }
+  function telemetryElement(selector:string){
+      let value=telemetryElements.get(selector);
+      if(!value?.isConnected){value=document.querySelector<HTMLElement>(selector)??undefined;if(value)telemetryElements.set(selector,value);}
+      return value??null;
+  }
+  function updateTelemetryProtection(){
+    telemetryRects.length=0;
+    appendTelemetryProtection(telemetryElement('.site-header'));appendTelemetryProtection(telemetryElement('.tunnel-wayfinder'));
+    if(frame.active<0){appendTelemetryProtection(telemetryElement('.tunnel-hero-copy'));appendTelemetryProtection(telemetryElement('.tunnel-hero-caption'));}
+    else for(const panel of panels.values())if(panel.attached&&Number(panel.binding.element.style.opacity)>.001)appendTelemetryProtection(panel.binding.element);
+    architecture.setTelemetryProtection(telemetryRects);
+  }
   function syncCollection(){
     if(frame.active<4)return;
     const posters=getViewer().saved.flatMap(id=>{const film=videos.find(item=>item.id===id&&item.status==='available');return film?[film.poster]:[];}).slice(0,3);
@@ -221,7 +244,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     scene.environmentIntensity=preferences.cutaway?.95:.4+preferences.light*.003;
     studySound.setActive(inPassage&&frame.active===3&&media.getSnapshot().ready&&!compact&&!state.reducedMotion&&!state.paused);
     const spectrum=studySound.sample();
-    architecture.update({active:frame.active,progress:frame.progress,elapsed,delta:dt,reducedMotion:state.reducedMotion||compact,compact,quality:preferences.quality,inspection,pointer,energy:scrollEnergy,audio:spectrum});
+    architecture.update({active:frame.active,progress:frame.progress,elapsed,delta:dt,reducedMotion:state.reducedMotion||compact,compact,quality:preferences.quality,inspection,pointer,pointerActive:pointerPresent&&!pointerPress,cameraZ:camera.position.z,energy:scrollEnergy,audio:spectrum});
     host.dataset.passageAudioEnergy=spectrum.rms.toFixed(4);
     const lifeEnabled=inPassage&&!compact&&!state.reducedMotion;
     if(lifeEnabled&&!inspection.expanded)pulse.advance(dt);
@@ -231,6 +254,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     // Project semantic content before hit testing. A stationary cursor must see
     // the current panel placement during native scrolling and station jumps.
     updatePanels();if(!compact&&!state.reducedMotion)css.render(cssScene,camera);
+    updateTelemetryProtection();
     updateMediaProtection();
     const imageBounds=getPassageMediaBounds(),cursorX=(pointerTarget[0]+1)*width/2,cursorY=(1-pointerTarget[1])*height/2;
     const overImage=!!imageBounds&&cursorX>=imageBounds.left&&cursorX<=imageBounds.right&&cursorY>=imageBounds.top&&cursorY<=imageBounds.bottom;
