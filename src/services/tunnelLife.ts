@@ -23,6 +23,21 @@ export function selectTunnelRelayPart(part: number | null) {
 }
 export function sendTunnelSignal() { publish({ ...state, signal: state.signal + 1 }); }
 
+/** Uses the renderer's monotonic timestamp; no extra timer or catch-up bursts. */
+export function createTunnelSignalCadence() {
+  let next = 0;
+  return {
+    tick(now: number, enabled: boolean) {
+      if (!enabled || !Number.isFinite(now)) { next = 0; return false; }
+      if (!next) { next = now + 3000; return false; }
+      if (now < next) return false;
+      next = now + 3000;
+      return true;
+    },
+    reset() { next = 0; },
+  };
+}
+
 /** A single pulse can be retriggered without accumulating timers or GPU work.
  * Pausing the scene freezes it; returning from another route resets it. */
 export function createTunnelPulse() {

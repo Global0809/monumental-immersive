@@ -173,7 +173,10 @@ try {
   await actionCue(page.getByRole('button', { name: 'Unfold the relay', exact: true }), 'sculpture-unfold', 'Relay opening has its own mechanical cue');
   await actionCue(page.getByRole('button', { name: 'Inspect relay component 3', exact: true }), 'scan', 'Component inspection uses the optical scan cue');
   await actionCue(page.getByRole('button', { name: 'Reassemble', exact: true }), 'sculpture-fold', 'Relay reassembly has its own closure cue');
-  await actionCue(page.getByRole('button', { name: 'Send a signal', exact: true }), 'signal', 'Sending a real tunnel signal emits its telemetry cue');
+  check('Manual tunnel signal control is absent', await page.getByRole('button', { name: 'Send a signal', exact: true }).count() === 0);
+  const autoSignalSounds = await page.evaluate(() => window.__sonicQA.pulses.length);
+  await wait(3300);
+  check('Automatic tunnel signals remain silent', await page.evaluate(before => window.__sonicQA.pulses.length === before, autoSignalSounds));
   const chapterScenes = ['world', 'time', 'cinema', 'music', 'culture', 'collection'];
   for (let i = 0; i < chapterScenes.length; i++) {
     const before = await page.evaluate(() => window.__sonicQA.pulses.length);

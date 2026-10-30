@@ -19,13 +19,6 @@
 .tunnel-relay-control>button:hover,.tunnel-relay-control>button[aria-pressed=true]{border-color:#ff4d32;background:#151817}
 .tunnel-relay-control>button>svg:first-child{color:#ff4d32}
 .tunnel-relay-control>span{font-size:10px;color:#bfc3b9;background:#080909c9;padding:4px 8px}
-.tunnel-signal-button{display:flex;align-items:center;gap:9px;min-height:44px;padding:7px 10px;color:#d7d8cf;background:#111512;border:1px solid #4e544b;font-size:10px;white-space:nowrap;cursor:pointer;transition:border-color .2s,color .2s}
-.tunnel-signal-button:hover{color:#efeee9;border-color:#ff4d32}
-.tunnel-signal-mark{display:flex;color:#ff4d32}
-.tunnel-signal-mark.is-sent{animation:tunnel-signal-feedback .8s ease-out}
-@keyframes tunnel-signal-feedback{0%{transform:scale(.7);color:#efeee9}35%{transform:scale(1.25);color:#efeee9}100%{transform:scale(1);color:#ff4d32}}
-@media(max-width:1199px){.tunnel-signal-button>span:last-child{display:none}.tunnel-signal-button{min-width:44px;justify-content:center}}
-@media(prefers-reduced-motion:reduce){.tunnel-signal-mark.is-sent{animation:none}}
 .tunnel-hero-bottom{position:absolute;bottom:97px;right:5.2vw;display:flex;align-items:flex-end;flex-direction:column;gap:8px;color:#a9aaa6;font-size:10px}
 .tunnel-relay-control[data-expanded=true]~.tunnel-hero-bottom{visibility:hidden}
 .tunnel-hero-bottom button{display:flex;align-items:center;gap:13px;pointer-events:auto;border:0;background:none;color:#efeee9;padding:12px 0;font-size:10px;letter-spacing:.1em}

@@ -20,7 +20,7 @@ import { useViewer } from '../../services/viewer';
 import { PASSAGE_CHAPTERS as chapters } from '../../services/passageChapters';
 import { acquirePassageMedia, type PassageChapterId, type PassageMediaController } from '../../services/passageMedia';
 import { enterSpatialWorld, spatialPortals, useSpatial } from '../../services/spatial';
-import { getTunnelLife, subscribeTunnelLife, setTunnelRelay, selectTunnelRelayPart, sendTunnelSignal } from '../../services/tunnelLife';
+import { getTunnelLife, subscribeTunnelLife, setTunnelRelay, selectTunnelRelayPart } from '../../services/tunnelLife';
 import DepthText from '../DepthText';
 import { getPassageSound, subscribePassageSound, setPassageSoundEnabled } from '../../services/passageSound';
 import { getTunnelFrame, getTunnelInspection, setTunnelFrame, setTunnelInspection, setTunnelPanels, subscribeTunnelFrame, subscribeTunnelInspection, tunnelChapterZ, tunnelEntranceZ, tunnelCompact, TUNNEL_CHAPTER_UNITS, TUNNEL_HERO_UNITS } from '../../services/tunnelJourney';
@@ -317,7 +317,6 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
     <nav className="tunnel-wayfinder" data-sound-owned aria-label="Tunnel stations" data-in-journey={active >= 0}>
       <div className="tunnel-destination-preview" data-visible={previewStation !== null} aria-hidden="true">{previewStation !== null && <><span>{String(previewStation + 1).padStart(2, '0')} / {spatialPortals[previewStation].title}</span><strong>{chapters[previewStation].object}</strong><ArrowUpRight size={18}/></>}</div>
       <button className="tunnel-home-stop" onClick={() => goToStation(-1)} aria-label="Return to tunnel entrance">M<span>THE PASSAGE</span></button>
-      {!reading && !reducedMotion && <button className="tunnel-signal-button" aria-label="Send a signal" title="Send a signal through the tunnel" onClick={() => { sendTunnelSignal(); playSound('signal', { intensity: .84 }); }}><span key={life.signal} className={life.signal ? 'tunnel-signal-mark is-sent' : 'tunnel-signal-mark'}><Waveform size={19}/></span><span>Send a signal</span></button>}
       <select className="tunnel-mobile-station" aria-label="Choose Passage station" value={active} onChange={event => goToStation(Number(event.target.value))}><option value={-1}>The Passage</option>{spatialPortals.map((portal, index) => <option key={portal.id} value={index}>{String(index + 1).padStart(2, '0')} · {portal.title.replace('The ', '')}</option>)}</select>
       <div className="tunnel-stop-list">{spatialPortals.map((portal, index) => <button key={portal.id} onClick={() => goToStation(index)} onPointerEnter={event => { if (event.pointerType === 'mouse') setPreviewStation(index); }} onPointerLeave={() => setPreviewStation(null)} onFocus={() => setPreviewStation(index)} onBlur={() => setPreviewStation(null)} aria-current={active === index ? 'step' : undefined} aria-label={`Travel to ${portal.title}`}><i/><span>{portal.title.replace('The ', '')}</span></button>)}</div>
       <div className="tunnel-step-buttons"><button onClick={() => goToStation(active - 1)} disabled={active < 0} aria-label="Previous station"><ArrowLeft size={18}/></button><span>{String(Math.max(0, active + 1)).padStart(2, '0')} / 06</span><button onClick={() => goToStation(active + 1)} disabled={active === 5} aria-label="Next station"><ArrowRight size={18}/></button></div>

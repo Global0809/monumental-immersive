@@ -1,6 +1,31 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createTunnelPulse, getTunnelLife, sendTunnelSignal, setTunnelRelay, subscribeTunnelLife } from '../src/services/tunnelLife';
+import { createTunnelPulse, createTunnelSignalCadence, getTunnelLife, sendTunnelSignal, setTunnelRelay, subscribeTunnelLife } from '../src/services/tunnelLife';
+
+test('automatic signal follows three-second deadlines without replaying missed pulses', () => {
+  const clock = createTunnelSignalCadence();
+  assert.equal(clock.tick(100, true), false);
+  assert.equal(clock.tick(3099, true), false);
+  assert.equal(clock.tick(3100, true), true);
+  assert.equal(clock.tick(6100, true), true);
+  assert.equal(clock.tick(25000, true), true);
+  assert.equal(clock.tick(25001, true), false);
+  assert.equal(clock.tick(28000, true), true);
+});
+
+test('blocked and resumed scenes start a fresh signal interval without notifying UI state', () => {
+  const clock = createTunnelSignalCadence(), state = getTunnelLife();
+  clock.tick(100, true);
+  assert.equal(clock.tick(2000, false), false);
+  assert.equal(clock.tick(30000, true), false);
+  assert.equal(clock.tick(32999, true), false);
+  assert.equal(clock.tick(33000, true), true);
+  clock.reset();
+  assert.equal(clock.tick(90000, true), false);
+  assert.equal(clock.tick(93000, true), true);
+  assert.equal(clock.tick(NaN, true), false);
+  assert.equal(getTunnelLife(), state);
+});
 
 test('signals retrigger the one envelope and freeze without frame updates', () => {
   const pulse = createTunnelPulse();
