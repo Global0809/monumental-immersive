@@ -79,6 +79,15 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const mediaLease=acquirePassageMedia(),media=mediaLease.controller;
   const studySound=bindPassageSound(media.getVideo());
   const panels=new Map<string,Panel>(),loadedPosters=new Set<number>();
+  const panelObserver=new ResizeObserver(entries=>{
+    for(const entry of entries){
+      const panel=[...panels.values()].find(value=>value.binding.element===entry.target);
+      if(!panel?.attached)continue;
+      const spec=PASSAGE_CHAPTERS[panel.binding.index];
+      architecture.setEditorialSize(panel.binding.index,entry.contentRect.width*spec.panel.scale,entry.contentRect.height*spec.panel.scale);
+    }
+    wake();
+  });
   let collectionKey='';
 
   function wake(){if(!request&&!disposed&&!unavailable&&!state.paused&&!document.hidden)request=requestVisualFrame(render);}
@@ -99,17 +108,19 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
       Object.assign(el.style,{position:'absolute',pointerEvents:'auto',userSelect:'text',width:`${spec.panel.width}px`});
       if(panel.transform)el.style.transform=panel.transform;
       panel.object.scale.setScalar(spec.panel.scale);
+      architecture.setEditorialSize(panel.binding.index,el.offsetWidth*spec.panel.scale,el.offsetHeight*spec.panel.scale);
       panel.reveal=-1;
       cssScene.add(panel.object);panel.attached=true;
     }
     css.domElement.style.display=spatial?'':'none';
   }
   function registerPanels(bindings:TunnelPanelBinding[]){
-    for(const [id,panel] of panels)if(!bindings.some(b=>b.id===id&&b.element===panel.binding.element)){restorePanel(panel);panels.delete(id);}
+    for(const [id,panel] of panels)if(!bindings.some(b=>b.id===id&&b.element===panel.binding.element)){panelObserver.unobserve(panel.binding.element);restorePanel(panel);panels.delete(id);}
     for(const binding of bindings){
       if(panels.has(binding.id))continue;
       const el=binding.element,original={style:el.getAttribute('style'),inert:el.inert,aria:el.getAttribute('aria-hidden')};
       const panel={binding,object:new CSS3DObject(el),attached:false,transform:'',reveal:-1,...original};panels.set(binding.id,panel);
+      panelObserver.observe(el);
       if(compact||state.reducedMotion)restorePanel(panel);
     }
     syncPanels();wake();
@@ -383,7 +394,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     },cancelTravel,
     destroy(){
       if(disposed)return;disposed=true;if(travel)travel.done=null;travel=null;setPassageMediaBounds(null);
-      cancelVisualFrame(request);observer.disconnect();offFrame();offPanels();offInspection();offPreferences();offMedia();offViewer();
+      cancelVisualFrame(request);observer.disconnect();panelObserver.disconnect();offFrame();offPanels();offInspection();offPreferences();offMedia();offViewer();
       panels.forEach(restorePanel);panels.clear();document.removeEventListener('visibilitychange',visibility);document.removeEventListener('pointerleave',leavePointer);window.removeEventListener('scroll',scrollPointer);window.removeEventListener('pointermove',pointerMove);window.removeEventListener('pointerdown',pointerDown);window.removeEventListener('pointerup',pointerUp);window.removeEventListener('pointercancel',resetPointer);window.removeEventListener('blur',resetPointer);
       canvas.removeEventListener('webglcontextlost',contextLost);
       activeTexture?.dispose();cutaway.destroy();architecture.destroy();atmosphere.dispose();signals.destroy();relays.destroy();signalCadence.reset();pulse.reset();environment.dispose();

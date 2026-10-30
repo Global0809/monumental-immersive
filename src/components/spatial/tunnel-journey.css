@@ -23,6 +23,11 @@
 .tunnel-panel-mount{width:470px;pointer-events:none;transform-style:preserve-3d;backface-visibility:hidden}
 .tunnel-panel{--plate:#101212f5;--plate-edge:#efeee94d;position:relative;width:470px;color:#efeee9;pointer-events:auto;text-align:left;transform-style:preserve-3d}
 .tunnel-panel::before{display:none}
+/* One editorial face sits on the depth-tested carrier behind the DOM. Keeping
+   its surfaces continuous prevents the hardware appearing cut into floating
+   strips; compact cards retain their own existing treatment. */
+.tunnel-panel-mount[data-tunnel-mounted=true] .tunnel-panel{background:#101212}
+.tunnel-panel-mount[data-tunnel-mounted=true] :is(.tunnel-panel-top,.tunnel-panel-copy p,.tunnel-enter-room,.tunnel-story,.tunnel-source-note,.tunnel-panel-foot){box-shadow:none}
 .tunnel-panel-top{position:relative;display:flex;align-items:center;justify-content:space-between;gap:15px;min-height:54px;margin:0 17px 24px -7px;padding:2px 9px 2px 17px;background:#111212f5;border-top:1px solid #efeee987;border-bottom:1px solid #efeee91c;box-shadow:6px 9px 15px #0009;font-size:13px;letter-spacing:.055em;text-transform:uppercase}
 .tunnel-panel-top::before{content:"";position:absolute;left:0;top:-1px;width:50px;height:2px;background:#ff4d32;pointer-events:none}
 .tunnel-panel-top>span{display:flex;gap:15px;align-items:center;min-width:0}

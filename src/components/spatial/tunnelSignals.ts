@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { TunnelLifeFrame } from '../../services/tunnelLife';
+import { passageBayExpansion, passageEnvelopeGLSL } from '../../services/passageEnvelope';
 
 const TAU = Math.PI * 2;
 const VANE_ROWS = 86;
@@ -29,6 +30,7 @@ export function createTunnelSignals(scene: THREE.Scene) {
     uLifePulse: { value: new THREE.Vector3(99, 0, 0) },
   };
   const common = `
+    ${passageEnvelopeGLSL}
     uniform float uLifeTime, uLifeCameraZ, uLifeStation, uLifeRead, uLifeEnergy;
     uniform vec2 uLifePointer;
     uniform vec3 uLifePulse;
@@ -105,7 +107,8 @@ export function createTunnelSignals(scene: THREE.Scene) {
   vanes.name = 'hinged-alloy-wall-vanes'; edges.name = 'vane-signal-inlays';
   for (let i = 0; i < vanes.count; i++) {
     const angle = traits[i * 3 + 1];
-    matrix.position.set(Math.cos(angle) * 8.26, Math.sin(angle) * 8.26, traits[i * 3]);
+    const radius = 8.26 + passageBayExpansion(traits[i * 3]);
+    matrix.position.set(Math.cos(angle) * radius, Math.sin(angle) * radius, traits[i * 3]);
     matrix.rotation.set(0, 0, angle - Math.PI / 2); matrix.scale.set(1, 1, 1); matrix.updateMatrix();
     vanes.setMatrixAt(i, matrix.matrix); edges.setMatrixAt(i, matrix.matrix);
     color.set(0xff4d32); edges.setColorAt(i, color);
@@ -123,7 +126,8 @@ export function createTunnelSignals(scene: THREE.Scene) {
       const angle = lane * TAU / TRAIN_LANES + z * .027;
       for (const side of [-1, 1]) {
         const a = angle + side * .0021;
-        railPositions.push(Math.cos(a) * 8.04, Math.sin(a) * 8.04, z);
+        const radius = 8.04 + passageBayExpansion(z);
+        railPositions.push(Math.cos(a) * radius, Math.sin(a) * radius, z);
         railUvs.push((side + 1) / 2, n / railSteps);
       }
       if (n < railSteps) { const i = base + n * 2; railIndices.push(i, i + 1, i + 2, i + 1, i + 3, i + 2); }
@@ -161,7 +165,7 @@ export function createTunnelSignals(scene: THREE.Scene) {
         p *= range;
         vec3 radial = vec3(cos(angle), sin(angle), 0.0);
         vec3 tangent = vec3(-sin(angle), cos(angle), 0.0);
-        vec3 centre = radial * 8.035 + vec3(0.0, 0.0, z);
+        vec3 centre = radial * (8.035 + passageBayExpansion(z)) + vec3(0.0, 0.0, z);
         vec3 world = centre + tangent * p.x + radial * p.y + normalize(vec3(tangent.xy * .217, 1.0)) * p.z;
         float head = 1.0 - smoothstep(0.0, 2.0, aTrain.y);
         vLifeTint = mix(vec3(1.0, .075, .033), vec3(.86, .84, .76), head);
@@ -197,6 +201,7 @@ export function createTunnelSignals(scene: THREE.Scene) {
         float angle = aPulse.x * .5235987756 + z * -.01589;
         float c = cos(angle), s = sin(angle);
         vec3 world = vec3(position.x * c - position.y * s, position.x * s + position.y * c, position.z + z);
+        world.xy *= 1.0 + passageBayExpansion(z) / 7.98;
         vLifeAlpha = uLifePulse.z * (1.0 - smoothstep(4.0, 6.2, uLifePulse.x))
           * (1.0 - aPulse.y * .31) * lifeRange(z) * lifeQuiet(z) * .78;
         gl_Position = projectionMatrix * modelViewMatrix * vec4(world, 1.0);

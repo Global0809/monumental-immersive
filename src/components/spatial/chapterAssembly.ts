@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { PassageAssembly } from '../../services/passageAssembly';
 
 type Palette = { steel: THREE.Material; graphite: THREE.Material; charcoal: THREE.Material; red: THREE.Material; ivory: THREE.Material };
-type Part = { joint: THREE.Object3D; local: THREE.Matrix4 };
+type Part = { joint: THREE.Object3D; local: THREE.Matrix4; label?: string };
 type Batch = { mesh: THREE.InstancedMesh; parts: Part[] };
 export type ChapterAssembly = { update: (pose: PassageAssembly, inspection: number) => void };
 
@@ -36,11 +36,11 @@ export function createChapterAssemblyKit(palette: Palette) {
     const up = new THREE.Vector3(0, 1, 0), rotation = new THREE.Quaternion();
     const scale = new THREE.Vector3(), midpoint = new THREE.Vector3(), split = new THREE.Vector3();
     const add = (geometry: keyof typeof geometries, material: keyof Palette, joint: THREE.Object3D,
-      position: readonly number[], dimensions: readonly number[], angles: readonly number[] = [0, 0, 0]) => {
+      position: readonly number[], dimensions: readonly number[], angles: readonly number[] = [0, 0, 0], label?: string) => {
       transform.position.set(position[0], position[1], position[2]);
       transform.scale.set(dimensions[0], dimensions[1], dimensions[2]);
       transform.rotation.set(angles[0], angles[1], angles[2]); transform.updateMatrix();
-      const part = { joint, local: transform.matrix.clone() }, key = geometry + '/' + material;
+      const part: Part = { joint, local: transform.matrix.clone(), label }, key = geometry + '/' + material;
       if (!buckets.has(key)) buckets.set(key, { geometry: geometries[geometry], material: palette[material], parts: [] });
       buckets.get(key)!.parts.push(part); return part;
     };
@@ -89,32 +89,43 @@ export function createChapterAssemblyKit(palette: Palette) {
       return { node, sx, tier };
     });
 
-    // Six double-jointed armor doors fold back around the frame. The second
-    // plate folds onto the first, leaving the actual editorial aperture clear.
+    // Each two-leaf door fits one third of its own half-aperture. An offset
+    // hinge gives the folded leaves real thickness clearance; their surfaces
+    // never occupy the same plane when the cassette compresses or unfolds.
     const shutters = Array.from({ length: 6 }, (_, i) => {
-      const sy = i < 3 ? 1 : -1, column = i % 3 - 1, shoulder = joint(), elbow = joint(shoulder);
+      const sy = i < 3 ? 1 : -1, column = i % 3 - 1, shoulder = joint(), elbow = joint(shoulder), hingeBridge = joint(shoulder);
       elbow.position.y = -sy * 2.2;
+      hingeBridge.position.y = -sy * 2.2;
+      for (const x of [-2.06, 2.06]) add('plate', 'graphite', hingeBridge, [x, 0, 0], [.16, .22, 1]);
       for (const [node, second] of [[shoulder, false], [elbow, true]] as const) {
         const cy = -sy * 1.10;
-        add('plate', 'steel', node, [0, cy, -.015], [4.62, 2.13, .16]);
-        add('plate', 'graphite', node, [0, cy, .09], [4.35, 1.88, .11]);
-        add('plate', 'charcoal', node, [0, cy, .153], [3.90, 1.40, .025]);
+        add('plate', 'steel', node, [0, cy, -.015], [4.62, 2.04, .16], [0, 0, 0], `shutter-${i}-${second ? 'distal' : 'proximal'}`);
+        add('plate', 'graphite', node, [0, cy, .09], [4.35, 1.88, .11], [0, 0, 0], `shutter-${i}-${second ? 'distal' : 'proximal'}/face`);
+        add('plate', 'charcoal', node, [0, cy, .153], [3.90, 1.40, .025], [0, 0, 0], `shutter-${i}-${second ? 'distal' : 'proximal'}/inlay`);
         // A broad sculpted spine, recessed vent slots, exposed hinge knuckles.
-        add('plate', 'graphite', node, [0, cy, -.18], [3.90, .32, .24]);
+        add('plate', 'graphite', node, [0, cy, -.18], [3.90, .32, .24], [0, 0, 0], `shutter-${i}-${second ? 'distal' : 'proximal'}/back`);
         for (let vent = 0; vent < 4; vent++) add('box', 'steel', node, [-1.08 + vent * .72, cy, .175], [.035, .88, .024]);
         for (const x of [-2.02, 2.02]) for (const y of [-.76, .76]) bolt(node, x, cy + y, .16, .06);
         for (const x of [-1.58, 1.58]) pin(node, x, 0, -.02, .12, .52);
         add('box', second ? 'red' : 'ivory', node, [column * .25, cy + sy * .70, .17], [second ? 1.06 : .36, .022, .025]);
       }
+      const leafParts = [...buckets.values()].flatMap(bucket => bucket.parts)
+        .filter(part => part.joint === shoulder || part.joint === elbow)
+        .map((part, detail) => {
+          part.label ??= `shutter-${i}-${part.joint === elbow ? 'distal' : 'proximal'}/detail-${detail}`;
+          return { part, authored: part.local.clone() };
+        });
       const cylinder = add('cylinder', 'graphite', rig, [0, 0, 0], [1, 1, 1]);
       const piston = add('cylinder', 'steel', rig, [0, 0, 0], [1, 1, 1]);
-      return { shoulder, elbow, column, sy, cylinder, piston };
+      const mounts = [-1, 1].map(() => add('cylinder', 'graphite', rig, [0, 0, 0], [1, 1, 1]));
+      return { shoulder, elbow, hingeBridge, leafParts, column, sy, cylinder, piston, mounts };
     });
     const cableParts = Array.from({ length: 4 }, () => Array.from({ length: 8 }, () => add('cylinder', 'graphite', rig, [0, 0, 0], [1, 1, 1])));
 
     const batches: Batch[] = [...buckets.values()].map(bucket => {
       const mesh = new THREE.InstancedMesh(bucket.geometry, bucket.material, bucket.parts.length);
       mesh.name = `${host.name}-batch`; mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.userData.assemblyParts = bucket.parts.map(part => part.label ?? null);
       mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, -.7), 12.5);
       host.add(mesh); meshes.push(mesh); return { mesh, parts: bucket.parts };
     });
@@ -155,20 +166,40 @@ export function createChapterAssemblyKit(palette: Palette) {
         node.scale.y = .32 + pose.hinges * .68;
         node.rotation.y = sx * (1 - pose.spine) * .36;
       });
-      shutters.forEach(({ shoulder, elbow, column, sy }, i) => {
+      shutters.forEach(({ shoulder, elbow, hingeBridge, leafParts, column, sy }, i) => {
         // Small stagger preserves an authored domino order while the group
         // remains entirely reconstructed from scroll, including fast reversal.
         const fold = stagger(pose.leaves, ((i + index) % 3) * .055);
-        shoulder.position.set(column * (3.10 + pose.spine * 1.75), sy * (3.28 + pose.hinges * 1.34), -.12);
-        shoulder.rotation.set(sy * fold * 1.32, column * (1 - pose.spine) * .16, 0);
-        elbow.rotation.x = sy * fold * 1.81;
+        const hingeY = spreadY - .45, pitchX = (spreadX - .50) * 2 / 3;
+        shoulder.position.set(column * pitchX, sy * hingeY, -.12);
+        shoulder.scale.set(pitchX / 4.85, 1, 1);
+        const heightScale = hingeY / 4.4;
+        // Scale the authored leaf dimensions before their rigid hinge
+        // rotations. Scaling the whole parent in Y would shear its child.
+        leafParts.forEach(({ part, authored }) => {
+          part.local.copy(authored);
+          for (const row of [1, 5, 9, 13]) part.local.elements[row] *= heightScale;
+        });
+        shoulder.rotation.set(sy * fold * Math.PI / 2, 0, 0);
+        // Clear the hinge knuckles before returning the distal leaf. Its
+        // final .78-unit offset keeps the two machined backs separated.
+        const hingeOffset = .78 * THREE.MathUtils.smoothstep(fold, 0, .36);
+        elbow.position.set(0, -sy * hingeY / 2, hingeOffset);
+        elbow.rotation.x = -sy * fold * Math.PI;
+        hingeBridge.position.set(0, -sy * hingeY / 2, hingeOffset / 2);
+        hingeBridge.scale.z = .18 + hingeOffset;
       });
       rig.updateMatrixWorld(true);
-      shutters.forEach(({ shoulder, cylinder, piston, column, sy }) => {
-        a.set(column * (3.1 + pose.spine * 1.75), sy * (spreadY + .22), -1.1);
-        b.set(0, -sy * .83, -.21).applyMatrix4(shoulder.matrixWorld);
+      shutters.forEach(({ shoulder, cylinder, piston, sy, mounts }) => {
+        a.set(shoulder.position.x, sy * (spreadY + .22), -1.1);
+        b.set(0, -sy * .83 * (spreadY - .45) / 4.4, -.21).applyMatrix4(shoulder.matrixWorld);
         split.copy(a).lerp(b, .55);
         cylinderBetween(cylinder, a, split, .11); cylinderBetween(piston, split, b, .063);
+        mounts.forEach((mount, i) => {
+          const x = shoulder.position.x + (i ? 1 : -1) * 1.58 * shoulder.scale.x;
+          a.set(x, sy * spreadY, -.42); b.set(x, shoulder.position.y, -.14);
+          cylinderBetween(mount, a, b, .10);
+        });
       });
       for (const batch of batches) {
         batch.parts.forEach((part, i) => { matrix.multiplyMatrices(part.joint.matrixWorld, part.local); batch.mesh.setMatrixAt(i, matrix); });

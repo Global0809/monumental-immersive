@@ -48,7 +48,9 @@ export const PASSAGE_CHAPTERS: readonly PassageChapter[] = chapterContent.map((c
   camera:{approach:[0,.12,28],reveal:[0,.12,19],read:[0,.12,11.5],target:[0,.12,-12.5]},
   panel:{position:[-4.3,.35,.85],width:470,scale:.012},
   media:{position:[3.1,.8,.65],width:index===2?8.6:7.8,yaw:0},
-  exhibit:[6,-3.25,.8],
+  // Right-mounted carriers need an inboard exhibit position clear of the
+  // fixed support motor, including the timepiece crown and platter corners.
+  exhibit:[index%2?5:6,-3.25,.8],
 }));
 export function passageLocalToWorld(chapter: PassageChapter, point: PassageVector): [number,number,number] {
   const c=Math.cos(chapter.yaw),s=Math.sin(chapter.yaw);

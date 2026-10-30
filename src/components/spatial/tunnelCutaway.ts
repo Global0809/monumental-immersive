@@ -1,19 +1,28 @@
 import * as THREE from 'three';
 import { createCutawayMotion, type CutawayTarget } from '../../services/cutawayMotion';
+import { passageBayExpansion, passageLiningRadius } from '../../services/passageEnvelope';
 
 /** The probe intersects the lining in world space. A finite inspection volume
  * exposes one bay, rather than erasing every surface beneath a screen circle. */
 export function liningIntersection(ray: THREE.Ray, target: THREE.Vector3) {
-  const { origin: o, direction: d } = ray, r = 8.97;
-  const a = d.x * d.x + d.y * d.y;
-  if (a < .0001) return false;
-  const b = o.x * d.x + o.y * d.y, c = o.x * o.x + o.y * o.y - r * r;
-  const discriminant = b * b - a * c;
-  if (discriminant < 0) return false;
-  const t = (-b + Math.sqrt(discriminant)) / a;
-  if (t < .1 || t > 56) return false;
-  ray.at(t, target);
-  return target.z < 20 && target.z > -313;
+  const { origin: o, direction: d } = ray;
+  const field = (t: number) => Math.hypot(o.x + d.x * t, o.y + d.y * t) - passageLiningRadius(o.z + d.z * t);
+  // Locate the first exit from the expanded physical shell, then refine it.
+  // Fixed work, no mesh traversal or allocations; unlike a constant cylinder,
+  // the probe cannot cut empty air in a station's wider service bay.
+  let previous = field(.1);
+  if (previous >= 0) return false;
+  for (let t = 1; t <= 56; t++) {
+    const next = field(t);
+    if (next >= 0 && previous < 0) {
+      let low = t === 1 ? .1 : t - 1, high = t;
+      for (let step = 0; step < 14; step++) { const middle = (low + high) / 2; if (field(middle) < 0) low = middle; else high = middle; }
+      ray.at((low + high) / 2, target);
+      return target.z < 20 && target.z > -313;
+    }
+    previous = next;
+  }
+  return false;
 }
 
 const declarations = 'uniform vec4 uSection; varying vec3 vSectionWorld;\n';
@@ -103,7 +112,7 @@ export function createTunnelCutaway(scene: THREE.Scene, _renderer: THREE.WebGLRe
   function put(mesh: THREE.InstancedMesh, index: number) { dummy.updateMatrix(); dummy.matrix.toArray(templates.get(mesh)!.matrices, index * 16); }
   for (let row = 0; row < rows; row++) for (let lane = 0; lane < lanes; lane++) {
     const index = row * lanes + lane, angle = lane * Math.PI / 6 + row * .058;
-    const radius = 8.8 + Math.sin(row * .46) * .34, z = 18 - row * 3.65 - 1.35;
+    const z = 18 - row * 3.65 - 1.35, radius = 8.8 + Math.sin(row * .46) * .34 + passageBayExpansion(z);
     const c = Math.cos(angle), s = Math.sin(angle), span = 2 * radius * Math.sin(Math.PI / 12) * .95;
     // Twin flanges and a recessed chassis follow the same bay pitch as the
     // outer wall. Their depth, fixings and cable routing survive camera travel.

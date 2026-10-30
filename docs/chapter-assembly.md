@@ -6,9 +6,17 @@ The six existing chapter carriers now unfold as physical assemblies. The design 
 
 `src/services/passageAssembly.ts` reconstructs every stage from the same actual scroll coordinates used by the camera. Locks release, telescoping rails extend, the chassis articulates, six double-jointed armor doors fold away, the recessed screen advances and the corner clamps register. Reverse scrolling reconstructs those movements; a jump resolves directly to the correct pose. No timed sequence continues after scrolling stops.
 
-`src/components/spatial/chapterAssembly.ts` makes the construction visible: beveled plates, recessed inserts, vent tracks, hinge knuckles, driven struts, cables, guide rails, fasteners and locking jaws. Each carrier contains 452 parts in 11 instanced batches. The six carriers share geometry and materials; distant carriers are culled, unchanged poses skip matrix uploads, and disposal releases the batches and shared geometry.
+`src/components/spatial/chapterAssembly.ts` makes the construction visible: beveled plates, recessed inserts, vent tracks, hinge knuckles, driven struts, cables, guide rails, fasteners and locking jaws. Parts share material/geometry batches. The six carriers share geometry and materials; distant carriers are culled, unchanged poses skip matrix uploads, and disposal releases the batches and shared geometry.
 
 `passageArchitecture.ts` attaches those mechanics to the existing carrier transform and uses the shared screen stage. Inspection still owns a separate exhibit transform. `tunnelScene.ts` keeps WebGL and CSS3D on the same camera and carrier coordinates. The old twelve-strand text mask is no longer applied: plates clear the aperture before whole words appear. Completed chapters retain the existing stable reading interval and original text/media coordinates.
+
+### Clearance correction
+
+The compressed shutter dimensions now follow their available aperture instead of overlapping neighboring columns and opposing rows. Offset return hinges give the folded backs physical separation. The cassette retracts parallel to its rails and packs inside the stowed chassis; it emerges continuously rather than switching visibility halfway through opening. Right-mounted exhibits sit inboard of the support motor.
+
+`passageEnvelope.ts` defines widened service bays shared by the lining, ribs, moving vanes, light rails, X-ray interiors and inspection ray. A measured solid mounting surface behind the accessible DOM removes the floating-strip appearance and resolves with the same content opacity. No blanket depth-test override, artificial frontmost render order or additional animation loop is used.
+
+The clearance review is recorded in `output/playwright/mechanism-clearance/`: baseline, final six-chapter review and finer approach samples. The final browser run passed 55 checks plus eight approach samples without runtime or shader errors. Actual instanced shutter bounds are tested throughout opening and closing for all six chapters. Compact/reduced motion, reverse scrolling, jumps, Inspect/reset/Escape and player return were checked. These results describe the reviewed Chromium viewports, not every possible device.
 
 ## Whole-portal sound
 

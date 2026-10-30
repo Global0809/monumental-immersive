@@ -2,19 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createTunnelCutaway, liningIntersection } from '../src/components/spatial/tunnelCutaway.ts';
+import { passageLiningRadius } from '../src/services/passageEnvelope.ts';
 
 test('the inspection probe meets the lining at a finite world-space point', () => {
   const target = new THREE.Vector3();
   const ray = new THREE.Ray(new THREE.Vector3(0, 0, 14), new THREE.Vector3(1, 0, -1).normalize());
   assert.equal(liningIntersection(ray, target), true);
-  assert.ok(Math.abs(target.x - 8.97) < 1e-9);
-  assert.ok(Math.abs(target.z - 5.03) < 1e-9);
+  assert.ok(Math.abs(target.x - 8.97) < .0001);
+  assert.ok(Math.abs(target.z - 5.03) < .0001);
   assert.ok(ray.distanceToPoint(target) < 1e-9, 'the reveal stays under the projected cursor');
 
   ray.origin.set(.7, -.3, -82);
   ray.direction.set(-.75, .35, -1).normalize();
   assert.equal(liningIntersection(ray, target), true);
-  assert.ok(Math.abs(Math.hypot(target.x, target.y) - 8.97) < 1e-9);
+  assert.ok(Math.abs(Math.hypot(target.x, target.y) - passageLiningRadius(target.z)) < .0001);
   assert.ok(ray.distanceToPoint(target) < 1e-9, 'camera drift does not move the reveal off its ray');
   assert.ok(target.z < ray.origin.z, 'the selected bay remains ahead of the camera');
 });

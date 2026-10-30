@@ -8,6 +8,7 @@ import { createPassageInstruments } from './passageInstruments';
 import { createCinematicMaterials } from '../../services/cinematicMaterials';
 import { sampleCinematicLight } from '../../services/cinematicLight';
 import { createPanelTelemetry } from '../../services/panelTelemetry';
+import { passageBayExpansion } from '../../services/passageEnvelope';
 
 type ArchitectureFrame = {
   active: number; progress: number; elapsed: number; reducedMotion: boolean; delta?: number;
@@ -20,6 +21,7 @@ type ImageSurface = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 type Link = { body: THREE.Mesh; piston: THREE.Mesh; signal: THREE.Mesh };
 type Assembly = {
   root: THREE.Group; media: ImageSurface; screen: THREE.Group; screenSlides: THREE.Mesh[]; exhibit: THREE.Group; movement: THREE.Group;
+  housing: THREE.Group; editorial: THREE.Group; editorialBody: THREE.Mesh; editorialEdges: THREE.Mesh[]; editorialFinish: THREE.MeshStandardMaterial;
   mechanics: ChapterAssembly;
   armRoot: THREE.Group; arms: Link[]; motors: THREE.Group[]; hub: THREE.Group;
   target: THREE.Vector3; inspection: number; turn: number;
@@ -80,9 +82,10 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   const ringCount = 90, ringSides = 12;
   function ribTransform(i: number, object: THREE.Object3D, layer: number) {
     const n = Math.floor(i / ringSides), j = i % ringSides, a = j * Math.PI / 6 + n * .058;
-    const r = 8.8 + Math.sin(n * .46) * .34, span = 2 * r * Math.sin(Math.PI / 12) * .95;
+    const z = 18 - n * 3.65 - (layer === 2 ? 1.35 : 0);
+    const r = 8.8 + Math.sin(n * .46) * .34 + passageBayExpansion(z), span = 2 * r * Math.sin(Math.PI / 12) * .95;
     const radius = r + (layer === 2 ? .17 : layer === 1 ? -.13 : 0);
-    object.position.set(Math.cos(a) * radius, Math.sin(a) * radius, 18 - n * 3.65 - (layer === 2 ? 1.35 : 0));
+    object.position.set(Math.cos(a) * radius, Math.sin(a) * radius, z);
     object.rotation.z = a + Math.PI / 2;
     if (layer === 0) object.scale.set(span, .19, n % 4 === 0 ? .85 : .36);
     if (layer === 1) object.scale.set(span * (j % 3 === 0 ? .78 : .24), .026, .035);
@@ -131,7 +134,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     const steps = 560;
     for (let n = 0; n <= steps; n++) {
       const z = 22 - n * .6, angle = lane * Math.PI * 2 / 7 + z * .043 + Math.sin(z * .069 + lane) * .13;
-      const radius = 7.1 + Math.sin(z * .053 + lane * 2) * .55, width = lane % 3 === 0 ? .018 : .008;
+      const radius = 7.1 + Math.sin(z * .053 + lane * 2) * .55 + passageBayExpansion(z), width = lane % 3 === 0 ? .018 : .008;
       for (const side of [-1, 1]) { const a = angle + side * width; positions.push(Math.cos(a) * radius, Math.sin(a) * radius, z); uv.push((side + 1) / 2, n / steps); }
       if (n < steps) { const i = n * 2; indices.push(i, i + 1, i + 2, i + 1, i + 3, i + 2); }
     }
@@ -147,7 +150,9 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   spillMat.forceSinglePass = true;
   const portals: THREE.Group[] = [];
   for (let i = 0; i < 16; i++) {
-    const portal = new THREE.Group(); portal.position.z = -10 - i * 20.5; portal.rotation.set(Math.sin(i * 3) * .10, Math.cos(i * 2) * .10, i * .7); tunnel.add(portal); portals.push(portal);
+    const portal = new THREE.Group(); portal.position.z = -10 - i * 20.5; portal.rotation.set(Math.sin(i * 3) * .10, Math.cos(i * 2) * .10, i * .7);
+    const bay = passageBayExpansion(portal.position.z); portal.scale.set(1 + bay / 7.5, 1 + bay / 7.5, 1);
+    tunnel.add(portal); portals.push(portal);
     for (let layer = 0; layer < 2; layer++) {
       const radius = (layer ? 7.39 : 7.5) + (i % 3) * .15, thickness = layer ? .016 : .10, arc = Math.PI * (layer ? .34 : .42);
       const g = geometry(`ring-${radius}-${thickness}-${arc}`, () => new THREE.TorusGeometry(radius, thickness, 6, 64, arc));
@@ -160,7 +165,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     }
   }
   let seed = 14831; const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
-  instanced(tunnel, graphite, 180, (_i, o) => { const a = random() * Math.PI * 2, r = 7.5 + random() * 1.5; o.position.set(Math.cos(a) * r, Math.sin(a) * r, 10 - random() * 310); o.rotation.set(random() * 2, random() * 3, random() * 3); o.scale.set(.12 + random() * .6, .06 + random() * .1, .2 + random()); });
+  instanced(tunnel, graphite, 180, (_i, o) => { const a = random() * Math.PI * 2, radial = 7.5 + random() * 1.5, z = 10 - random() * 310, r = radial + passageBayExpansion(z); o.position.set(Math.cos(a) * r, Math.sin(a) * r, z); o.rotation.set(random() * 2, random() * 3, random() * 3); o.scale.set(.12 + random() * .6, .06 + random() * .1, .2 + random()); });
   const mechanismGlow = new THREE.InstancedMesh(haloPlane, haloMaterial, PASSAGE_CHAPTERS.length); instances.add(mechanismGlow); mechanismGlow.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mechanismGlow.frustumCulled = false; tunnel.add(mechanismGlow);
   for (let i = 0; i < mechanismGlow.count; i++) { mechanismGlow.setColorAt(i, i % 2 ? whiteColor : redColor); dummy.position.set(0, 0, -999); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(0); dummy.updateMatrix(); mechanismGlow.setMatrixAt(i, dummy.matrix); }
   const contactLight = new THREE.PointLight(0xff4d32, 3, 8, 2); scene.add(contactLight);
@@ -205,15 +210,21 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   const chapters: Assembly[] = PASSAGE_CHAPTERS.map((spec, index) => {
     const root = new THREE.Group(); root.name = `passage-architecture-${spec.id}`; scene.add(root);
     const mechanics = mechanismKit.create(root, index);
+    // One solid mounting plate supports the semantic DOM. Its face sits just
+    // behind the text, with real thickness visible during the drawer approach.
+    const editorial = new THREE.Group(); editorial.name = `${spec.id}-editorial-carrier`; editorial.position.fromArray(spec.panel.position); root.add(editorial);
+    const editorialFinish = material(charcoal.clone()); editorialFinish.transparent = true;
+    const editorialBody = box(editorial, 0, 0, -.14, 5.94, 7.6, .18, editorialFinish);
+    const editorialEdges = [-1, 1].map(side => box(editorial, side * 2.99, 0, -.14, .045, 7.6, .2, editorialFinish));
     const screen = new THREE.Group(); screen.name = `${spec.id}-cultural-window`; screen.position.fromArray(spec.media.position); screen.rotation.y = spec.media.yaw; root.add(screen);
     const w = spec.media.width, h = w * 9 / 16;
     const housing = new THREE.Group(); housing.name = `${spec.id}-recessed-screen-housing`; housing.position.fromArray(spec.media.position); housing.rotation.y = spec.media.yaw; root.add(housing);
     box(housing, 0, 0, -1.43, w + .42, h + .42, .16, charcoal);
     const screenSlides: THREE.Mesh[] = [];
     for (const side of [-1, 1]) {
-      box(housing, side * (w / 2 + .15), 0, -.77, .16, h + .35, 1.48, graphite);
-      screenSlides.push(box(housing, side * (w / 2 + .20), 0, -.64, .032, h * .78, 1.25, alloy));
-      box(housing, side * (w / 2 + .25), 0, -.72, .014, h * .58, .016, red);
+      box(housing, side * (w / 2 + .24), 0, -.77, .16, h + .35, 1.48, graphite);
+      screenSlides.push(box(housing, side * (w / 2 + .16), 0, -.64, .032, h * .78, 1.25, alloy));
+      box(housing, side * (w / 2 + .33), 0, -.72, .014, h * .58, .016, red);
     }
     box(screen, 0, 0, -.10, w + .10, h + .10, .16, charcoal);
     for (const side of [-1, 1]) { box(screen, 0, side * (h / 2 + .06), -.01, w + .21, .075, .23, alloy); box(screen, side * (w / 2 + .06), 0, -.01, .075, h + .1, .23, graphite); }
@@ -229,7 +240,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     const hub = new THREE.Group(); root.add(hub); hub.position.set(side * 7.15, -3.25, .18);
     ring(hub, .56, .045, alloy, Math.PI * 1.82); ring(hub, .39, .017, red, Math.PI * 1.7).rotation.y = .6;
     const core = new THREE.Mesh(geometry('hub-core', () => new THREE.IcosahedronGeometry(.18, 1)), ivory); hub.add(core);
-    return { root, media, screen, screenSlides, exhibit, movement, mechanics, armRoot, arms, motors, hub, target: new THREE.Vector3(), inspection: 0, turn: 0 };
+    return { root, media, screen, screenSlides, housing, editorial, editorialBody, editorialEdges, editorialFinish, exhibit, movement, mechanics, armRoot, arms, motors, hub, target: new THREE.Vector3(), inspection: 0, turn: 0 };
   });
   // Small, recognisable objects remain inspectable. Their movement is below the
   // camera/assembly transform and can never displace text or playback controls.
@@ -245,6 +256,13 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   });
 
   const instruments = createPassageInstruments(chapters.map(chapter => chapter.movement));
+
+  function setEditorialSize(index: number, width: number, height: number) {
+    const chapter = chapters[index];
+    if (!chapter || width <= 0 || height <= 0) return;
+    chapter.editorialBody.scale.set(width + .34, height + .26, .18);
+    chapter.editorialEdges.forEach((edge, i) => { edge.position.x = (i ? 1 : -1) * (width / 2 + .19); edge.scale.y = height + .26; });
+  }
 
   function configureTexture(texture: THREE.Texture) { texture.colorSpace = THREE.SRGBColorSpace; texture.minFilter = THREE.LinearFilter; texture.magFilter = THREE.LinearFilter; texture.generateMipmaps = false; textures.add(texture); }
   function setPoster(index: number, url: string) {
@@ -322,14 +340,24 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
       chapter.root.position.fromArray(pose.position); chapter.root.rotation.set(...pose.rotation);
       const assembly = samplePassageAssembly(i, state);
       const screenExtension = assembly.screen;
-      chapter.screen.position.z = spec.media.position[2] - (1 - screenExtension) * 1.22;
-      chapter.screen.position.y = spec.media.position[1] + (1 - screenExtension) * .18;
-      chapter.screen.rotation.x = (1 - screenExtension) * .12;
+      // A straight drawer stays parallel to its rails. Tilting a full-width
+      // screen during retraction drove its back corners into the rear housing.
+      // The display cassette packs inside the collapsed chassis, then arrives
+      // from behind the armor continuously. No boolean appearance halfway
+      // through an already open aperture, and no loose full-size rear slab.
+      const cassetteScale = .38 + .62 * assembly.hinges, recess = (1 - screenExtension) * 2.44;
+      chapter.screen.scale.setScalar(cassetteScale); chapter.housing.scale.setScalar(cassetteScale);
+      chapter.housing.position.set(spec.media.position[0] * cassetteScale, spec.media.position[1] * cassetteScale, spec.media.position[2] - recess);
+      chapter.screen.position.set(spec.media.position[0] * cassetteScale, spec.media.position[1] * cassetteScale, spec.media.position[2] - recess - (1 - screenExtension) * .96 * cassetteScale);
+      chapter.screen.rotation.x = 0;
+      chapter.editorial.visible = assembly.content > .001;
+      chapter.editorialFinish.opacity = assembly.content;
       chapter.screenSlides.forEach(slide => { slide.scale.z = .08 + screenExtension * 1.17; slide.position.z = -1.27 + slide.scale.z * .5; });
       const selected = inspection.expanded && inspection.station === spec.id, rate = reducedMotion ? 1 : 1 - Math.exp(-dt * 12);
       chapter.inspection += ((selected ? 1 : 0) - chapter.inspection) * rate; chapter.turn += ((selected ? inspection.rotation : 0) - chapter.turn) * rate;
       const ex = chapter.inspection;
-      chapter.exhibit.rotation.y = chapter.turn; chapter.exhibit.scale.setScalar(1 + ex * .5);
+      chapter.exhibit.visible = assembly.lock > .001;
+      chapter.exhibit.rotation.y = chapter.turn; chapter.exhibit.scale.setScalar((1 + ex * .5) * assembly.lock);
       // Bring the object into the open space beneath the screen instead of
       // enlarging it against the viewport edge. Media and camera never move.
       chapter.exhibit.position.set(spec.exhibit[0] + (3.35 - spec.exhibit[0]) * ex, spec.exhibit[1] + .40 * ex, spec.exhibit[2]);
@@ -361,5 +389,5 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   function setTelemetryProtection(rects: readonly { left: number; top: number; right: number; bottom: number }[]) {
     panelTelemetry.setProtection(rects); thresholds.setTelemetryProtection(rects);
   }
-  return { chapters, entrance, update, setPoster, setActiveTexture, setCollection, setTelemetryProtection, destroy };
+  return { chapters, entrance, update, setPoster, setActiveTexture, setCollection, setEditorialSize, setTelemetryProtection, destroy };
 }
