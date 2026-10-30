@@ -28,7 +28,7 @@ export function createTunnelRelays(scene: THREE.Scene) {
 
   const ownGeometry = <T extends THREE.BufferGeometry>(g: T) => { geometries.add(g); return g; };
   const ownMaterial = <T extends THREE.Material>(m: T) => { materials.add(m); return m; };
-  const chrome = ownMaterial(new THREE.MeshStandardMaterial({ color: 0xb7bdb8, metalness: .93, roughness: .23, envMapIntensity: 1.3 }));
+  const chrome = ownMaterial(new THREE.MeshStandardMaterial({ color: 0xd0d6d3, metalness: 1, roughness: .10, envMapIntensity: 1.2 }));
   const dark = ownMaterial(new THREE.MeshStandardMaterial({ color: 0x151a18, metalness: .76, roughness: .31, envMapIntensity: .75 }));
   const ivory = ownMaterial(new THREE.MeshStandardMaterial({ color: 0xe3e0d3, metalness: .18, roughness: .34 }));
   const brushed = ownMaterial(new THREE.MeshStandardMaterial({ color: 0x646d67, metalness: .86, roughness: .38 }));

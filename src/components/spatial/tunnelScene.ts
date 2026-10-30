@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { createPassageReflectionEnvironment } from './passageLighting';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import { createFrameCadence } from '../../services/frameCadence';
 import { requestVisualFrame, cancelVisualFrame } from '../../services/visualFrame';
@@ -65,8 +65,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   css.domElement.className='tunnel-css-world';
   Object.assign(css.domElement.style,{position:'fixed',inset:'0',pointerEvents:'none',overflow:'clip',zIndex:'1'});
   (document.getElementById('main')||host).appendChild(css.domElement);
-  const roomEnvironment=new RoomEnvironment(),pmrem=new THREE.PMREMGenerator(renderer);
-  const environment=pmrem.fromScene(roomEnvironment,.025);roomEnvironment.dispose();pmrem.dispose();
+  const environment=createPassageReflectionEnvironment(renderer);
   scene.environment=environment.texture;scene.environmentIntensity=.9;
   const hemisphere=new THREE.HemisphereLight(0xeee9df,0x171c1c,.58);scene.add(hemisphere);
   const key=new THREE.DirectionalLight(0xffeee0,1.4);key.position.set(-5,9,12);scene.add(key,key.target);
@@ -254,7 +253,8 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     key.position.copy(camera.position);key.position.x-=5;key.position.y+=9;key.position.z-=7;key.target.position.copy(look);
     fill.position.copy(look);fill.position.x+=3+illumination.drift*.24;fill.position.y+=2;fill.position.z+=5;
     accent.position.copy(look);accent.position.x+=7;accent.position.y-=2;accent.position.z-=5;
-    scene.environmentIntensity=preferences.cutaway?.95:.4+preferences.light*.003;
+    scene.environmentIntensity=preferences.cutaway?.95:.65+preferences.light*.003;
+    scene.environmentRotation.y=.24+illumination.drift*.035;
     studySound.setActive(inPassage&&frame.active===3&&media.getSnapshot().ready&&!compact&&!state.reducedMotion&&!state.paused);
     const spectrum=studySound.sample();
     architecture.update({active:frame.active,progress:frame.progress,elapsed,delta:dt,reducedMotion:state.reducedMotion||compact,compact,quality:preferences.quality,inspection,pointer,pointerActive:pointerPresent&&!pointerPress,cameraZ:camera.position.z,energy:scrollEnergy,audio:spectrum});

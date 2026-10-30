@@ -45,13 +45,13 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     return cache.get(key) as T;
   }
   function material<T extends THREE.Material>(value: T) { materials.add(value); return value; }
-  const alloy = material(new THREE.MeshStandardMaterial({ color: 0x565e59, metalness: .88, roughness: .29 }));
+  const alloy = material(new THREE.MeshStandardMaterial({ color: 0xb8bfbd, metalness: 1, roughness: .13, envMapIntensity: 1.1 }));
   const ribAlloy = material(new THREE.MeshStandardMaterial({ color: 0x171d19, metalness: .80, roughness: .42, envMapIntensity: .24 }));
   const wallAlloy = material(new THREE.MeshStandardMaterial({ color: 0x101513, metalness: .34, roughness: .79, envMapIntensity: .20 }));
   wallAlloy.userData.passageShell = true;
   const graphite = material(new THREE.MeshStandardMaterial({ color: 0x171b19, metalness: .78, roughness: .38 }));
   const charcoal = material(new THREE.MeshStandardMaterial({ color: 0x0d1110, metalness: .55, roughness: .48 }));
-  finishes.apply(alloy, 'metal', .85);
+  finishes.apply(alloy, 'metal', .28);
   finishes.apply(ribAlloy, 'metal', 1.15);
   finishes.apply(wallAlloy, 'paint', 1.15);
   finishes.apply(graphite, 'paint', .9);
@@ -204,8 +204,8 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   function moveArm(link: Link, a: THREE.Vector3, b: THREE.Vector3) {
     scratchC.copy(a).lerp(b, .64); connect(link.body, a, scratchC, .17); connect(link.piston, scratchC, b, .105); connect(link.signal, a, b, .018);
   }
-  const machined = material(new THREE.MeshStandardMaterial({ color: 0xadb5b1, metalness: .9, roughness: .24, envMapIntensity: 1.05 }));
-  finishes.apply(machined, 'metal', .65);
+  const machined = material(new THREE.MeshStandardMaterial({ color: 0xd5d9d7, metalness: 1, roughness: .095, envMapIntensity: 1.2 }));
+  finishes.apply(machined, 'metal', .2);
   const mechanismKit = createChapterAssemblyKit({ steel: machined, graphite, charcoal, red, ivory });
   const chapters: Assembly[] = PASSAGE_CHAPTERS.map((spec, index) => {
     const root = new THREE.Group(); root.name = `passage-architecture-${spec.id}`; scene.add(root);

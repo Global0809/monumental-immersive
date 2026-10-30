@@ -18,7 +18,7 @@ export function createPassageThresholds(scene: THREE.Scene) {
   shell.userData.passageShell = true;
   const telemetry = createPanelTelemetry(shell, { surface: 'iris' });
   const backing = m(new THREE.MeshStandardMaterial({ color: 0x141a17, metalness: .74, roughness: .4 }));
-  const bearing = m(new THREE.MeshStandardMaterial({ color: 0x89918a, metalness: .92, roughness: .3 }));
+  const bearing = m(new THREE.MeshStandardMaterial({ color: 0xc5cbc8, metalness: 1, roughness: .11, envMapIntensity: 1.15 }));
   bearing.userData.passageInternal = true;
   const signal = m(new THREE.MeshBasicMaterial({ color: 0xff4d32, toneMapped: false }));
   const bladeShape = new THREE.Shape();
