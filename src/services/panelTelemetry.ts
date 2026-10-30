@@ -6,11 +6,11 @@ export type PanelTelemetryFrame = {
 };
 export type PanelTelemetryProtection = { left: number; top: number; right: number; bottom: number };
 
-// Authored 5×7 glyphs: numbers and arithmetic, not an animated noise texture.
+// Authored alien instrument numerals with angular counters and split strokes.
 export const PANEL_GLYPHS = '0123456789ABCDEF+-=:/[]>';
 const bitmaps = [
-  [14,17,19,21,25,17,14], [4,12,4,4,4,4,14], [14,17,1,2,4,8,31], [30,1,1,14,1,1,30],
-  [2,6,10,18,31,2,2], [31,16,16,30,1,1,30], [14,16,16,30,17,17,14], [31,1,2,4,8,8,8],
+  [14,17,21,21,21,17,14], [12,20,4,0,4,4,14], [30,1,1,14,16,16,15], [30,1,1,14,1,1,30],
+  [17,17,17,15,1,0,1], [15,16,16,14,1,1,30], [14,16,16,30,17,17,14], [31,1,2,4,0,8,8],
   [14,17,17,14,17,17,14], [14,17,17,15,1,1,14], [14,17,17,31,17,17,17], [30,17,17,30,17,17,30],
   [14,17,16,16,16,17,14], [30,17,17,17,17,17,30], [31,16,16,30,16,16,31], [31,16,16,30,16,16,16],
   [0,4,4,31,4,4,0], [0,0,0,31,0,0,0], [0,0,31,0,31,0,0], [0,4,4,0,4,4,0],
@@ -51,6 +51,7 @@ const clamp = (value: number | undefined, min: number, max: number, fallback = m
 
 const varyingDeclarations = `
 varying vec2 vPanelUv;
+varying vec2 vPanelMetric;
 varying float vPanelFace;
 varying float vPanelSeed;
 varying vec4 vPanelProjection;
@@ -106,25 +107,26 @@ if(vPanelFace>.5 && panelDistance<55.){
     float tick=floor(uPanelTime*1.8+seed*7.);
     // Body arithmetic is organized in fixed-width fields, with a fixed header.
     vec2 body=vec2((p.x-.085)/.83,(p.y-.16)/.58);
-    vec2 cells=vec2(body.x*12.,body.y*5.+rowTravel);
+    // Constant physical glyph size, independent of the tapered boundary UV.
+    vec2 cells=vPanelMetric/vec2(.20,.28)+vec2(0.,rowTravel);
     vec2 cell=fract(cells);
     float row=floor(cells.y), column=floor(cells.x);
     float bodyMask=step(0.,body.x)*step(body.x,1.)*step(0.,body.y)*step(body.y,1.);
     float glyph=0.;
     // Skip atlas fetches for distant, very small glyphs rather than shimmer.
-    if(bodyMask>.5 && panelDistance<44. && cell.x>.12 && cell.x<.88 && cell.y>.1 && cell.y<.9){
-      float glyphIndex=panelCalculation(column,row,seed,tick);
-      glyph=panelGlyph(glyphIndex,(cell-vec2(.12,.1))/vec2(.76,.8));
+    if(bodyMask>.5 && panelDistance<44. && cell.x>.15 && cell.x<.85 && cell.y>.15 && cell.y<.85){
+      float glyphIndex=panelCalculation(mod(column,12.),row,seed,tick);
+      glyph=panelGlyph(glyphIndex,(cell-vec2(.15))/vec2(.70));
       glyph*=1.-smoothstep(30.,44.,panelDistance);
       glyph*=mix(.58,1.,panelHash(row*7.+seed));
     }
     float header=0.;
-    vec2 head=vec2((p.x-.085)/.65*10.,(p.y-.80)/.075);
-    if(head.x>=0. && head.x<10. && head.y>=0. && head.y<1. && panelDistance<49.){
+    vec2 head=vPanelMetric/vec2(.20,.28);
+    if(p.x>.085 && p.x<.73 && p.y>.80 && p.y<.875 && panelDistance<49.){
       float col=floor(head.x), index=floor(panelHash(seed+col*3.)*16.);
       if(col<1.)index=21.; else if(col>8.)index=22.; else if(col>4. && col<6.)index=19.;
-      vec2 local=vec2(fract(head.x),head.y);
-      if(local.x>.14 && local.x<.86) header=panelGlyph(index,vec2((local.x-.14)/.72,local.y));
+      vec2 local=fract(head);
+      if(local.x>.15 && local.x<.85 && local.y>.15 && local.y<.85) header=panelGlyph(index,(local-vec2(.15))/vec2(.70));
     }
     float rules=panelBand(p.y,.775,.0017)+panelBand(p.y,.125,.0012);
     rules+=panelBand(p.x,.06,.0012)*.35+panelBand(p.x,.94,.0012)*.35;
@@ -145,7 +147,12 @@ if(vPanelFace>.5 && panelDistance<55.){
       clearText=min(clearText,smoothstep(0.,.035,length(outside)));
     }
     float brightness=(.39+uPanelEnergy*.08+hotspot*.24)*(1.-uPanelReading*.35)*(1.-uPanelCalm*.24);
-    vec3 ink=vec3(.86,.85,.81)*(glyph*.76+header*.92+rules*.14+grid+scan*(glyph+rules)*.6);
+    float phase=mod(uPanelTime+seed*11.+row*.17,9.5);
+    float charge=smoothstep(0.,.55,phase)*(1.-smoothstep(1.25,2.3,phase))*(1.-uPanelCalm);
+    charge*=mix(.55,1.,panelHash(column+seed*31.));
+    vec3 glyphInk=mix(vec3(.86,.85,.81),vec3(1.,.23,.045),charge);
+    vec3 ink=glyphInk*(glyph*.76+header*.92)*(1.+charge*1.8);
+    ink+=vec3(.86,.85,.81)*(rules*.14+grid+scan*(glyph+rules)*.6);
     ink+=vec3(1.,.074,.033)*(status*.42+stripe*.33);
     diffuseColor.rgb*=mix(1.,.32,panelInset*.72*lod);
     totalEmissiveRadiance+=ink*brightness*panelInset*lod*mix(.035,1.,clearText);
@@ -183,8 +190,15 @@ export function createPanelTelemetry(material: THREE.MeshStandardMaterial, optio
         vec2 bladeUv=(position.xy-vec2(2.45,-2.24))/vec2(5.6,3.03);
         float lower=mix(.60,.17,smoothstep(.05,.80,bladeUv.x));
         vPanelUv=vec2((bladeUv.x-.10)/.80,(bladeUv.y-lower)/max(.12,.79-lower));
+        vPanelMetric=position.xy-vec2(2.45,-2.24);
         vPanelFace=step(.8,normal.z);
-      ` : 'vPanelUv=uv; vPanelFace=step(.5,normal.y);'}
+      ` : `vPanelUv=uv; vPanelFace=step(.5,normal.y);
+        vec2 panelSize=vec2(1.);
+        #ifdef USE_INSTANCING
+          panelSize=vec2(length(instanceMatrix[0].xyz),length(instanceMatrix[2].xyz));
+        #endif
+        vPanelMetric=uv*panelSize;
+      `}
       vec4 panelWorld=vec4(transformed,1.);
       #ifdef USE_INSTANCING
         panelWorld=instanceMatrix*panelWorld;
@@ -195,7 +209,7 @@ export function createPanelTelemetry(material: THREE.MeshStandardMaterial, optio
     shader.fragmentShader = fragmentDeclarations + shader.fragmentShader;
     shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', emission);
   };
-  const cacheKey = () => `${priorKey}|monumental-panel-telemetry-v1:${surface}`;
+  const cacheKey = () => `${priorKey}|monumental-panel-telemetry-v2:${surface}`;
   material.onBeforeCompile = compile; material.customProgramCacheKey = cacheKey;
   material.userData.panelTelemetry = { surface, uniforms }; material.needsUpdate = true;
   return {
