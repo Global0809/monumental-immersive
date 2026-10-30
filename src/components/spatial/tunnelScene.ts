@@ -10,6 +10,7 @@ import { getTunnelFrame, getTunnelPanels, getTunnelInspection, subscribeTunnelFr
 import { PASSAGE_CHAPTERS } from '../../services/passageChapters';
 import { passagePose, passageContentOpacity, passageStationMotion, passageReading } from '../../services/passageJourney';
 import { samplePassageAssembly } from '../../services/passageAssembly';
+import { sampleRelayAutomation, type RelayAutomation } from '../../services/passageMechanisms';
 import { acquirePassageMedia, PASSAGE_MEDIA } from '../../services/passageMedia';
 import { bindPassageSound } from '../../services/passageSound';
 import { getViewer, subscribeViewer } from '../../services/viewer';
@@ -21,7 +22,7 @@ import { createTunnelAtmosphere } from './tunnelAtmosphere';
 import { createTunnelSignals } from './tunnelSignals';
 import { createTunnelRelays } from './tunnelRelays';
 import { createTunnelCutaway } from './tunnelCutaway';
-import { createTunnelPulse, createTunnelSignalCadence, getTunnelLife, setTunnelRelay, selectTunnelRelayPart, subscribeTunnelLife, type TunnelLifeFrame } from '../../services/tunnelLife';
+import { createTunnelPulse, createTunnelSignalCadence, type TunnelLifeFrame } from '../../services/tunnelLife';
 import { cameraEase } from './cameraPath';
 import type { SpatialSceneController, SpatialSceneOptions, SpatialSceneState } from './scene';
 
@@ -43,8 +44,9 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const pointer:[number,number]=[0,0],pointerTarget:[number,number]=[0,0];
   let previousZ=frame.z,scrollEnergy=0,lightCalm=Number(passageReading(frame));
   let scanHold=0,scanPlayed=false,lastScan=-Infinity,cutawayOptics=0;
-  let life=getTunnelLife(),relayHovered=false,pointerPresent=false,pointerPress:{x:number;y:number;id:number;part:number|null;dragged:boolean}|null=null;
-  const pulse=createTunnelPulse(),raycaster=new THREE.Raycaster(),rayPoint=new THREE.Vector2();
+  let pointerPresent=false,pointerPress=false,relayTime=0;
+  const pulse=createTunnelPulse();
+  const relayCycle:RelayAutomation={open:false,part:null,pull:0,phase:0};
   const signalCadence=createTunnelSignalCadence();let automaticSignals=0;
   let activeTexture:THREE.VideoTexture|null=null,textureEpoch=-1,textureChapter=-1;
   const cadence=createFrameCadence(),canvas=renderer.domElement;
@@ -73,7 +75,6 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const atmosphere=createTunnelAtmosphere();scene.add(atmosphere.points);
   const signals=createTunnelSignals(scene),relays=createTunnelRelays(scene);
   const cutaway=createTunnelCutaway(scene,renderer,camera);
-  relays.setExploded(life.relayOpen);
   const lifeFrame:TunnelLifeFrame={time:0,delta:0,cameraZ:14,active:-1,progress:0,pointer,energy:0,pulse:pulse.value,compact:false,reducedMotion:false,inspection:false,quality:preferences.quality};
   const mediaLease=acquirePassageMedia(),media=mediaLease.controller;
   const studySound=bindPassageSound(media.getVideo());
@@ -204,7 +205,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     if(disposed)return;
     const bounds=host.getBoundingClientRect();width=Math.max(1,bounds.width);height=Math.max(1,bounds.height);
     compact=tunnelCompact(width,height,state.reducedMotion);
-    if(compact){signalCadence.reset();pulse.reset();pointerPress=null;setTunnelRelay(false);}
+    if(compact){signalCadence.reset();pulse.reset();pointerPress=false;relayTime=0;}
     ratio=Math.max(.8,Math.min(devicePixelRatio||1,compact?1:preferences.quality==='light'?1:1.4)-reduction);
     renderer.setPixelRatio(ratio);renderer.setSize(width,height,false);css.setSize(width,height);
     camera.aspect=width/height;camera.updateProjectionMatrix();
@@ -251,6 +252,10 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     if(lifeEnabled&&!inspection.expanded)pulse.advance(dt);
     // Reuse the same travelling wave without publishing React state or sound.
     if(signalCadence.tick(time,lifeAvailable())){pulse.trigger(camera.position.z);automaticSignals++;}
+    const relayVisible=lifeEnabled&&frame.active<0;
+    if(relayVisible&&lifeAvailable()&&!document.querySelector('dialog[open]'))relayTime+=dt;
+    sampleRelayAutomation(relayVisible?relayTime:0,relayCycle);
+    relays.setExploded(relayCycle.open);relays.setSelectedPart(relayCycle.part);relays.setPartPull(relayCycle.pull);
     lifeFrame.time=elapsed;lifeFrame.delta=inspection.expanded?0:dt;lifeFrame.cameraZ=camera.position.z;lifeFrame.active=frame.active;lifeFrame.progress=frame.progress;
     lifeFrame.energy=scrollEnergy;lifeFrame.compact=compact||!inPassage;lifeFrame.reducedMotion=state.reducedMotion;lifeFrame.inspection=inspection.expanded;lifeFrame.quality=preferences.quality;
     signals.update(lifeFrame);relays.update(lifeFrame);
@@ -293,14 +298,14 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     host.dataset.passageChapter=frame.active<0?'entrance':chapter.id;
     host.dataset.passageReading=String(passageReading(frame));
     host.dataset.passageDrawCalls=String(renderer.info.render.calls);
-    host.dataset.passageLife=lifeEnabled?'active':'off';host.dataset.passageRelayOpen=String(life.relayOpen);host.dataset.passageRelayPart=String(life.relayPart??'');host.dataset.passageSignal=String(life.signal+automaticSignals);
+    host.dataset.passageLife=lifeEnabled?'active':'off';host.dataset.passageRelayOpen=String(relayCycle.open);host.dataset.passageRelayPart=String(relayCycle.part??'');host.dataset.passageRelayPhase=relayCycle.phase.toFixed(3);host.dataset.passageSignal=String(automaticSignals);
     if(!ready){ready=true;options.onProject?.([]);options.onReady();}
     done?.();
     if((inPassage&&!compact&&!state.reducedMotion)||(travel&&!travel.settled))wake();
   }
   function cancelTravel(){if(travel)travel.done=null;travel=null;wake();}
   function lifeAvailable(){return !disposed&&!unavailable&&state.room==='atrium'&&!state.paused&&!state.reducedMotion&&!compact&&!inspection.expanded&&!travel;}
-  function isInterface(target:EventTarget|null){return target instanceof Element&&!!target.closest('button,a,video,input,select,textarea,dialog,[role="dialog"],.tunnel-panel,.tunnel-wayfinder,.tunnel-hero-copy,.tunnel-hero-caption,.tunnel-hero-bottom,.tunnel-relay-control,header');}
+  function isInterface(target:EventTarget|null){return target instanceof Element&&!!target.closest('button,a,video,input,select,textarea,dialog,[role="dialog"],.tunnel-panel,.tunnel-wayfinder,.tunnel-hero-copy,.tunnel-hero-caption,.tunnel-hero-bottom,header');}
   function pointerOverInterface(x:number,y:number){
     if(document.querySelector('dialog[open]'))return true;
     try{if(document.querySelector(':popover-open'))return true;}catch{/* Native popovers are not available in older engines. */}
@@ -311,61 +316,39 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
       const rect=element.getBoundingClientRect();return x>=rect.left&&x<=rect.right&&y>=rect.top&&y<=rect.bottom;
     });
   }
-  function relayHit(x:number,y:number){
-    if(!lifeAvailable()||frame.active>=0)return false;
-    rayPoint.set(x/width*2-1,1-y/height*2);raycaster.setFromCamera(rayPoint,camera);return relays.hitTest(raycaster);
-  }
   function pointerMove(event:PointerEvent){
     if(state.room!=='atrium'||state.paused||state.reducedMotion||compact||inspection.expanded)return;
-    if(pointerPress&&event.pointerId===pointerPress.id&&pointerPress.part!==null&&event.buttons===1){
-      const distance=Math.hypot(event.clientX-pointerPress.x,event.clientY-pointerPress.y);
-      if(distance>8){pointerPress.dragged=true;if(getTunnelLife().relayPart!==pointerPress.part)selectTunnelRelayPart(pointerPress.part);relays.setPartPull(Math.min(1,distance/105));pointerPresent=false;return;}
-    }
     pointerPresent=event.pointerType==='mouse'&&event.buttons===0;
     pointerTarget[0]=event.clientX/width*2-1;pointerTarget[1]=1-event.clientY/height*2;
     // Keep physical cursor coordinates even over protected UI. If scrolling
     // uncovers the scene beneath it, the next frame resumes at this position.
     if(pointerOverInterface(event.clientX,event.clientY)){
-      atmosphere.input.leave();cutaway.reset();scanHold=0;scanPlayed=false;relayHovered=false;host.dataset.passageRelayHover='false';return;
+      atmosphere.input.leave();cutaway.reset();scanHold=0;scanPlayed=false;return;
     }
     atmosphere.input.move(pointerTarget[0],pointerTarget[1],event.timeStamp,event.pointerType==='touch');
-    relayHovered=relayHit(event.clientX,event.clientY);host.dataset.passageRelayHover=String(relayHovered);host.dataset.passageRelayHoverPart=relayHovered?String(relays.hitPart(raycaster)??''):'';
   }
   function pointerDown(event:PointerEvent){
     clearCutaway();
-    pointerPress=null;
+    pointerPress=false;
     if(event.button!==0||!lifeAvailable()||isInterface(event.target))return;
     atmosphere.input.press();
-    if(relayHit(event.clientX,event.clientY))pointerPress={x:event.clientX,y:event.clientY,id:event.pointerId,part:life.relayOpen?relays.hitPart(raycaster):null,dragged:false};
+    pointerPress=true;
   }
   function pointerUp(event:PointerEvent){
-    atmosphere.input.release();const press=pointerPress;pointerPress=null;
+    atmosphere.input.release();pointerPress=false;
     pointerMove(event);
-    if(press?.dragged){relays.setPartPull(null);playSound('sculpture-turn');return;}
-    if(press&&event.pointerId===press.id&&Math.hypot(press.x-event.clientX,press.y-event.clientY)<6&&!isInterface(event.target)&&relayHit(event.clientX,event.clientY)){
-      const current=getTunnelLife();
-      if(current.relayOpen){
-        const part=relays.hitPart(raycaster);
-        if(part!==null){selectTunnelRelayPart(current.relayPart===part?null:part);playSound(current.relayPart===part?'close':'scan',{pan:(part/5-.5)*.8});}
-        else{setTunnelRelay(false);playSound('sculpture-fold');}
-      }else{setTunnelRelay(true);playSound('sculpture-unfold');}
-    }
   }
   function clearCutaway(){pointerPresent=false;scanHold=0;scanPlayed=false;cutaway.reset();host.dataset.passageCutaway='false';}
   function leavePointer(){pointerPresent=false;atmosphere.input.leave();wake();}
   function scrollPointer(){wake();}
-  function resetPointer(){atmosphere.input.reset();relays.setPartPull(null);clearCutaway();pointerPress=null;relayHovered=false;host.dataset.passageRelayHover='false';pointerTarget[0]=pointerTarget[1]=pointer[0]=pointer[1]=0;}
+  function resetPointer(){atmosphere.input.reset();clearCutaway();pointerPress=false;pointerTarget[0]=pointerTarget[1]=pointer[0]=pointer[1]=0;}
   function visibility(){lastTime=0;cadence.reset();signalCadence.reset();resetPointer();if(document.hidden){cancelVisualFrame(request);request=0;}else wake();}
   function contextLost(event:Event){
     event.preventDefault();unavailable=true;signalCadence.reset();cancelVisualFrame(request);request=0;
     const done=travel?.done;travel=null;panels.forEach(restorePanel);css.domElement.style.display='none';
     setPassageMediaBounds(null);options.onUnavailable();done?.();
   }
-  const offFrame=subscribeTunnelFrame(next=>{frame=next;if(next.active>=0&&getTunnelLife().relayOpen)setTunnelRelay(false);syncMedia();wake();});
-  const offLife=subscribeTunnelLife(()=>{
-    const next=getTunnelLife();if(next.signal!==life.signal&&lifeAvailable())pulse.trigger(camera.position.z);
-    life=next;relays.setExploded(next.relayOpen);relays.setSelectedPart(next.relayPart);wake();
-  });
+  const offFrame=subscribeTunnelFrame(next=>{frame=next;syncMedia();wake();});
   const offPanels=subscribeTunnelPanels(registerPanels);
   const offInspection=subscribeTunnelInspection(next=>{inspection=next;resetPointer();wake();});
   const offPreferences=subscribeSpatialPreferences(()=>{const prev=preferences;preferences=getSpatialPreferences();if(prev.quality!==preferences.quality)reduction=0;resize();});
@@ -382,7 +365,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
       let finish:(()=>void)|null=null;
       if(next.reducedMotion&&!state.reducedMotion&&travel&&!travel.settled&&!next.paused&&next.room===state.room){finish=travel.done;travel.done=null;}
       if(next.paused||next.room!==state.room||next.entered!==state.entered||next.reducedMotion!==state.reducedMotion){if(travel)travel.done=null;travel=null;}
-      state={...next};if(state.paused||state.reducedMotion||state.room!=='atrium'){signalCadence.reset();studySound.setActive(false);}if(state.room!=='atrium'){setPassageMediaBounds(null);pulse.reset();setTunnelRelay(false);resetPointer();}syncMedia();
+      state={...next};if(state.paused||state.reducedMotion||state.room!=='atrium'){signalCadence.reset();studySound.setActive(false);}if(state.room!=='atrium'){setPassageMediaBounds(null);pulse.reset();resetPointer();}syncMedia();
       if(next.paused){resetPointer();cancelVisualFrame(request);request=0;}else{cadence.reset();lastTime=0;resize();}
       finish?.();
     },
@@ -400,7 +383,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     },cancelTravel,
     destroy(){
       if(disposed)return;disposed=true;if(travel)travel.done=null;travel=null;setPassageMediaBounds(null);
-      cancelVisualFrame(request);observer.disconnect();offFrame();offPanels();offInspection();offPreferences();offMedia();offViewer();offLife();
+      cancelVisualFrame(request);observer.disconnect();offFrame();offPanels();offInspection();offPreferences();offMedia();offViewer();
       panels.forEach(restorePanel);panels.clear();document.removeEventListener('visibilitychange',visibility);document.removeEventListener('pointerleave',leavePointer);window.removeEventListener('scroll',scrollPointer);window.removeEventListener('pointermove',pointerMove);window.removeEventListener('pointerdown',pointerDown);window.removeEventListener('pointerup',pointerUp);window.removeEventListener('pointercancel',resetPointer);window.removeEventListener('blur',resetPointer);
       canvas.removeEventListener('webglcontextlost',contextLost);
       activeTexture?.dispose();cutaway.destroy();architecture.destroy();atmosphere.dispose();signals.destroy();relays.destroy();signalCadence.reset();pulse.reset();environment.dispose();

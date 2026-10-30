@@ -164,15 +164,7 @@ try {
   await page.evaluate(() => { location.hash = '#/'; });
   await page.locator('.tunnel-journey[data-ready="true"]').waitFor();
   await page.waitForFunction(() => !document.documentElement.dataset.spatialPassage); await wait(1000);
-  async function actionCue(control, type, name) {
-    const before = await page.evaluate(() => window.__sonicQA.pulses.length);
-    await control.click(); await wait(1150);
-    const pulses = await page.evaluate(before => window.__sonicQA.pulses.slice(before), before);
-    check(name, pulses.filter(pulse => pulse.type === type).length === 1 && !pulses.some(pulse => ['select', 'navigate'].includes(pulse.type)), pulses.map(pulse => pulse.type));
-  }
-  await actionCue(page.getByRole('button', { name: 'Unfold the relay', exact: true }), 'sculpture-unfold', 'Relay opening has its own mechanical cue');
-  await actionCue(page.getByRole('button', { name: 'Inspect relay component 3', exact: true }), 'scan', 'Component inspection uses the optical scan cue');
-  await actionCue(page.getByRole('button', { name: 'Reassemble', exact: true }), 'sculpture-fold', 'Relay reassembly has its own closure cue');
+  check('Manual relay controls are absent', await page.locator('.tunnel-relay-control,#tunnel-relay-parts').count() === 0);
   check('Manual tunnel signal control is absent', await page.getByRole('button', { name: 'Send a signal', exact: true }).count() === 0);
   const autoSignalSounds = await page.evaluate(() => window.__sonicQA.pulses.length);
   await wait(3300);

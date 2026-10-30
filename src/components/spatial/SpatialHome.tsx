@@ -20,7 +20,6 @@ import { useViewer } from '../../services/viewer';
 import { PASSAGE_CHAPTERS as chapters } from '../../services/passageChapters';
 import { acquirePassageMedia, type PassageChapterId, type PassageMediaController } from '../../services/passageMedia';
 import { enterSpatialWorld, spatialPortals, useSpatial } from '../../services/spatial';
-import { getTunnelLife, subscribeTunnelLife, setTunnelRelay, selectTunnelRelayPart } from '../../services/tunnelLife';
 import DepthText from '../DepthText';
 import { getPassageSound, subscribePassageSound, setPassageSoundEnabled } from '../../services/passageSound';
 import { getTunnelFrame, getTunnelInspection, setTunnelFrame, setTunnelInspection, setTunnelPanels, subscribeTunnelFrame, subscribeTunnelInspection, tunnelChapterZ, tunnelEntranceZ, tunnelCompact, TUNNEL_CHAPTER_UNITS, TUNNEL_HERO_UNITS } from '../../services/tunnelJourney';
@@ -104,9 +103,7 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
   onWatch: (video: Video) => void; reducedMotion: boolean; soundUnavailable: boolean;
 }) {
   const spatial = useSpatial();
-  const life = useSyncExternalStore(subscribeTunnelLife, getTunnelLife);
   const root = useRef<HTMLDivElement>(null), hero = useRef<HTMLElement>(null);
-  const relayToggle = useRef<HTMLButtonElement>(null);
   const slots = useRef<(HTMLElement | null)[]>([]), track = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(() => tunnelCompact(document.documentElement.clientWidth, innerHeight, reducedMotion));
   const [active, setActive] = useState(-1);
@@ -116,10 +113,6 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
   const layoutRefreshFrame = useRef(0), stationJumpFrame = useRef(0);
   const reading = compact || spatial.unavailable;
   useLivingType(hero, { enabled: (spatial.ready || spatial.unavailable) && !spatial.travelling, reducedMotion, compact: reading });
-  useEffect(() => () => setTunnelRelay(false), []);
-  // The absolutely positioned disclosure changes without resizing the page.
-  // Refresh the crew's existing content mask after React commits its new bounds.
-  useEffect(() => { window.dispatchEvent(new Event('monumental:flight-sync')); }, [life.relayOpen, life.relayPart]);
   const mediaController = useRef<PassageMediaController | null>(null);
   useEffect(() => {
     // The document owns selection so ambient media also works without WebGL.
@@ -297,16 +290,6 @@ export default function SpatialHome({ onWatch, reducedMotion }: {
         <a className="tunnel-browse" href={href('/category/movies')}><LivingAction text="Browse the films"/><ArrowUpRight size={14}/></a>
       </div>
       <div className="tunnel-hero-caption" aria-hidden="true"><span>AN OPEN WORLD<br/>OF ENTERTAINMENT</span><i/><span>MONUMENTAL<br/>STREAMS</span></div>
-      {!reading && !reducedMotion && <div className="tunnel-relay-control" data-sound-owned data-expanded={life.relayOpen}>
-        <button ref={relayToggle} aria-pressed={life.relayOpen} aria-expanded={life.relayOpen} aria-controls="tunnel-relay-parts" onClick={() => { setTunnelRelay(!life.relayOpen); playSound(life.relayOpen ? 'sculpture-fold' : 'sculpture-unfold'); }}><CornersOut size={17}/><span>{life.relayOpen ? 'Fold the relay' : 'Unfold the relay'}</span><ArrowUpRight size={16}/></button>
-        <span>A living mechanism. Yours to open.</span>
-        <div id="tunnel-relay-parts" className="tunnel-relay-parts" data-flight-protected role="group" aria-label="Inspect relay components" hidden={!life.relayOpen}>
-          <span id="tunnel-relay-help">Select a shell to reveal its mechanism.</span>
-          <div className="tunnel-relay-shells">{Array.from({ length: 6 }, (_, part) => <button key={part} aria-label={`Inspect relay component ${part + 1}`} aria-describedby={`tunnel-relay-shell-${part} tunnel-relay-help`} aria-pressed={life.relayPart === part} onClick={() => { selectTunnelRelayPart(life.relayPart === part ? null : part); playSound(life.relayPart === part ? 'close' : 'scan', { pan: (part / 5 - .5) * .8 }); }}><span id={`tunnel-relay-shell-${part}`}>Shell</span><b>{String(part + 1).padStart(2, '0')}</b></button>)}</div>
-          <p className="tunnel-relay-feedback" role="status" aria-live="polite" aria-atomic="true">{life.relayPart === null ? 'Six machined leaves surround the signal core.' : `Shell ${String(life.relayPart + 1).padStart(2, '0')} pulled forward. Piston and cooling fins exposed. Select it again to return.`}</p>
-          <button className="tunnel-relay-reassemble" onClick={() => { setTunnelRelay(false); relayToggle.current?.focus({ preventScroll: true }); playSound('sculpture-fold'); }}><span>Reassemble</span><ArrowCounterClockwise size={14}/></button>
-        </div>
-      </div>}
       <div className="tunnel-hero-bottom"><button data-sound-owned onClick={() => goToStation(0)}><ArrowDown size={17}/><span>SCROLL INTO THE EXPERIENCE</span></button><span>{spatial.unavailable ? 'Every story is still open.' : spatial.ready ? 'Six stations. Endless connections.' : 'Opening the world…'}</span></div>
     </section></div>
     {chapters.map((chapter, index) => <section key={spatialPortals[index].id} className="tunnel-checkpoint" data-station-index={index} data-environment={chapter.environment} aria-label={`${spatialPortals[index].title} station`}>

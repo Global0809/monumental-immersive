@@ -125,15 +125,14 @@ try {
 
     const headline = await hoverElement(page, page.locator('.tunnel-hero h1'));
     check('Entrance headline remains outside the cutaway', !headline.active, headline.point);
-    const control = await hoverElement(page, page.getByRole('button', { name: 'Unfold the relay', exact: true }));
-    check('Relay control closes the cutaway', !control.active, control.point);
-    await page.getByRole('button', { name: 'Unfold the relay', exact: true }).click();
-    await page.getByRole('button', { name: 'Inspect relay component 3', exact: true }).click();
-    await page.waitForFunction(() => document.querySelector('[data-passage-relay-part]')?.dataset.passageRelayPart === '2');
-    await page.waitForTimeout(650);
+    const control = await hoverElement(page, page.getByRole('button', { name: 'ENTER THE WORLD', exact: true }));
+    check('Entrance action closes the cutaway', !control.active, control.point);
+    check('Relay manual settings are absent', await page.locator('.tunnel-relay-control,#tunnel-relay-parts').count() === 0);
+    await page.waitForFunction(() => document.querySelector('[data-passage-relay-part]')?.dataset.passageRelayPart !== '');
+    await page.waitForTimeout(350);
     await capture(page, '02-relay-component');
-    await page.getByRole('button', { name: 'Reassemble', exact: true }).click();
-    check('Relay reassembly remains available', await page.getByRole('button', { name: 'Unfold the relay', exact: true }).getAttribute('aria-expanded') === 'false');
+    await page.waitForFunction(() => document.querySelector('[data-passage-relay-open]')?.dataset.passageRelayOpen === 'false');
+    check('Relay automatically reassembles', await page.locator('[data-passage-relay-part]').getAttribute('data-passage-relay-part') === '');
 
     await station(page, 'The World', 'world');
     const chapter = page.locator('[data-tunnel-station="world"]');
@@ -177,7 +176,7 @@ try {
     const settledY = await scrollSettled(page);
     // Returning scroll intentionally clears the reveal. Re-enter from a known
     // interface point after the final scroll event, then test the original wall.
-    await hoverElement(page, page.getByRole('button', { name: 'Unfold the relay', exact: true }));
+    await hoverElement(page, page.getByRole('button', { name: 'ENTER THE WORLD', exact: true }));
     check('Cutaway resumes after player and station travel', await move(page, wall), { settledY, wall });
     await capture(page, '05-resumed-wall', wall);
   });

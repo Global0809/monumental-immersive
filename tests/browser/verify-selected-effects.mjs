@@ -15,26 +15,16 @@ await run('desktop-mechanisms',{},async page=>{
   await page.waitForTimeout(900);await page.screenshot({path:`${out}/opening.png`});
   check('Depth text preserves the exact accessible headline', await page.locator('.tunnel-hero h1').getAttribute('aria-label')==='CULTURE. WITHOUT BORDERS.');
   check('Letters settle to crisp stationary type',await page.locator('.tunnel-hero .depth-letter').first().evaluate(el=>getComputedStyle(el).transform==='matrix(1, 0, 0, 1, 0, 0)'||getComputedStyle(el).transform==='none'));
-  const button=page.getByRole('button',{name:'Unfold the relay',exact:true});
+  const button=page.getByRole('button',{name:'Open Index',exact:true});
   const before=await button.boundingBox();await page.mouse.move(before.x+before.width/2,before.y+before.height/2);await page.mouse.down();await page.waitForTimeout(140);
   const held=await button.boundingBox();check('Mechanical press keeps its click target fixed',Math.abs(held.y-before.y)<.5&&Math.abs(held.x-before.x)<.5);
-  await page.mouse.up();await page.getByRole('button',{name:'Inspect relay component 3',exact:true}).click();
-  await page.waitForFunction(()=>document.querySelector('[data-passage-relay-part]')?.dataset.passageRelayPart==='2');
-  check('A component has the shared selected state',await page.getByRole('button',{name:'Inspect relay component 3',exact:true}).getAttribute('aria-pressed')==='true');
-  await page.waitForTimeout(600);await page.screenshot({path:`${out}/component-extracted.png`});
-  // Direct manipulation uses the actual visible instanced shell, not the UI.
-  let hit=null;
-  for(const [x,y] of [[780,365],[866,397],[900,465],[850,535],[759,465],[787,519]]){
-    await page.mouse.move(x,y);await page.waitForTimeout(35);
-    const part=await page.locator('[data-passage-relay-hover-part]').getAttribute('data-passage-relay-hover-part');
-    if(part!==''){hit={x,y,part};break;}
-  }
-  check('An unfolded shell can be targeted directly',!!hit);
-  await page.mouse.move(hit.x,hit.y);await page.mouse.down();await page.mouse.move(hit.x+85,hit.y-35,{steps:10});await page.mouse.up();
-  check('Dragging a shell selects and extracts that component',await page.locator('[data-passage-relay-part]').getAttribute('data-passage-relay-part')===hit.part);
-  await page.getByRole('button',{name:'Reassemble',exact:true}).click();
+  await page.mouse.up();await page.locator('#monumental-index:modal').waitFor();await page.keyboard.press('Escape');
+  check('Relay exposes no manual settings',await page.locator('.tunnel-relay-control,#tunnel-relay-parts').count()===0);
+  await page.waitForFunction(()=>document.querySelector('[data-passage-relay-part]')?.dataset.passageRelayPart!=='');
+  check('Automatic relay reveals a component',await page.locator('[data-passage-relay-open]').getAttribute('data-passage-relay-open')==='true');
+  await page.waitForTimeout(300);await page.screenshot({path:out+'/component-extracted.png'});
   await page.waitForFunction(()=>document.querySelector('[data-passage-relay-open]')?.dataset.passageRelayOpen==='false');
-  check('Reassembly clears component selection',await page.locator('[data-passage-relay-part]').getAttribute('data-passage-relay-part')==='');
+  check('Automatic reassembly clears component selection',await page.locator('[data-passage-relay-part]').getAttribute('data-passage-relay-part')==='');
   await page.mouse.move(1220,660);await page.waitForTimeout(300);
   check('Structural lens responds over the actual tunnel',await page.locator('[data-passage-cutaway]').getAttribute('data-passage-cutaway')==='true');
   await page.screenshot({path:`${out}/structural-lens.png`});

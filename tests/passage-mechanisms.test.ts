@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { passageIrisOpening, passageScreenExtension, mechanismAwakening, relayPartIndex } from '../src/services/passageMechanisms';
+import { passageIrisOpening, passageScreenExtension, mechanismAwakening, relayPartIndex, sampleRelayAutomation, type RelayAutomation } from '../src/services/passageMechanisms';
 import { passagePose, passageStationMotion } from '../src/services/passageJourney';
 import { createPassageThresholds } from '../src/components/spatial/passageThresholds';
 import { createTunnelRelays } from '../src/components/spatial/tunnelRelays';
@@ -53,6 +53,37 @@ test('threshold geometry has bounded draw budget and no camera-volume intersecti
   thresholds.update(14, 0, true, false); assert.equal(root.visible, false);
   thresholds.update(14, 0, false, true); assert.equal(root.visible, false);
   thresholds.destroy(); thresholds.destroy(); assert.equal(scene.children.length, 0);
+});
+
+test('automatic relay visits every shell and returns to a quiet closed interval', () => {
+  const state: RelayAutomation = { open: false, part: null, pull: 0, phase: 0 }, seen = new Set<number>();
+  for (let frame = 0; frame <= 960; frame++) {
+    assert.equal(sampleRelayAutomation(frame / 60, state), state);
+    assert.ok(state.pull >= 0 && state.pull <= 1);
+    if (state.part !== null) { assert.equal(state.open, true); if (state.pull > .9) seen.add(state.part); }
+    else assert.equal(state.pull, 0);
+  }
+  assert.deepEqual([...seen], [0, 1, 2, 3, 4, 5]);
+  assert.deepEqual(state, { open: false, part: null, pull: 0, phase: 0 });
+  assert.equal(sampleRelayAutomation(13, state).open, false);
+  assert.equal(sampleRelayAutomation(NaN, state).open, false);
+});
+
+test('automatic poses articulate real shells and reassemble without a click', () => {
+  const scene = new THREE.Scene(), relays = createTunnelRelays(scene);
+  const state: RelayAutomation = { open: false, part: null, pull: 0, phase: 0 };
+  const frame: TunnelLifeFrame = { time: 0, delta: 1 / 60, cameraZ: 14, active: -1, progress: 0, pointer: [0, 0], energy: 0,
+    pulse: { age: 8, originZ: 0, strength: 0 }, compact: false, reducedMotion: false, inspection: false, quality: 'full' };
+  const shells = scene.getObjectByName('relay-shell-components') as THREE.InstancedMesh;
+  const matrix = new THREE.Matrix4(), position = new THREE.Vector3(); let largest = 0;
+  for (let tick = 0; tick <= 960; tick++) {
+    sampleRelayAutomation(tick / 60, state);
+    relays.setExploded(state.open); relays.setSelectedPart(state.part); relays.setPartPull(state.pull); relays.update(frame);
+    for (let index = 0; index < 6; index++) { shells.getMatrixAt(index, matrix); position.setFromMatrixPosition(matrix); largest = Math.max(largest, position.length()); }
+  }
+  assert.ok(largest > 1, 'the existing physical shells genuinely extend');
+  for (let index = 0; index < 6; index++) { shells.getMatrixAt(index, matrix); assert.ok(position.setFromMatrixPosition(matrix).length() < .001); }
+  relays.destroy(); assert.equal(scene.children.length, 0);
 });
 
 test('relay individually extends one selected shell and closes cleanly', () => {

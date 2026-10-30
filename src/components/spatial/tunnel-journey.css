@@ -14,13 +14,7 @@
 .tunnel-browse:hover{color:#ff795f}
 .tunnel-hero-caption{position:absolute;right:5vw;top:22%;font-size:9px;line-height:1.65;letter-spacing:.14em;display:flex;align-items:center;gap:19px;color:#babcb6}
 .tunnel-hero-caption i{height:48px;width:1px;background:#747972}
-.tunnel-relay-control{position:absolute;left:59%;top:64%;display:flex;flex-direction:column;align-items:center;gap:9px;transform:translateX(-50%)}
-.tunnel-relay-control>button{display:flex;align-items:center;gap:13px;min-height:48px;padding:10px 17px;border:1px solid #efeee94d;background:#080909eb;color:#efeee9;font-size:12px;pointer-events:auto;cursor:pointer;transition:background .2s,border-color .2s}
-.tunnel-relay-control>button:hover,.tunnel-relay-control>button[aria-pressed=true]{border-color:#ff4d32;background:#151817}
-.tunnel-relay-control>button>svg:first-child{color:#ff4d32}
-.tunnel-relay-control>span{font-size:10px;color:#bfc3b9;background:#080909c9;padding:4px 8px}
 .tunnel-hero-bottom{position:absolute;bottom:97px;right:5.2vw;display:flex;align-items:flex-end;flex-direction:column;gap:8px;color:#a9aaa6;font-size:10px}
-.tunnel-relay-control[data-expanded=true]~.tunnel-hero-bottom{visibility:hidden}
 .tunnel-hero-bottom button{display:flex;align-items:center;gap:13px;pointer-events:auto;border:0;background:none;color:#efeee9;padding:12px 0;font-size:10px;letter-spacing:.1em}
 .tunnel-hero-bottom button svg{color:#ff4d32}
 .tunnel-checkpoint{height:var(--tunnel-chapter-height);position:relative;pointer-events:none}
@@ -113,20 +107,6 @@ html[data-spatial-passage=departing] .tunnel-css-world{opacity:0;pointer-events:
 .tunnel-study-sound>button[aria-pressed=true]{border-color:#ff4d32}
 .tunnel-study-sound>button svg{color:#ff795f}
 .tunnel-study-sound>small{display:block;color:#bcc0b6;font-size:11px;line-height:1.5;margin-top:6px}
-.tunnel-relay-parts{position:absolute;top:-24px;left:calc(100% + 18px);padding:12px;background:#080909f5;border:1px solid #efeee932;width:280px;max-width:calc(41vw - 124px);pointer-events:auto}
-.tunnel-relay-parts[hidden]{display:none!important}
-.tunnel-relay-parts>span{display:block;font-size:11px;line-height:1.5;color:#c7cbc2;margin-bottom:9px}
-.tunnel-relay-shells{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
-.tunnel-relay-control .tunnel-relay-parts button{display:flex;align-items:center;min-width:0;min-height:44px;padding:7px 4px;border:1px solid #efeee925;background:#111212;color:#efeee9;font-size:12px;justify-content:center;cursor:pointer;transition:background .2s,border-color .2s,color .2s}
-.tunnel-relay-shells>button{gap:6px}
-.tunnel-relay-shells>button>span{font-size:10px;line-height:1.2;color:#bfc3b9}
-.tunnel-relay-shells>button>b{font-size:13px;font-weight:500;font-variant-numeric:tabular-nums}
-.tunnel-relay-control .tunnel-relay-parts button:hover{border-color:#ff4d32}
-.tunnel-relay-control .tunnel-relay-parts button[aria-pressed=true]{color:#080909;background:#ff4d32;border-color:#ff4d32}
-.tunnel-relay-shells>button[aria-pressed=true]>span{color:inherit}
-.tunnel-relay-feedback{min-height:48px;margin:10px 0 0;font-size:11px;line-height:1.45;color:#c7cbc2}
-.tunnel-relay-control .tunnel-relay-parts .tunnel-relay-reassemble{margin-top:8px;width:100%;gap:12px}
-@media(max-height:820px){.tunnel-relay-control{top:53%}}
 .tunnel-journey :is(button,a,select):focus-visible,.tunnel-panel :is(a,button):focus-visible{outline:2px solid #ff795f;outline-offset:5px}
 .tunnel-panel ::selection,.tunnel-hero ::selection{background:#ff4d32;color:#080909}
 /* The compact image is the same ambient decoder used by the WebGL scene. */
