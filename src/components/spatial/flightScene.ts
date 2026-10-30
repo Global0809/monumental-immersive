@@ -8,7 +8,7 @@ import { createSpiralField } from './spiralField';
 import { getTunnelFrame, tunnelCompact } from '../../services/tunnelJourney';
 import { passageReading } from '../../services/passageJourney';
 import { getPassageMediaBounds, subscribePassageMediaBounds } from '../../services/passageProtection';
-import { droneActivity, type DroneActivity } from '../../services/droneBehaviour';
+import { droneActivity, droneServiceMember, sampleDroneFlight, separateDroneTargets, type DroneActivity, type DroneFlightSample } from '../../services/droneBehaviour';
 import { createDroneDock } from './droneDock';
 import { createCinematicMaterials } from '../../services/cinematicMaterials';
 import { sampleCinematicLight } from '../../services/cinematicLight';
@@ -28,6 +28,7 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
   let state: FlightState = { home: false, reducedMotion: false, paused: false, inspecting: false, docked: false, formation: 'escort', selected: 'vela' };
   let width = 1, height = 1, compact = false, request = 0, last = 0, elapsed = 0;
   let pointerX = 0, pointerY = 0, px = 0, py = 0, energy = 0, scrollEnergy = 0, previousScroll = scrollY;
+  let pointerPresent = false, pointerInterest = 0;
   let previousScrollTime = performance.now(), protectionRequest = 0, protectedNodes: Element[] = [];
   let preferences = getSpatialPreferences(), qualityPenalty = 0, slowFrames = 0;
   let hero = false;
@@ -67,6 +68,10 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
   const spiral = createSpiralField(); scene.add(spiral.root);
   const velocities = family.members.map(() => new THREE.Vector3());
   const targets = family.members.map(() => new THREE.Vector3());
+  const flightSamples: DroneFlightSample[] = family.members.map(() => ({ x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 }));
+  const attention = [0, 0, 0, 0], radii = [0, 0, 0, 0];
+  const homeOffsets = [[-.9, .6], [.9, -.25], [-.55, -.95], [1.5, .9]];
+  const inspectOffsets = [[0, 0], [0, 0], [0, 0], [0, 0]];
   const scales = [1, 1, 1, 1];
   let positioned = false;
 
@@ -131,21 +136,24 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
     if (slowFrames > 100 && qualityPenalty < .3) { qualityPenalty += .15; slowFrames = 0; resize(); }
     const smooth = 1 - Math.exp(-dt * 4.5);
     px = lerp(px, still ? 0 : pointerX, smooth); py = lerp(py, still ? 0 : pointerY, smooth);
+    pointerInterest = lerp(pointerInterest, !still && pointerPresent ? 1 : 0, 1 - Math.exp(-dt * 5));
     energy = lerp(energy, still ? 0 : scrollEnergy, smooth); scrollEnergy *= Math.exp(-dt * 2.5);
     const viewH = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 10, viewW = viewH * camera.aspect;
     const t = state.reducedMotion ? 0 : elapsed;
     // A readable hero formation; afterwards the family flies in the edge corridor.
-    const centerX = state.inspecting ? 0 : hero ? compact ? .46 : .55 : .84;
-    const centerY = state.inspecting ? -.08 : hero ? compact ? -.43 : -.02 : state.home ? .62 : -.24;
+    const centerX = state.inspecting ? 0 : hero ? compact ? .46 : .55 : compact ? .78 : .73;
+    const centerY = state.inspecting ? -.08 : hero ? compact ? -.43 : -.02 : state.home ? .51 : -.24;
     const adultScale = state.inspecting ? Math.min(5.2, viewW * (compact ? .24 : .16)) : hero ? (compact ? .55 : 1.03) : state.home ? .38 : compact ? .32 : .52;
-    const homeOffsets = [[-.9, .6], [.9, -.25], [-.55, -.95], [1.5, .9]];
-    const inspectOffsets = compact ? [[-viewW * .23, 1.35], [viewW * .23, 1.25], [-viewW * .2, -1.4], [viewW * .22, -1.35]] : [[-viewW * .3, .55], [-viewW * .09, -.25], [viewW * .15, .5], [viewW * .32, -.25]];
+    if (state.inspecting) for (let i = 0; i < 4; i++) {
+      inspectOffsets[i][0] = viewW * (compact ? [-.23, .23, -.2, .22][i] : [-.3, -.09, .15, .32][i]);
+      inspectOffsets[i][1] = compact ? [1.35, 1.25, -1.4, -1.35][i] : [.55, -.25, .5, -.25][i];
+    }
     const offsets = state.inspecting ? inspectOffsets : homeOffsets;
     const spread = state.inspecting ? 1 : hero ? .85 : .49;
     const passage = getTunnelFrame();
     const reading = state.home && passageReading(passage);
     const tending = !still && !state.inspecting && !reading && !compact && state.formation === 'escort';
-    const tendingMember = Math.floor(t / 18) % 4;
+    const tendingMember = droneServiceMember(t);
     const selectedActivity = droneActivity(tending ? t : 17, tending ? tendingMember : -1, activities[tendingMember]);
     const dockMargin = family.members[tendingMember].span * adultScale * .65;
     dockPosition.set(
@@ -153,46 +161,51 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
       clamp(centerY * viewH / 2 + homeOffsets[tendingMember][1] * spread - .2 * adultScale, -viewH / 2 + dockMargin + .25, viewH / 2 - dockMargin - .9), 0);
     serviceDock.root.position.copy(dockPosition); serviceDock.root.scale.setScalar(adultScale);
     for (let i = 0; i < 4; i++) {
-      const member = family.members[i], target = targets[i], velocity = velocities[i];
+      const member = family.members[i], target = targets[i];
       const routine = droneActivity(tending ? t : 17, tending ? i : -1, activities[i]);
+      const flight = sampleDroneFlight(t, i, flightSamples[i]);
       let x = offsets[i][0] * spread, y = offsets[i][1] * spread;
-      let z = Math.sin(t * .36 + i * 1.9) * .3;
+      const excursion = state.inspecting ? .28 : compact ? .34 : hero ? .88 : reading ? .46 : .70;
+      x += flight.x * excursion;
+      y += flight.y * excursion * .82;
+      let z = flight.z * (state.inspecting ? .32 : reading ? .6 : .92);
       if (state.formation === 'orbit' && !still) {
         const angle = t * .26 + [0, Math.PI, Math.PI / 2, Math.PI * 1.5][i] + (i >= 2 ? Math.sin(t * .4 + i) * .04 : 0);
         x = Math.cos(angle) * (state.inspecting ? viewW * .31 : spread * 1.25);
         y = Math.sin(angle) * (state.inspecting ? 1.8 : spread * .8);
         z = Math.sin(angle) * (state.inspecting ? 1.2 : .6);
       }
-      const curious = i < 2 ? .12 : .2;
-      x += Math.sin(t * (i < 2 ? .46 : .69) + i * 2.3) * curious + px * (state.inspecting ? .3 : .12);
-      y += Math.sin(t * .83 + i * 1.7) * .075 + Math.cos(t * .29 + i) * .055 + py * .09;
-      if (!still && i >= 2) { x += Math.sin(t * .48 + i * 2) * .13; y += Math.cos(t * .56 + i) * .12; }
       target.set(centerX * viewW / 2 + x, centerY * viewH / 2 + y, z);
+      attention[i] = 0;
       if (!still) {
         const dx = px * viewW / 2 - target.x, dy = py * viewH / 2 - target.y;
-        const interest = Math.exp(-(dx * dx + dy * dy) * .45);
-        target.x += dx * interest * (i < 2 ? .18 : .3);
-        target.y += dy * interest * (i < 2 ? .12 : .2);
-        // The young scouts inherit the delayed motion of their parent.
-        if (i >= 2 && positioned && state.formation === 'escort') {
-          const parent = family.members[i - 2].root.position;
-          target.x += (parent.x - targets[i - 2].x) * .3;
-          target.y += (parent.y - targets[i - 2].y) * .3;
-        }
+        const distance = Math.hypot(dx, dy), interest = Math.exp(-distance * distance * .27) * pointerInterest;
+        const standOff = (i < 2 ? .85 : .65) * adultScale + .22;
+        const approach = (distance - standOff) / Math.max(.001, distance) * interest * (i < 2 ? .48 : .69);
+        attention[i] = interest;
+        target.x += dx * approach; target.y += dy * approach;
+        target.z += interest * (i < 2 ? .18 : .28);
       }
       if (routine.perch > 0) {
         target.x = lerp(target.x, dockPosition.x, routine.perch);
         target.y = lerp(target.y, dockPosition.y + .08 * adultScale, routine.perch);
         target.z = lerp(target.z, dockPosition.z, routine.perch);
       }
-      // Size-aware bounds keep every member in view on narrow and short screens.
+      radii[i] = member.span * adultScale * .42 + .045;
+    }
+    separateDroneTargets(targets, radii);
+    for (let i = 0; i < 4; i++) {
+      const member = family.members[i], target = targets[i], velocity = velocities[i], routine = activities[i], flight = flightSamples[i];
+      // Perspective-aware bounds also protect nearer fly-bys on short screens.
       const margin = member.span * adultScale * .65;
-      target.x = clamp(target.x, -viewW / 2 + margin, viewW / 2 - margin);
-      target.y = clamp(target.y, -viewH / 2 + margin + .4, viewH / 2 - margin - .6);
+      const perspective = (camera.position.z - target.z) / camera.position.z;
+      const halfW = viewW * perspective / 2, halfH = viewH * perspective / 2;
+      target.x = clamp(target.x, -halfW + margin, halfW - margin);
+      target.y = clamp(target.y, -halfH + margin + .4, halfH - margin - .6);
       if (!positioned || state.reducedMotion) { member.root.position.copy(target); velocity.set(0, 0, 0); }
       else if (state.docked) { velocity.set(0, 0, 0); }
       else {
-        const stiffness = i < 2 ? 22 : 18, damping = Math.exp(-dt * 7);
+        const stiffness = i < 2 ? 36 : 31, damping = Math.exp(-dt * (i < 2 ? 7.6 : 6.5));
         velocity.x = (velocity.x + (target.x - member.root.position.x) * stiffness * dt) * damping;
         velocity.y = (velocity.y + (target.y - member.root.position.y) * stiffness * dt) * damping;
         velocity.z = (velocity.z + (target.z - member.root.position.z) * stiffness * dt) * damping;
@@ -201,12 +214,20 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
       const selected = state.inspecting && state.selected === member.id;
       scales[i] = still ? adultScale : lerp(scales[i], adultScale * (selected ? 1.11 : 1), smooth);
       member.root.scale.setScalar(scales[i] * bodyScales[i]);
-      member.root.rotation.set(lerp(.38 + py * .07 + Math.sin(t * .55 + i) * .035, .07, routine.perch), lerp(-.25 + px * .32 + Math.sin(t * .38 + i) * .16, -.1, routine.perch), clamp(-velocity.x * .25, -.22, .22) * (1 - routine.perch));
-      member.gimbal.rotation.y = px * .4 * (1 - routine.perch) + routine.inspect * .45;
-      member.gimbal.rotation.x = -py * .18 * (1 - routine.perch) + routine.inspect * .38;
+      const heading = clamp(velocity.x * .48 + flight.vx * .30, -.65, .65);
+      const bank = clamp(-velocity.x * .40 - flight.vx * .16, -.4, .4);
+      const pitch = .34 + clamp(velocity.y * .16 - velocity.z * .11, -.16, .16);
+      const turn = state.reducedMotion ? 1 : 1 - Math.exp(-dt * 5.5);
+      member.root.rotation.x = lerp(member.root.rotation.x, lerp(pitch, .07, routine.perch), turn);
+      member.root.rotation.y = lerp(member.root.rotation.y, lerp(-.24 + heading, -.1, routine.perch), turn);
+      member.root.rotation.z = lerp(member.root.rotation.z, bank * (1 - routine.perch), turn);
+      const gazeX = clamp((px * viewW / 2 - member.root.position.x) * .34, -.55, .55) * attention[i];
+      const gazeY = clamp((py * viewH / 2 - member.root.position.y) * -.24, -.3, .3) * attention[i];
+      member.gimbal.rotation.y = lerp(member.gimbal.rotation.y, gazeX * (1 - routine.perch) + routine.inspect * .45, turn);
+      member.gimbal.rotation.x = lerp(member.gimbal.rotation.x, gazeY * (1 - routine.perch) + routine.inspect * .38, turn);
       const reply = i === (tendingMember + 1) % 4 ? selectedActivity.signal * .28 : 0;
-      member.signal.emissiveIntensity = selected ? .8 : .32 + routine.signal * .38 + reply + Math.sin(t * 1.8 + i) * .05;
-      if (!still) rotorTurns[i] += dt * (i < 2 ? 11 : 14) * (1 - routine.perch * .88);
+      member.signal.emissiveIntensity = selected ? .8 : .32 + routine.signal * .38 + reply + attention[i] * .10 + Math.sin(t * 1.8 + i) * .035;
+      if (!still) rotorTurns[i] += dt * ((i < 2 ? 11 : 14) + Math.min(3, velocity.length() * 2)) * (1 - routine.perch * .88);
       for (let r = 0; r < member.rotors.length; r++) member.rotors[r].rotation.y = rotorTurns[i] * (r ? -1 : 1);
     }
     const activity = activities[tendingMember];
@@ -226,13 +247,15 @@ export function createFlightScene(initialHost: HTMLElement, unavailable: () => v
     if (!still && (!state.home || !passageCompact || state.inspecting)) wake();
   }
   function move(event: PointerEvent) {
-    if (!event.isPrimary || state.paused || state.reducedMotion || state.docked) return;
+    if (!event.isPrimary || state.paused || state.reducedMotion || state.docked || event.pointerType === 'touch') return;
+    if (event.buttons) { resetPointer(); return; }
+    pointerPresent = true;
     const bounds = state.inspecting ? host.getBoundingClientRect() : { left: 0, top: 0 };
     pointerX = clamp((event.clientX - bounds.left) / width * 2 - 1, -1, 1);
     pointerY = clamp(1 - (event.clientY - bounds.top) / height * 2, -1, 1);
     wake();
   }
-  function resetPointer() { pointerX = pointerY = 0; }
+  function resetPointer() { pointerX = pointerY = 0; pointerPresent = false; }
   function leave(event: PointerEvent) { if (!event.relatedTarget) resetPointer(); }
   function scroll() {
     const now = performance.now();

@@ -178,9 +178,8 @@ try {
     check('Full playback pauses the Passage and flight rendering', playing.contexts.filter(item => item.class === 'spatial-world-canvas' || item.class === 'flight-canvas').every(item => item.frames <= 1), playing.contexts);
     const playerStyle = await protectedDOM(page, '.ms-player-dialog video'); check('Film footage is not affected by page focus filters', !playerStyle.bad.length, playerStyle);
     await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.ms-player-dialog:modal'));
-    await page.locator('.flight-invitation').click(); await page.locator('.flight-dialog:modal').waitFor(); await wait(page, 500); await capture(page, 'flight-crew');
-    check('Flight material detail remains interactive in its existing inspection scene', await page.locator('.flight-view canvas').count() === 1 && await page.locator('.flight-crew-list button').count() === 4);
-    await page.getByRole('button', { name: 'Close flight crew', exact: true }).click(); await page.waitForFunction(() => !document.querySelector('.flight-dialog:modal'));
+    await wait(page, 500); await capture(page, 'autonomous-flight');
+    check('Autonomous family keeps four models without a separate crew interface', await page.locator('.flight-environment .flight-canvas').count() === 1 && await page.locator('.flight-environment').getAttribute('data-drone-count') === '4' && await page.locator('.flight-dialog,.flight-invitation').count() === 0);
 
     await route(page, '/world', '.cultural-atlas__viewport canvas'); await capture(page, 'world'); await sample(page, 'world');
     check('Desktop globe receives the restrained optical finish', await page.locator('.cultural-atlas__viewport canvas').getAttribute('data-cinematic') === 'optics' && Number(await page.locator('.cultural-atlas__viewport canvas').getAttribute('data-cinematic-lens')) === 0);

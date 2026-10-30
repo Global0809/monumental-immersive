@@ -343,11 +343,11 @@ try {
     check('1280 × 720 desktop preserves spatial mode and readable headline/action', await page.locator('.tunnel-journey').getAttribute('data-compact') === 'false' && bounds.heading.left >= 0 && bounds.heading.right <= bounds.width && bounds.heading.top >= bounds.headerBottom && bounds.action.left >= 0 && bounds.action.right <= bounds.width && bounds.action.bottom <= bounds.navTop, JSON.stringify(bounds));
     await page.screenshot({ path: `${output}/desktop-1280-world.png` });
     await page.evaluate(() => { window.__originalFlightCanvas = document.querySelector('.flight-canvas'); });
-    await page.getByRole('button', { name: /^Flight crew/ }).click(); await page.locator('.flight-dialog:modal').waitFor();
-    check('Passage crew viewer reuses its canvas and removes the footage exclusion inside the dialog', await page.evaluate(() => document.querySelector('.flight-view .flight-canvas') === window.__originalFlightCanvas && document.querySelector('.flight-view .flight-media-mask')?.dataset.protected === 'false'));
+    await page.getByRole('button', { name: 'Open Index', exact: true }).click(); await page.locator('#monumental-index:modal').waitFor();
+    check('Index pauses the persistent family without reparenting its canvas', await page.evaluate(() => document.querySelector('.flight-environment .flight-canvas') === window.__originalFlightCanvas && document.querySelector('.flight-environment')?.dataset.state === 'paused'));
     await page.keyboard.press('Escape');
-    await page.waitForFunction(() => !document.querySelector('.flight-dialog:modal') && document.querySelector('.flight-environment .flight-media-mask')?.dataset.protected === 'true');
-    check('Closing the crew viewer restores the same masked canvas and trigger focus', await page.evaluate(() => document.querySelector('.flight-environment .flight-canvas') === window.__originalFlightCanvas && document.activeElement?.classList.contains('flight-invitation')));
+    await page.waitForFunction(() => !document.querySelector('#monumental-index:modal') && document.querySelector('.flight-environment .flight-media-mask')?.dataset.protected === 'true');
+    check('Closing Index restores the masked family and navigation focus', await page.evaluate(() => document.querySelector('.flight-environment .flight-canvas') === window.__originalFlightCanvas && document.activeElement?.getAttribute('aria-label') === 'Open Index'));
   });
 
   await scenario('reduced-motion', async context => {

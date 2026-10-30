@@ -218,17 +218,17 @@ try {
     const returned = await samples(glyph, 900);
     check('Returning to the entrance resumes pointer-reactive type', difference(meanPose(returnedAway), meanPose(returned.slice(-3))) > .01 && meanInk(returned.slice(-3)) > meanInk(returnedAway) + .01, { before: meanInk(returnedAway), after: meanInk(returned.slice(-3)) });
 
-    await page.getByRole('button', { name: /^Flight crew/ }).click();
-    await page.locator('.flight-dialog:modal').waitFor(); await state(page, 'paused');
+    await page.getByRole('button', { name: 'Open Index', exact: true }).click();
+    await page.locator('#monumental-index:modal').waitFor(); await state(page, 'paused');
     const modal = await samples(glyph), modalCopy = await samples(word);
-    check('The Flight crew modal pauses headline and copy motion', variation(modal) < .0001 && variation(modalCopy) < .0001, { headline: variation(modal), copy: variation(modalCopy) });
-    await page.getByRole('button', { name: 'Close flight crew', exact: true }).click();
-    await page.waitForFunction(() => !document.querySelector('.flight-dialog:modal')); await state(page, 'active');
+    check('The Index modal pauses headline and copy motion', variation(modal) < .0001 && variation(modalCopy) < .0001, { headline: variation(modal), copy: variation(modalCopy) });
+    await page.getByRole('button', { name: 'Close Index', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('#monumental-index:modal')); await state(page, 'active');
     await page.mouse.move(1390, 730);
     const resumedAway = (await samples(glyph)).slice(-3);
     await moveTo(page, glyph);
     const resumed = await samples(glyph, 900);
-    check('Closing Flight crew resumes pointer-reactive type', difference(meanPose(resumedAway), meanPose(resumed.slice(-3))) > .01 && meanInk(resumed.slice(-3)) > meanInk(resumedAway) + .01, { before: meanInk(resumedAway), after: meanInk(resumed.slice(-3)) });
+    check('Closing Index resumes pointer-reactive type', difference(meanPose(resumedAway), meanPose(resumed.slice(-3))) > .01 && meanInk(resumed.slice(-3)) > meanInk(resumedAway) + .01, { before: meanInk(resumedAway), after: meanInk(resumed.slice(-3)) });
     check('Existing depth-letter entrance layers remain settled', await page.locator('.tunnel-hero .depth-letter').evaluateAll(elements => elements.every(element => new DOMMatrixReadOnly(getComputedStyle(element).transform).isIdentity)));
   });
 
