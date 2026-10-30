@@ -113,6 +113,7 @@ for (const [key, value] of Object.entries(replacements)) Object.defineProperty(g
 
 const audio = await import('../src/services/audio.ts');
 const viewer = await import('../src/services/viewer.ts');
+const score = await import('../src/services/sonicScore.ts');
 
 test('sound study suppresses interface score without broadcasting a full-player event', async () => {
   audio.setSoundEnabled(true); await settle();
@@ -238,7 +239,7 @@ for (const interruption of ['mute', 'film', 'hidden', 'dispose'] as const) {
     if (interruption === 'mute') audio.setSoundEnabled(false);
     if (interruption === 'film') audio.setPlaybackActive(true);
     if (interruption === 'hidden') { documentMock.hidden = true; documentMock.dispatchEvent(new Event('visibilitychange')); }
-    if (interruption === 'dispose') audio.disposeAudio();
+    if (interruption === 'dispose') { audio.disposeAudio(); activated = false; }
     await finishDecode();
     assert.equal(sources.filter(source => source.started).length, 0);
     assert.equal(pulses.length, 0);
@@ -282,19 +283,16 @@ test('passage motion cannot allocate audio or timers before consent', async () =
   assert.equal(timers.size, 0);
 });
 
-test('a pending room handoff keeps the old room until the latest destination is ready', async () => {
+test('optional ambience is one continuous field across every route', async () => {
   audio.setSoundEnabled(true); audio.setAmbientEnabled(true); await settle();
-  const oldRoom = sources.at(-1)!;
-  assert.equal(oldRoom.stopped, false);
-  holdDecode = true;
-  audio.setAmbientScene('music'); await settle();
-  audio.setAmbientScene('culture'); await settle();
-  assert.equal(oldRoom.stopped, false, 'Do not cut to silence while a room is loading.');
-  const count = sources.length;
-  await finishDecode();
-  assert.equal(sources.length, count + 1, 'Only the last requested room may start.');
-  assert.equal(oldRoom.stopped, true);
-  assert.equal(audio.getSonicState().scene, 'culture');
+  const field = sources.find(source => source.loop && source.started && !source.stopped)!;
+  assert.ok(field, 'The optional field is actually running.');
+  const sourceCount = sources.length, requestCount = requests.length;
+  for (const scene of score.sonicScenes) { audio.setAmbientScene(scene); await settle(); }
+  assert.equal(sources.length, sourceCount, 'Route changes must not restart the field.');
+  assert.equal(requests.length, requestCount, 'Room aliases must not trigger more fetch/decode work.');
+  assert.equal(field.stopped, false);
+  assert.equal(audio.getSonicState().scene, score.sonicScenes.at(-1));
 });
 
 test('a pending room cannot resume after full-player ownership', async () => {
@@ -306,46 +304,96 @@ test('a pending room cannot resume after full-player ownership', async () => {
   assert.ok(sources.every(source => !source.started || source.stopped));
 });
 
-test('portal travel has one motion voice with ambience off and releases at rest', async () => {
-  audio.setSoundEnabled(true); await settle();
-  assert.equal(viewer.getViewer().ambient, false);
-  advance(2000);
-  audio.setSonicMotion(.65, -.26); await settle();
-  const moving = sources.filter(source => source.loop && source.started && !source.stopped);
-  assert.equal(moving.length, 1);
-  const source = moving[0], firstRate = source.playbackRate.value;
-  for (let i = 0; i < 20; i++) { advance(35); audio.setSonicMotion(.9, .26); }
-  await settle();
-  assert.equal(sources.filter(source => source.loop && source.started && !source.stopped).length, 1);
-  assert.notEqual(source.playbackRate.value, firstRate);
-  advance(1000);
-  assert.equal(source.stopped, true, 'A stopped camera releases the voice without a rendering loop.');
+test('scroll motion never allocates audio, changes pitch, or schedules work after opt-in', async () => {
+  audio.setSoundEnabled(true); await settle(); advance(2000);
+  const sourceCount = sources.length, requestCount = requests.length, pending = [...timers.entries()];
+  for (let i = 0; i < 120; i++) audio.setSonicMotion(i / 120, i % 2 ? -.8 : .8);
+  audio.setSonicMotion(0, 0); await settle();
+  assert.equal(sources.length, sourceCount);
+  assert.equal(requests.length, requestCount);
+  assert.deepEqual([...timers.entries()], pending);
+  assert.equal(sources.filter(source => source.loop).length, 0);
 });
 
-test('portal motion stops for film ownership, mute and hidden tabs', async () => {
+for (const interruption of ['mute', 'film', 'hidden', 'dispose'] as const) {
+  test(`optional field and cues stop during ${interruption}`, async () => {
+    audio.setSoundEnabled(true); audio.setAmbientEnabled(true); await settle();
+    assert.ok(sources.some(source => source.loop && source.started && !source.stopped));
+    if (interruption === 'mute') audio.setSoundEnabled(false);
+    if (interruption === 'film') audio.setPlaybackActive(true);
+    if (interruption === 'hidden') { documentMock.hidden = true; documentMock.dispatchEvent(new Event('visibilitychange')); }
+    if (interruption === 'dispose') { audio.disposeAudio(); activated = false; }
+    advance(300); await settle();
+    assert.ok(sources.every(source => !source.started || source.stopped));
+    const sourceCount = sources.length, requestCount = requests.length;
+    audio.setSonicMotion(1, 1); audio.playSound('save'); await settle();
+    assert.equal(sources.length, sourceCount); assert.equal(requests.length, requestCount);
+  });
+}
+
+test('automatic movement and proximity cues stay silent even after opt-in', async () => {
   audio.setSoundEnabled(true); await settle(); advance(2000);
-  audio.setSonicMotion(.8, -.26); await settle();
-  const motion = sources.find(source => source.loop && !source.stopped)!;
-  assert.ok(motion);
-  audio.setPlaybackActive(true);
-  assert.equal(motion.stopped, true);
-  const count = sources.length;
-  audio.setSonicMotion(1, 0); await settle(); assert.equal(sources.length, count);
-  audio.setPlaybackActive(false); audio.setSonicMotion(.8, 0); await settle();
-  audio.setSoundEnabled(false);
-  assert.ok(sources.filter(source => source.loop).every(source => source.stopped));
-  audio.setSoundEnabled(true); await settle(); advance(2000);
-  audio.setSonicMotion(.8, 0); await settle();
-  documentMock.hidden = true; documentMock.dispatchEvent(new Event('visibilitychange'));
-  assert.ok(sources.filter(source => source.loop).every(source => source.stopped));
+  const sourceCount = sources.length, requestCount = requests.length, pulseCount = pulses.length;
+  const quiet: Array<keyof typeof score.sonicScore> = ['hover', 'drag', 'tick', 'scan', 'sculpture-turn', 'arrival', 'assembly-release', 'assembly-drive', 'assembly-lock', 'iris-open', 'iris-close', 'threshold-pass'];
+  for (const cue of quiet) { audio.playSound(cue); await settle(); advance(1000); }
+  assert.equal(sources.length, sourceCount); assert.equal(requests.length, requestCount); assert.equal(pulses.length, pulseCount);
 });
 
-test('a delayed travel buffer cannot start after motion stopped or a film opened', async () => {
-  viewer.updateViewer({ sound: true }); audio.playSound('select'); await settle();
-  holdDecode = true; audio.setSonicMotion(.8, 0); await settle();
-  assert.ok(decodeWaiters.length);
-  audio.setSonicMotion(0, 0); await finishDecode();
-  assert.equal(sources.filter(source => source.loop).length, 0);
-  audio.setPlaybackActive(true); audio.setSonicMotion(1, 0); await settle();
-  assert.equal(sources.filter(source => source.loop).length, 0);
+test('ordinary interface actions share a 180 ms spacing guard', async () => {
+  viewer.updateViewer({ sound: true });
+  audio.playSound('select'); await settle();
+  const first = sources.length;
+  advance(179); audio.playSound('save'); await settle(); assert.equal(sources.length, first);
+  advance(1); audio.playSound('save'); await settle(); assert.equal(sources.length, first + 1);
+});
+
+test('ordinary interface overlap is bounded to two voices', async () => {
+  viewer.updateViewer({ sound: true });
+  const counts: number[] = [];
+  for (const cue of ['select', 'save', 'open', 'close', 'navigate'] as const) {
+    audio.playSound(cue); await settle(); counts.push(sources.filter(source => source.started && !source.stopped).length); advance(180);
+  }
+  assert.ok(counts.some(count => count === 2), 'Two short deliberate contacts can overlap.');
+  assert.ok(counts.every(count => count <= 2), JSON.stringify(counts));
+});
+
+test('explicit simultaneous auditions permit four voices without dropping the earlier notes', async () => {
+  viewer.updateViewer({ sound: true }); holdDecode = true;
+  for (const cue of ['select', 'save', 'open', 'close', 'signal', 'portal'] as const) audio.playSound(cue, { audition: true });
+  await settle(); assert.ok(decodeWaiters.length > 0);
+  await finishDecode();
+  const live = sources.filter(source => source.started && !source.stopped);
+  assert.equal(live.length, 4, 'The four-voice audition budget should be filled without global UI spacing or serial cancellation.');
+  assert.equal(pulses.length, 4);
+});
+
+test('explicit audition can play a normally suppressed instrument', async () => {
+  viewer.updateViewer({ sound: true }); audio.playSound('scan', { audition: true }); await settle();
+  assert.equal(sources.filter(source => source.started).length, 1);
+});
+
+test('default cues keep their pitch; explicit instrument pitch is respected', async () => {
+  viewer.updateViewer({ sound: true }); audio.playSound('select'); await settle(); advance(200); audio.playSound('select'); await settle();
+  assert.deepEqual(sources.map(source => source.playbackRate.value), [1, 1]);
+  advance(800); audio.playSound('select', { audition: true, pitch: 1.25 }); await settle(); assert.equal(sources.at(-1)!.playbackRate.value, 1.25);
+});
+
+test('different cue names sharing one asset reuse one decoded buffer', async () => {
+  const groups = new Map<string, Array<keyof typeof score.sonicScore>>();
+  for (const cue of Object.keys(score.sonicScore) as Array<keyof typeof score.sonicScore>) {
+    const url = score.sonicAsset(cue); groups.set(url, [...(groups.get(url) || []), cue]);
+  }
+  const aliases = [...groups.entries()].find(([, names]) => names.length >= 2); assert.ok(aliases, 'The minimal score defines meaningful cue aliases.');
+  viewer.updateViewer({ sound: true });
+  audio.playSound(aliases[1][0], { audition: true }); await settle(); advance(800);
+  audio.playSound(aliases[1][1], { audition: true }); await settle();
+  assert.equal(requests.filter(url => url === aliases[0]).length, 1);
+  assert.equal(sources.length, 2); assert.equal(sources[0].buffer, sources[1].buffer);
+});
+
+test('idle cleanup suspends the optional field and does not resume on visibility alone', async () => {
+  audio.setSoundEnabled(true); audio.setAmbientEnabled(true); await settle(); advance(91000); await settle();
+  assert.ok(sources.every(source => !source.started || source.stopped)); assert.equal(contexts[0].state, 'suspended');
+  const count = sources.length; documentMock.hidden = false; documentMock.dispatchEvent(new Event('visibilitychange')); await settle();
+  assert.equal(sources.length, count); assert.equal(contexts[0].state, 'suspended');
 });

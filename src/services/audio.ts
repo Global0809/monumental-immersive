@@ -2,7 +2,7 @@ import { getViewer, subscribeViewer, updateViewer } from './viewer';
 import { sonicAsset, sonicScore, sonicScenes, type SoundType, type AmbientScene, type SonicAsset } from './sonicScore';
 export type { SoundType, AmbientScene } from './sonicScore';
 
-/** Original material score. Audio assets are fetched only after explicit opt-in. */
+/** Minimal interface palette. Audio assets are fetched only after explicit opt-in. */
 export type SoundOptions = { intensity?: number; pan?: number; pitch?: number; audition?: boolean };
 export type SonicPulse = { type: SoundType; intensity: number; pan: number; scene: AmbientScene; timestamp: number };
 export type SonicState = { status: 'off' | 'waiting' | 'running' | 'suspended' | 'unavailable'; playback: boolean; scene: AmbientScene };
@@ -15,7 +15,6 @@ let analyserData: Float32Array<ArrayBuffer> | null = null;
 const buffers = new Map<string, Promise<AudioBuffer | null>>();
 const requests = new Set<AbortController>();
 let cueEpoch = 0, roomEpoch = 0, roomPending = false, cueSerial = 0, mainSerial = 0;
-const variations = new Map<SoundType, number>();
 let playbackActive = false, studyPlaybackActive = false;
 const mediaOwnsSound = () => playbackActive || studyPlaybackActive;
 let scene: AmbientScene = 'home';
@@ -35,20 +34,12 @@ const activeCues = new Set<() => void>();
 let ambientSources: AudioBufferSourceNode[] = [];
 let ambientNodes: AudioNode[] = [];
 let ambientRoot: GainNode | null = null;
-let ambientFilter: BiquadFilterNode | null = null;
-let ambientPan: StereoPannerNode | GainNode | null = null;
 let playingScene: AmbientScene | null = null;
-let travelEnergy = 0, travelPan = 0, lastMotionWrite = -Infinity, lastMotionActivity = -Infinity;
-let travelTimer: ReturnType<typeof setTimeout> | undefined;
-let motionSource: AudioBufferSourceNode | null = null;
-let motionRoot: GainNode | null = null;
-let motionFilter: BiquadFilterNode | null = null;
-let motionPan: StereoPannerNode | GainNode | null = null;
-let motionEpoch = 0, motionPending = false, motionDuckedUntil = 0;
-let motionStopTimer: ReturnType<typeof setTimeout> | undefined;
 const retiringRooms = new Map<() => void, ReturnType<typeof setTimeout>>();
-// The score is mastered with headroom; preserve its body before final peak control.
-const MASTER_GAIN = .72, ATMOSPHERE_GAIN = .8;
+const MASTER_GAIN = .5, ATMOSPHERE_GAIN = .45;
+// Environmental movement is visual. Only deliberate actions receive a voice.
+// Explicit studio auditions remain available without restoring automatic noise.
+const silentAutomatic = new Set<SoundType>(['hover', 'drag', 'tick', 'scan', 'sculpture-turn', 'arrival', 'assembly-release', 'assembly-drive', 'assembly-lock', 'iris-open', 'iris-close', 'threshold-pass']);
 let preferences = '';
 const clamp = (value: number | undefined, min: number, max: number, fallback: number) => Number.isFinite(value) ? Math.max(min, Math.min(max, value!)) : fallback;
 const now = () => typeof performance === 'undefined' ? 0 : performance.now();
@@ -90,58 +81,26 @@ function retireRoom(sources: AudioBufferSourceNode[], nodes: AudioNode[], root: 
 function stopAmbient() {
   roomEpoch++; roomPending = false;
   const sources = ambientSources; const nodes = ambientNodes; const root = ambientRoot;
-  ambientSources = []; ambientNodes = []; ambientRoot = null; ambientFilter = null; ambientPan = null; playingScene = null;
+  ambientSources = []; ambientNodes = []; ambientRoot = null; playingScene = null;
   retireRoom(sources, nodes, root, .12);
 }
 function loadBuffer(name: SonicAsset): Promise<AudioBuffer | null> {
   if (!context || !getViewer().sound || getViewer().masterVolume === 0 || document.hidden || mediaOwnsSound()) return Promise.resolve(null);
-  const cached = buffers.get(name); if (cached) return cached;
+  const asset = sonicAsset(name);
+  const cached = buffers.get(asset); if (cached) return cached;
   const audio = context, controller = new AbortController(); requests.add(controller);
-  const request = fetch(sonicAsset(name), { signal: controller.signal }).then(response => {
+  const request = fetch(asset, { signal: controller.signal }).then(response => {
     if (!response.ok) throw new Error('Sound asset unavailable');
     return response.arrayBuffer();
   }).then(bytes => audio.decodeAudioData(bytes)).then(buffer => context === audio ? buffer : null).catch(() => {
-    if (buffers.get(name) === request) buffers.delete(name);
+    if (buffers.get(asset) === request) buffers.delete(asset);
     return null;
   }).finally(() => requests.delete(controller));
-  buffers.set(name, request); return request;
-}
-function stopMotion() {
-  clearTimeout(travelTimer); clearTimeout(motionStopTimer); motionEpoch++; motionPending = false;
-  motionStopTimer = undefined;
-  travelEnergy = 0; travelPan = 0; motionDuckedUntil = 0;
-  if (motionSource) { try { motionSource.stop(); } catch { /* Already ended. */ } motionSource.disconnect(); }
-  motionRoot?.disconnect(); motionFilter?.disconnect(); motionPan?.disconnect();
-  motionSource = null; motionRoot = null; motionFilter = null; motionPan = null;
-}
-function shapeMotion() {
-  if (!context || !motionRoot || !motionSource) return;
-  const energy = travelEnergy, duck = now() < motionDuckedUntil ? .34 : 1;
-  ramp(motionRoot.gain, Math.pow(energy, .65) * .66 * duck, energy ? .085 : .065);
-  if (motionFilter) ramp(motionFilter.frequency, 520 + energy * 3200, .13);
-  if (motionPan && 'pan' in motionPan) ramp(motionPan.pan, travelPan * 1.15, .15);
-  ramp(motionSource.playbackRate, .78 + energy * .3 + (travelPan > 0 ? -.045 : .015), .18);
-}
-function startMotion() {
-  const viewer = getViewer();
-  if (!context || !effects || context.state !== 'running' || !viewer.sound || !viewer.masterVolume || mediaOwnsSound() || document.hidden || travelEnergy <= .01 || motionSource || motionPending) return;
-  const audio = context, epoch = motionEpoch; motionPending = true;
-  void loadBuffer('portal-travel').then(buffer => {
-    if (epoch !== motionEpoch || audio !== context) return;
-    motionPending = false;
-    if (!buffer || !effects || audio.state !== 'running' || !getViewer().sound || !getViewer().masterVolume || mediaOwnsSound() || document.hidden || travelEnergy <= .01) return;
-    const source = audio.createBufferSource(); source.buffer = buffer; source.loop = true;
-    const root = audio.createGain(); root.gain.value = 0;
-    const filter = audio.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 520; filter.Q.value = .35;
-    const pan = spatialNode(travelPan * 1.15);
-    source.connect(filter); filter.connect(pan); pan.connect(root); root.connect(effects);
-    motionSource = source; motionRoot = root; motionFilter = filter; motionPan = pan;
-    shapeMotion(); source.start(audio.currentTime + .004);
-  });
+  buffers.set(asset, request); return request;
 }
 function startAmbient() {
   const viewer = getViewer();
-  if (!context || !ambience || context.state !== 'running' || !viewer.sound || !viewer.ambient || !viewer.masterVolume || mediaOwnsSound() || document.hidden || (ambientSources.length && playingScene === scene) || roomPending) return;
+  if (!context || !ambience || context.state !== 'running' || !viewer.sound || !viewer.ambient || !viewer.masterVolume || mediaOwnsSound() || document.hidden || (ambientSources.length && playingScene !== null && sonicAsset(`room-${playingScene}`) === sonicAsset(`room-${scene}`)) || roomPending) return;
   const epoch = roomEpoch, audio = context, requestedScene = scene; roomPending = true;
   void loadBuffer(`room-${requestedScene}`).then(buffer => {
     if (epoch !== roomEpoch || context !== audio) return;
@@ -153,12 +112,12 @@ function startAmbient() {
     retiringRooms.forEach((timer, cleanup) => { clearTimeout(timer); cleanup(); });
     retireRoom(ambientSources, ambientNodes, ambientRoot, .65);
     const root = audio.createGain(); root.gain.value = 0; root.connect(ambience); ambientRoot = root;
-    const filter = audio.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 1800 + travelEnergy * 5000; filter.Q.value = .4;
-    const pan = spatialNode(travelPan * .35);
+    const filter = audio.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 1500; filter.Q.value = .4;
+    const pan = spatialNode(0);
     const source = audio.createBufferSource(); source.buffer = buffer; source.loop = true;
     source.connect(filter); filter.connect(pan); pan.connect(root);
-    ambientFilter = filter; ambientPan = pan; playingScene = requestedScene;
-    ambientSources = [source]; ambientNodes = [root, filter, pan]; source.start(); ramp(root.gain, .85 + travelEnergy * .3, .22);
+    playingScene = requestedScene;
+    ambientSources = [source]; ambientNodes = [root, filter, pan]; source.start(); ramp(root.gain, .65, .35);
   });
 }
 function scheduleSuspend() {
@@ -173,19 +132,19 @@ function syncPreferences() {
   if (master) ramp(master.gain, viewer.sound && !mediaOwnsSound() && !document.hidden ? viewer.masterVolume * MASTER_GAIN : 0);
   if (ambience) ramp(ambience.gain, viewer.ambientMix * ATMOSPHERE_GAIN, 0.15);
   if (!viewer.sound || !viewer.ambient || viewer.masterVolume === 0) stopAmbient(); else startAmbient();
-  if (!viewer.sound || viewer.masterVolume === 0) { stopCues(); stopMotion(); scheduleSuspend(); }
+  if (!viewer.sound || viewer.masterVolume === 0) { stopCues(); scheduleSuspend(); }
   emitState();
 }
 function activity() {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     if (master) ramp(master.gain, 0, 0.025);
-    stopCues(); stopAmbient(); stopMotion(); scheduleSuspend();
+    stopCues(); stopAmbient(); scheduleSuspend();
   }, 90000);
 }
 function visibility() {
   if (!document.hidden) return; // Visibility alone never resumes audio.
-  clearTimeout(idleTimer); clearTimeout(suspendTimer); stopCues(); stopAmbient(); stopMotion();
+  clearTimeout(idleTimer); clearTimeout(suspendTimer); stopCues(); stopAmbient();
   if (master && context) { master.gain.cancelScheduledValues(context.currentTime); master.gain.setValueAtTime(0, context.currentTime); }
   void context?.suspend().then(emitState).catch(() => {});
 }
@@ -194,7 +153,7 @@ function gesture(event: Event) {
   trustedGestureUntil = now() + 700;
   if (getViewer().sound && !document.hidden) { activity(); prepareAudio(); }
 }
-function pageExit() { stopCues(); stopAmbient(); stopMotion(); void context?.suspend().then(emitState).catch(() => {}); }
+function pageExit() { stopCues(); stopAmbient(); void context?.suspend().then(emitState).catch(() => {}); }
 function installLifecycle() {
   if (installed || typeof window === 'undefined') return;
   installed = true;
@@ -251,32 +210,16 @@ export function setAmbientEnabled(enabled: boolean) { installLifecycle(); update
 export function setAmbientMix(mix: number) { installLifecycle(); updateViewer({ ambientMix: clamp(mix, 0, 1, 0.2) }); activity(); prepareAudio(); }
 export function setAmbientScene(next: AmbientScene) {
   if (!sonicScenes.includes(next) || next === scene) return;
-  scene = next; roomEpoch++; roomPending = false; startAmbient(); emitState();
+  const changesField = sonicAsset(`room-${scene}`) !== sonicAsset(`room-${next}`);
+  scene = next;
+  if (changesField) { roomEpoch++; roomPending = false; }
+  startAmbient(); emitState();
 }
-/** Actual camera motion drives one physical bearing/pressure field independently
- * of optional ambience. No audio unlock, oscillator bank or animation loop. */
-export function setSonicMotion(energy: number, pan = 0): void {
-  travelEnergy = clamp(energy, 0, 1, 0); travelPan = clamp(pan, -1, 1, 0);
-  clearTimeout(travelTimer);
-  if (!context || context.state !== 'running' || !getViewer().sound || !getViewer().masterVolume || mediaOwnsSound() || document.hidden) { stopMotion(); return; }
-  if (travelEnergy > .01) travelTimer = setTimeout(() => setSonicMotion(0, 0), 180);
-  if (travelEnergy > .01) { clearTimeout(motionStopTimer); motionStopTimer = undefined; startMotion(); }
-  else if ((motionSource || motionPending) && motionStopTimer === undefined) {
-    // AudioParam release makes stopping clean; a settled scene owns no decoder.
-    motionStopTimer = setTimeout(stopMotion, 650);
-  }
-  const time = now();
-  if (travelEnergy > .01 && time - lastMotionActivity > 1000) { lastMotionActivity = time; activity(); }
-  if (travelEnergy > .01 && time - lastMotionWrite < 32) return;
-  lastMotionWrite = time;
-  shapeMotion();
-  if (ambientRoot) ramp(ambientRoot.gain, .85 + travelEnergy * .3, .12);
-  if (ambientFilter) ramp(ambientFilter.frequency, 1800 + travelEnergy * 5000, .16);
-  if (ambientPan && 'pan' in ambientPan) ramp(ambientPan.pan, travelPan * .35, .18);
-}
+/** Compatibility hook for existing visual instruments. Scrolling is silent. */
+export function setSonicMotion(_energy: number, _pan = 0): void {}
 export function setPlaybackActive(active: boolean): void {
   playbackActive = active;
-  if (active) { stopCues(); stopAmbient(); stopMotion(); }
+  if (active) { stopCues(); stopAmbient(); }
   if (master) ramp(master.gain, mediaOwnsSound() || !getViewer().sound || document.hidden ? 0 : getViewer().masterVolume * MASTER_GAIN, 0.015);
   if (!active) startAmbient();
   emitState();
@@ -286,7 +229,7 @@ export function setPlaybackActive(active: boolean): void {
  * full-player event (which would suspend the study's own video decoder). */
 export function setStudyAudioActive(active: boolean): void {
   studyPlaybackActive = active;
-  if (active) { stopCues(); stopAmbient(); stopMotion(); }
+  if (active) { stopCues(); stopAmbient(); }
   if (master) ramp(master.gain, mediaOwnsSound() || !getViewer().sound || document.hidden ? 0 : getViewer().masterVolume * MASTER_GAIN, .015);
   if (!mediaOwnsSound()) startAmbient();
   emitState();
@@ -308,24 +251,26 @@ export function readSoundWaveform(): Float32Array<ArrayBuffer> | null {
 /** One cached buffer voice per interaction; no synthesis or animation loop. */
 export function playSound(type: SoundType = 'select', options: SoundOptions = {}): void {
   if (!Object.hasOwn(sonicScore, type) || typeof document === 'undefined' || mediaOwnsSound() || document.hidden || !getViewer().sound || getViewer().masterVolume === 0) return;
-  const time = now(), quiet = ['hover', 'tick', 'drag', 'sculpture-turn'].includes(type);
-  const cooldown = type === 'hover' ? 450 : ['arrival', 'scan', 'signal', 'portal'].includes(type) ? 900 : quiet ? 150 : 140;
-  if (time - (lastCue.get(type) ?? -Infinity) < cooldown || (!quiet && time - lastMain < 65) || (quiet && time - lastMain < 220) || activeCues.size >= 5) return;
+  if (!options.audition && silentAutomatic.has(type)) return;
+  const time = now(), quiet = ['select', 'focus', 'open', 'close', 'remove', 'error'].includes(type);
+  const cooldown = ['portal', 'signal', 'sculpture-pulse'].includes(type) ? 900 : 180;
+  const voiceLimit = options.audition ? 4 : 2;
+  if ((!options.audition && (time - (lastCue.get(type) ?? -Infinity) < cooldown || time - lastMain < 180)) || activeCues.size >= voiceLimit) return;
   if (!prepareAudio() || !context || !effects) { if (resumePromise) pendingCue = { type, options }; return; }
-  activity(); lastCue.set(type, time); if (!quiet) lastMain = time;
+  activity(); if (!options.audition) { lastCue.set(type, time); lastMain = time; }
   const epoch = cueEpoch, serial = ++cueSerial, audio = context;
-  if (!quiet) mainSerial = serial;
-  const intensity = clamp(options.intensity, .08, 1, quiet ? .5 : .86);
-  const panValue = clamp(options.pan, -.65, .65, 0);
-  // Tiny, repeatable contact changes avoid machine-gun repetition.
-  const take = variations.get(type) ?? 0; variations.set(type, (take + 1) % 5);
-  const rate = clamp(options.pitch, .5, 2, 1) * [1, .989, 1.008, .996, 1.014][take];
+  if (!options.audition) mainSerial = serial;
+  const intensity = clamp(options.intensity, .08, 1, quiet ? .7 : .78);
+  const panValue = clamp(options.pan, -.18, .18, 0);
+  // A consistent timbre across the product; pitch is varied only by a deliberate
+  // instrument action, never randomly during ordinary navigation.
+  const rate = clamp(options.pitch, .5, 2, 1);
   void loadBuffer(type).then(buffer => {
     if (!buffer || epoch !== cueEpoch || audio !== context || !effects || audio.state !== 'running' || mediaOwnsSound() || document.hidden || !getViewer().sound || getViewer().masterVolume === 0) return;
     // A slow download must never replay an obsolete action after the next interaction.
-    if (serial < mainSerial || now() - time > (type === 'activate' || options.audition ? 1500 : 450) || activeCues.size >= 5) return;
+    if ((!options.audition && serial < mainSerial) || now() - time > (type === 'activate' || options.audition ? 1500 : 450) || activeCues.size >= voiceLimit) return;
     const source = audio.createBufferSource(); source.buffer = buffer; source.playbackRate.value = rate;
-    const root = audio.createGain(); root.gain.value = intensity * [1, .96, .99, .94, .98][take];
+    const root = audio.createGain(); root.gain.value = intensity;
     const pan = spatialNode(panValue); source.connect(root); root.connect(pan); pan.connect(effects);
     let ended = false, timer: ReturnType<typeof setTimeout>;
     const cleanup = () => {
@@ -341,26 +286,21 @@ export function playSound(type: SoundType = 'select', options: SoundOptions = {}
       ambience.gain.cancelScheduledValues(t); ambience.gain.setTargetAtTime(level * .38, t, .015);
       ambience.gain.setTargetAtTime(level, t + Math.min(buffer.duration, .55), .22);
     }
-    if (!quiet && motionRoot) {
-      motionDuckedUntil = now() + Math.min(buffer.duration, .55) * 1000;
-      shapeMotion();
-    }
     window.dispatchEvent(new CustomEvent<SonicPulse>('monumental:sonic-pulse', { detail: { type, intensity, pan: panValue, scene, timestamp: time } }));
     // Warm only everyday contacts after opt-in, never the entire library.
-    if (type === 'activate') ['hover','select','navigate','save','portal','scan','assembly-release','assembly-drive','assembly-lock','iris-open','iris-close','threshold-pass','portal-travel'].forEach(cue => { void loadBuffer(cue as SonicAsset); });
+    if (type === 'activate') ['select','navigate','save','portal'].forEach(cue => { void loadBuffer(cue as SonicAsset); });
   });
 }
 /** Complete HMR / embedded-app teardown. A later gesture can rebuild the graph. */
 export function disposeAudio() {
-  clearTimeout(idleTimer); clearTimeout(suspendTimer); clearTimeout(travelTimer); stopCues(); stopAmbient(); stopMotion(); unsubscribe?.(); unsubscribe = undefined;
+  clearTimeout(idleTimer); clearTimeout(suspendTimer); stopCues(); stopAmbient(); unsubscribe?.(); unsubscribe = undefined;
   retiringRooms.forEach((timer, cleanup) => { clearTimeout(timer); cleanup(); });
-  travelEnergy = 0; travelPan = 0; lastMotionWrite = -Infinity; lastMotionActivity = -Infinity;
   if (typeof window !== 'undefined') {
     document.removeEventListener('pointerdown', gesture, true); document.removeEventListener('keydown', gesture, true); document.removeEventListener('click', gesture, true);
     document.removeEventListener('visibilitychange', visibility); window.removeEventListener('pagehide', pageExit);
   }
   if (context) { context.onstatechange = null; void context.close().catch(() => {}); }
-  context = null; master = null; effects = null; ambience = null; analyser = null; analyserData = null; requests.forEach(request => request.abort()); requests.clear(); buffers.clear(); variations.clear(); playbackActive = false; studyPlaybackActive = false;
+  context = null; master = null; effects = null; ambience = null; analyser = null; analyserData = null; requests.forEach(request => request.abort()); requests.clear(); buffers.clear(); playbackActive = false; studyPlaybackActive = false;
   installed = false; resumePromise = null; unsupported = false; preferences = ''; lastCue.clear(); lastMain = -Infinity; trustedGestureUntil = 0; emitState();
 }
 if (typeof window !== 'undefined') installLifecycle();

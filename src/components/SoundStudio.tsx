@@ -5,10 +5,10 @@ import { Play } from '@phosphor-icons/react/dist/csr/Play';
 import { Waveform } from '@phosphor-icons/react/dist/csr/Waveform';
 import { Planet } from '@phosphor-icons/react/dist/csr/Planet';
 import { Sparkle } from '@phosphor-icons/react/dist/csr/Sparkle';
-import { Disc } from '@phosphor-icons/react/dist/csr/Disc';
 import { Magnet } from '@phosphor-icons/react/dist/csr/Magnet';
 import { ArrowUpRight } from '@phosphor-icons/react/dist/csr/ArrowUpRight';
 import { ArrowsOut } from '@phosphor-icons/react/dist/csr/ArrowsOut';
+import { ArrowsIn } from '@phosphor-icons/react/dist/csr/ArrowsIn';
 import { ArrowCounterClockwise } from '@phosphor-icons/react/dist/csr/ArrowCounterClockwise';
 import { useViewer } from '../services/viewer';
 import { createFrameCadence } from '../services/frameCadence';
@@ -16,15 +16,12 @@ import { getSonicState, playSound, readSoundWaveform, setAmbientEnabled, setAmbi
 import './sound-studio.css';
 
 const materials: { name: string; type: SoundType; note: string; icon: typeof Magnet }[] = [
-  { name: 'Portal', type: 'portal', note: 'Pressure, depth and forward motion', icon: Magnet },
-  { name: 'Memory', type: 'save', note: 'Magnetic capture, resolving in chrome', icon: Sparkle },
-  { name: 'Transit', type: 'destination', note: 'A moving signal through space', icon: Planet },
-  { name: 'Scan', type: 'scan', note: 'An optical sweep into the structure', icon: Disc },
-  { name: 'Chrome', type: 'sculpture-unfold', note: 'Layered servos and a locking mechanism', icon: ArrowsOut },
-  { name: 'Signal', type: 'signal', note: 'A transmission with a tonal reply', icon: Waveform },
-  { name: 'Iris', type: 'iris-open', note: 'Interlocking leaves opening the passage', icon: Disc },
-  { name: 'Drive', type: 'assembly-drive', note: 'Loaded pistons extending the chassis', icon: ArrowsOut },
-  { name: 'Lock', type: 'assembly-lock', note: 'A deep clamp with a precise metal catch', icon: Magnet },
+  { name: 'Select', type: 'select', note: 'A brief, soft contact', icon: Magnet },
+  { name: 'Passage', type: 'navigate', note: 'A quiet breath of air', icon: ArrowUpRight },
+  { name: 'Memory', type: 'save', note: 'A clear glass tone', icon: Sparkle },
+  { name: 'Open', type: 'open', note: 'A gentle outward lift', icon: ArrowsOut },
+  { name: 'Close', type: 'close', note: 'A soft settling note', icon: ArrowsIn },
+  { name: 'Portal', type: 'portal', note: 'A spacious, fading tone', icon: Planet },
 ];
 
 function SonicScope({ calm, enabled }: { calm: boolean; enabled: boolean }) {
@@ -63,7 +60,7 @@ function SonicScope({ calm, enabled }: { calm: boolean; enabled: boolean }) {
 export function SoundStudio({ compact = false }: { compact?: boolean }) {
   const viewer = useViewer();
   const engine = useSyncExternalStore(subscribeSonicState, getSonicState, getSonicState);
-  const [lastVoice, setLastVoice] = useState('Choose a sound. Enter its space.');
+  const [lastVoice, setLastVoice] = useState('Choose a sound to listen.');
   const [active, setActive] = useState<SoundType | null>(null);
   const [systemReduced, setSystemReduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -87,16 +84,16 @@ export function SoundStudio({ compact = false }: { compact?: boolean }) {
     if (!viewer.sound) { setLastVoice('Turn sound on to try the instruments.'); return; }
     if (viewer.masterVolume === 0) { setLastVoice('Raise the volume to hear this instrument.'); return; }
     if (engine.playback || unavailable) return;
-    playSound(type, { intensity: 0.85, pan: (index % 3 - 1) * 0.35, audition: true });
+    playSound(type, { intensity: 0.85, pan: (index % 3 - 1) * 0.12, audition: true });
   }
-  return <section className={'sound-studio' + (compact ? ' sound-studio--compact' : '') + (calm ? ' sound-studio--calm' : '')} data-sound-owned aria-labelledby={id + '-title'} onKeyDown={event => { if (event.altKey || event.ctrlKey || event.metaKey || event.repeat || (event.target as HTMLElement).matches('input, textarea, select, [contenteditable=true]')) return; const index = Number(event.key) - 1; if (/^[1-9]$/.test(event.key) && materials[index]) { event.preventDefault(); audition(materials[index].type, index); } }}>
-    <div className="sonic-heading"><div><h2 id={id + '-title'}>{compact ? 'SOUND STUDIO.' : <>FEEL THE<br/>FREQUENCY.</>}</h2><p>A spatial score of pressure, chrome and moving signals.</p></div><button className={'sonic-power' + (viewer.sound && !unavailable ? ' is-on' : '')} role="switch" aria-label="Interface sound" disabled={unavailable} aria-checked={viewer.sound && !unavailable} onClick={() => setSoundEnabled(!viewer.sound)}>{viewer.sound && !unavailable ? <SpeakerHigh size={24}/> : <SpeakerSlash size={24}/>}<span>{unavailable ? '—' : viewer.sound ? 'ON' : 'OFF'}</span></button></div>
+  return <section className={'sound-studio' + (compact ? ' sound-studio--compact' : '') + (calm ? ' sound-studio--calm' : '')} data-sound-owned aria-labelledby={id + '-title'} onKeyDown={event => { if (event.altKey || event.ctrlKey || event.metaKey || event.repeat || (event.target as HTMLElement).matches('input, textarea, select, [contenteditable=true]')) return; const index = Number(event.key) - 1; if (/^[1-6]$/.test(event.key) && materials[index]) { event.preventDefault(); audition(materials[index].type, index); } }}>
+    <div className="sonic-heading"><div><h2 id={id + '-title'}>{compact ? 'SOUND STUDIO.' : <>FEEL THE<br/>FREQUENCY.</>}</h2><p>Soft contact, air and glass. A little sound, with room for silence.</p></div><button className={'sonic-power' + (viewer.sound && !unavailable ? ' is-on' : '')} role="switch" aria-label="Interface sound" disabled={unavailable} aria-checked={viewer.sound && !unavailable} onClick={() => setSoundEnabled(!viewer.sound)}>{viewer.sound && !unavailable ? <SpeakerHigh size={24}/> : <SpeakerSlash size={24}/>}<span>{unavailable ? '—' : viewer.sound ? 'ON' : 'OFF'}</span></button></div>
     <div className="sonic-monitor"><div className="sonic-monitor-top"><span className={viewer.sound && engine.status === 'running' && !engine.playback ? 'is-live' : ''}><i/>{status}</span><span>{viewer.sound && !unavailable ? (viewer.ambient ? engine.scene.toUpperCase() + ' / STEREO' : 'STEREO') : 'SILENT'}</span></div><SonicScope enabled={viewer.sound && engine.status === 'running' && !engine.playback} calm={calm}/><div className="sonic-monitor-bottom"><span>{active ? 'NOW RESONATING' : 'TOUCH AN INSTRUMENT'}</span><strong>{lastVoice}<Waveform size={15}/></strong></div></div>
-    <div className="sonic-mix"><label className="sonic-slider" htmlFor={id + '-volume'}><span>Master volume <output htmlFor={id + '-volume'}>{Math.round(viewer.masterVolume * 100)}%</output></span><input id={id + '-volume'} type="range" min="0" max="100" step="1" value={Math.round(viewer.masterVolume * 100)} aria-valuetext={Math.round(viewer.masterVolume * 100) + ' percent'} onChange={event => setMasterVolume(Number(event.target.value) / 100)}/></label><div className="sonic-ambient"><span><strong>Atmosphere</strong><small>Distinct spaces that open up as you travel.</small></span><button className={'sonic-switch' + (viewer.ambient ? ' is-on' : '')} role="switch" aria-checked={viewer.ambient} aria-label="Ambient atmosphere" disabled={!viewer.sound || unavailable} onClick={() => setAmbientEnabled(!viewer.ambient)}><span/></button></div>{viewer.ambient && <label className="sonic-slider sonic-ambient-mix" htmlFor={id + '-mix'}><span>Atmosphere mix <output htmlFor={id + '-mix'}>{Math.round(viewer.ambientMix * 100)}%</output></span><input id={id + '-mix'} type="range" min="0" max="100" step="1" value={Math.round(viewer.ambientMix * 100)} aria-valuetext={Math.round(viewer.ambientMix * 100) + ' percent'} onChange={event => setAmbientMix(Number(event.target.value) / 100)} disabled={!viewer.sound || unavailable}/></label>}</div>
+    <div className="sonic-mix"><label className="sonic-slider" htmlFor={id + '-volume'}><span>Master volume <output htmlFor={id + '-volume'}>{Math.round(viewer.masterVolume * 100)}%</output></span><input id={id + '-volume'} type="range" min="0" max="100" step="1" value={Math.round(viewer.masterVolume * 100)} aria-valuetext={Math.round(viewer.masterVolume * 100) + ' percent'} onChange={event => setMasterVolume(Number(event.target.value) / 100)}/></label><div className="sonic-ambient"><span><strong>Atmosphere</strong><small>An optional, soft background tone.</small></span><button className={'sonic-switch' + (viewer.ambient ? ' is-on' : '')} role="switch" aria-checked={viewer.ambient} aria-label="Ambient atmosphere" disabled={!viewer.sound || unavailable} onClick={() => setAmbientEnabled(!viewer.ambient)}><span/></button></div>{viewer.ambient && <label className="sonic-slider sonic-ambient-mix" htmlFor={id + '-mix'}><span>Atmosphere mix <output htmlFor={id + '-mix'}>{Math.round(viewer.ambientMix * 100)}%</output></span><input id={id + '-mix'} type="range" min="0" max="100" step="1" value={Math.round(viewer.ambientMix * 100)} aria-valuetext={Math.round(viewer.ambientMix * 100) + ' percent'} onChange={event => setAmbientMix(Number(event.target.value) / 100)} disabled={!viewer.sound || unavailable}/></label>}</div>
     <div className="sonic-instruments" aria-label="Audition the interface sounds">{materials.map((material, index) => <button key={material.type} className={active === material.type ? 'is-resonating' : ''} onClick={() => audition(material.type, index)} disabled={!viewer.sound || engine.playback || engine.status === 'unavailable'} aria-label={'Audition ' + material.name.toLowerCase() + ' sound'}><material.icon size={24} weight="thin"/><span><strong>{material.name}</strong><small>{material.note}</small></span><Play size={13} weight="fill"/></button>)}</div>
-    <div className="sonic-presets" aria-label="Sound mix presets"><span>SHAPE YOUR MIX</span><button aria-pressed={viewer.masterVolume === .2 && !viewer.ambient} onClick={() => { setMasterVolume(.2); setAmbientEnabled(false); setLastVoice('Quiet mix. Interface details, softly.'); }}>Quiet</button><button aria-pressed={viewer.masterVolume === .45 && !viewer.ambient} onClick={() => { setMasterVolume(.45); setAmbientEnabled(false); setLastVoice('Balanced mix. A little more presence.'); }}>Balanced</button><button disabled={!viewer.sound || unavailable} aria-pressed={viewer.masterVolume === .55 && viewer.ambient && viewer.ambientMix === .35} onClick={() => { setMasterVolume(.55); setAmbientMix(.35); setAmbientEnabled(true); setLastVoice('Immersive mix. Spaces, signals and motion in stereo.'); }}>Immersive</button><button className="sonic-reset" onClick={() => { setMasterVolume(.45); setAmbientMix(.2); setAmbientEnabled(false); setLastVoice('Mix reset. Your sound on/off choice is unchanged.'); }}><ArrowCounterClockwise size={14}/>Reset mix</button></div>
-    {!compact && <p className="sonic-keyboard-note">With a control in the studio focused, keys 1–9 play the instruments. Mix settings stay in this browser.</p>}
-    <p className="sonic-footnote">{compact ? 'Enable Immersive for changing room atmospheres. Films take priority.' : 'Mechanical contacts, spatial transits and optical signals give each action a distinct voice. Sound is opt-in, rests when you leave and gives films priority.'}{compact && <a href="#/settings" onClick={event => {
+    <div className="sonic-presets" aria-label="Sound mix presets"><span>SHAPE YOUR MIX</span><button aria-pressed={viewer.masterVolume === .2 && !viewer.ambient} onClick={() => { setMasterVolume(.2); setAmbientEnabled(false); setLastVoice('Quiet mix. Brief actions, softly.'); }}>Quiet</button><button aria-pressed={viewer.masterVolume === .45 && !viewer.ambient} onClick={() => { setMasterVolume(.45); setAmbientEnabled(false); setLastVoice('Balanced mix. Clear, restrained feedback.'); }}>Balanced</button><button disabled={!viewer.sound || unavailable} aria-pressed={viewer.masterVolume === .45 && viewer.ambient && viewer.ambientMix === .15} onClick={() => { setMasterVolume(.45); setAmbientMix(.15); setAmbientEnabled(true); setLastVoice('Atmosphere mix. A subtle field behind deliberate actions.'); }}>Atmosphere</button><button className="sonic-reset" onClick={() => { setMasterVolume(.45); setAmbientMix(.2); setAmbientEnabled(false); setLastVoice('Mix reset. Your sound on/off choice is unchanged.'); }}><ArrowCounterClockwise size={14}/>Reset mix</button></div>
+    {!compact && <p className="sonic-keyboard-note">With a control in the studio focused, keys 1–6 play the sounds. Mix settings stay in this browser.</p>}
+    <p className="sonic-footnote">{compact ? 'Hovering and scrolling stay silent. Atmosphere is optional. Films take priority.' : 'Brief sounds mark deliberate actions. Hovering and scrolling stay silent. Sound is opt-in, and films always take priority.'}{compact && <a href="#/settings" onClick={event => {
       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
       event.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover();
     }}>Experience settings <ArrowUpRight size={12}/></a>}</p>

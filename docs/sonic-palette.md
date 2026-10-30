@@ -1,5 +1,7 @@
 # Monumental sound score II
 
+Historical release notes. This mechanical palette was replaced by the [minimal sound palette](sound-score.md). Its assets and renderer remain recoverable from `backup/sound-before-minimal-20261030`; they are no longer shipped.
+
 The score gives the Passage a mechanical, architectural sound vocabulary. Thirty-one short stereo gestures use the same physical materials in different arrangements: magnetic contact, low-mid pressure, articulated chrome, filtered air, optical registration and a restrained memory resonance. These are original deterministic synthesis, not recordings of actual machinery, stock effects or generated sample-library audio.
 
 Portal, scan, signal and arrival established the spatial score. The articulated-portal edition adds assembly release, drive and lock, iris opening and closing, and threshold passage. Existing action names are preserved so saving, removing, opening, closing, searching, selecting eras and sculptural interaction keep their established semantic meaning. Repeated contacts are short; spatial gestures have more body and a controlled tail. No cue exceeds 1.65 seconds.
