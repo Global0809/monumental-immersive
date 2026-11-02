@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createPassageReflectionEnvironment } from './passageLighting';
+import { createPassageWormhole } from './passageWormhole';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import { createFrameCadence } from '../../services/frameCadence';
 import { requestVisualFrame, cancelVisualFrame } from '../../services/visualFrame';
@@ -44,7 +45,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const pointer:[number,number]=[0,0],pointerTarget:[number,number]=[0,0];
   let previousZ=frame.z,scrollEnergy=0,lightCalm=Number(passageReading(frame));
   let scanHold=0,scanPlayed=false,lastScan=-Infinity,cutawayOptics=0;
-  let pointerPresent=false,pointerPress=false,relayTime=0;
+  let pointerPresent=false,pointerPress=false,relayTime=0,warpDistance=0;
   const pulse=createTunnelPulse();
   const relayCycle:RelayAutomation={open:false,part:null,pull:0,phase:0};
   const signalCadence=createTunnelSignalCadence();let automaticSignals=0;
@@ -71,6 +72,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const key=new THREE.DirectionalLight(0xffeee0,1.4);key.position.set(-5,9,12);scene.add(key,key.target);
   const fill=new THREE.PointLight(0xe5edf0,35,32,2),accent=new THREE.PointLight(0xff4d32,11,24,2);scene.add(fill,accent);
   const architecture=createPassageArchitecture(scene,wake);
+  const wormhole=createPassageWormhole(scene,renderer);
   const atmosphere=createTunnelAtmosphere();scene.add(atmosphere.points);
   const signals=createTunnelSignals(scene),relays=createTunnelRelays(scene);
   const cutaway=createTunnelCutaway(scene,renderer,camera);
@@ -220,6 +222,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     renderer.setPixelRatio(ratio);renderer.setSize(width,height,false);css.setSize(width,height);
     camera.aspect=width/height;camera.updateProjectionMatrix();
     atmosphere.configure(height,ratio,compact,preferences.quality,Math.min(45,preferences.light));
+    wormhole.configure(width,height,compact,preferences.quality);
     syncPanels();updateMediaTexture();wake();
   }
   function render(time:number){
@@ -292,6 +295,19 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     host.dataset.passageCutaway=String(cutawayVisible);
     atmosphere.points.visible=inPassage&&!compact&&!state.reducedMotion;
     if(atmosphere.points.visible&&!inspection.expanded)atmosphere.update(elapsed,dt,false,scrollEnergy,pulse.value);
+    // A distant flow moves around the stable journey camera. Scroll adds
+    // velocity, never an absolute offset that could jump on station changes.
+    const warpStill=compact||state.reducedMotion;
+    if(inPassage&&!warpStill&&!inspection.expanded)warpDistance+=dt*scrollEnergy*.5;
+    wormhole.mesh.visible=inPassage;
+    wormhole.setProtectedRects(telemetryRects);
+    wormhole.update(warpStill?0:elapsed,warpStill?0:warpDistance,scrollEnergy,pointer,
+      pointerPresent&&!overImage&&!overInterface&&!inspection.expanded&&!warpStill?1:0,lightCalm,warpStill);
+    canvas.dataset.wormholeTime=(warpStill?0:elapsed).toFixed(3);
+    canvas.dataset.wormholeEnergy=scrollEnergy.toFixed(3);
+    canvas.dataset.wormholeMode=warpStill?'still':'flow';
+    canvas.dataset.wormholePointer=warpStill||!pointerPresent?'0,0':pointer.join(',');
+    canvas.dataset.wormholeDraws='2';
     updateMediaTexture();
     protectedSurfaces.length=0;
     if(imageBounds){
@@ -397,7 +413,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
       cancelVisualFrame(request);observer.disconnect();panelObserver.disconnect();offFrame();offPanels();offInspection();offPreferences();offMedia();offViewer();
       panels.forEach(restorePanel);panels.clear();document.removeEventListener('visibilitychange',visibility);document.removeEventListener('pointerleave',leavePointer);window.removeEventListener('scroll',scrollPointer);window.removeEventListener('pointermove',pointerMove);window.removeEventListener('pointerdown',pointerDown);window.removeEventListener('pointerup',pointerUp);window.removeEventListener('pointercancel',resetPointer);window.removeEventListener('blur',resetPointer);
       canvas.removeEventListener('webglcontextlost',contextLost);
-      activeTexture?.dispose();cutaway.destroy();architecture.destroy();atmosphere.dispose();signals.destroy();relays.destroy();signalCadence.reset();pulse.reset();environment.dispose();
+      activeTexture?.dispose();cutaway.destroy();architecture.destroy();wormhole.dispose();atmosphere.dispose();signals.destroy();relays.destroy();signalCadence.reset();pulse.reset();environment.dispose();
       studySound.destroy();media.setSuspended('passage-scene-route',false);media.setSuspended('passage-scene-paused',false);media.setSuspended('passage-scene-reduced',false);mediaLease.release();
       cinematic.dispose();scene.clear();cssScene.clear();renderer.dispose();renderer.forceContextLoss();canvas.remove();css.domElement.remove();
     },

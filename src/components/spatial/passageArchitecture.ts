@@ -89,7 +89,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     object.rotation.z = a + Math.PI / 2;
     if (layer === 0) object.scale.set(span, .19, n % 4 === 0 ? .85 : .36);
     if (layer === 1) object.scale.set(span * (j % 3 === 0 ? .78 : .24), .026, .035);
-    if (layer === 2) object.scale.set(span, .66, 2.6);
+    if (layer === 2) object.scale.set(span * .93, .66, 1.75);
   }
   const structuralRibs = instanced(tunnel, ribAlloy, ringCount * ringSides, (i, o) => ribTransform(i, o, 0));
   const conduits = instanced(tunnel, red, ringCount * ringSides, (i, o) => ribTransform(i, o, 1));
