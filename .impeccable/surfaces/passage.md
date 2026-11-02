@@ -42,3 +42,11 @@ SONIC EDITION: Give the physical Passage an audible material identity using orig
 
 CONTINUOUS WORMHOLE: A procedural copper/ivory/slate flow now lives behind the Passage architecture, following the user's 2026-11-02 clip. Dark cloud folds, outward streaks and sparse angular glyphs move independently of the stable journey camera. Scroll adds bounded continuous travel; pointer drift is local. Wider opaque lining apertures reveal the flow while metal, films and DOM content retain their identity. The existing renderer owns a low-resolution field target and one background resolve, with no extra loop, listeners or downloaded imagery. Compact/reduced stays static; inspection, hidden tabs and playback preserve existing suspension. See docs/passage-wormhole.md for evidence and limits.
 
+
+## Direction contract — dimensional current
+THESIS: The Passage is a chrome observation structure inside a moving wormhole, with an actual curved throat and depth-tested light currents. Replace the rejected screen-space cloud backdrop.
+OWN-WORLD: Preserve Monumental charcoal, ivory and signal accents; copper and muted slate describe cloud folds. Sparse LED housings and thin ribs frame the space instead of hiding it.
+STORY: Existing culture chapters remain stable destinations inside the current. Idle flow establishes travel; cursor motion bends nearby streams; scroll adds momentum without moving the reading camera.
+FIRST VIEWPORT: Existing headline and entry action at left; iris and relay remain dimensional foreground; the vortex fills the newly open surroundings and recedes into a dark throat. Keep the crew and working navigation.
+FORM: Reference-led immersive Three.js environment using the existing renderer and clock. Real geometry replaces the old fullscreen resolve. Compact/reduced views remain deliberately still.
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

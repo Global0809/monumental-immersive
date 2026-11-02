@@ -3,266 +3,394 @@ import * as THREE from 'three';
 export type PassageWormholeQuality = 'light' | 'auto' | 'balanced' | 'detail';
 export type PassageWormholeRect = Readonly<{ left: number; top: number; right: number; bottom: number }>;
 
-/** A camera-independent view into the current, rendered by the Passage renderer.
- * One bounded cloud target and one opaque resolve; no new animation clock.
- * Opaque scene surfaces drawn afterwards naturally cover this distant backdrop. */
-export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
-  const protectedRects = Array.from({ length: 4 }, () => new THREE.Vector4(-2, -2, -1, -1));
-  const uniforms = {
-    uResolution: { value: new THREE.Vector2(1, 1) },
-    uFlow: { value: 0 },
-    uEnergy: { value: 0 },
-    uPointer: { value: new THREE.Vector2() },
-    uPointerStrength: { value: 0 },
-    uCalm: { value: 0 },
-    uCompact: { value: 0 },
-    uOctaves: { value: 4 },
-    uProtectedRects: { value: protectedRects },
-    uProtectedCount: { value: 0 },
+const LENGTH = 132, MAX_STREAKS = 1560, RADIAL_SEGMENTS = 96, DEPTH_SEGMENTS = 144;
+
+/** Shared world-space path for the actual hollow surface and moving stars. */
+const tubeShader = /* glsl */ `
+  const float TAU = 6.28318530718;
+  vec2 tubeCentre(float depth) {
+    float t = clamp(depth / 132.0, 0.0, 1.0);
+    return vec2(5.2 * smoothstep(.10, 1.0, t) + 2.3 * sin(t * 3.5) * t,
+      2.0 * sin(t * 2.3) * t + .8 * t * t);
+  }
+  float tubeRadius(float depth) {
+    return mix(17.0, 9.4, smoothstep(0.0, 1.0, clamp(depth / 132.0, 0.0, 1.0)));
+  }
+  // Bend only the current near the pointer ray, never the shared camera.
+  vec2 current(vec2 point, float depth) {
+    vec2 pointerRay = uPointer * vec2(uAspect, 1.0) * max(depth, 5.0) * uTanHalfFov;
+    vec2 delta = point - pointerRay;
+    float radius = 3.5 + max(depth, 0.0) * .095;
+    float influence = exp(-dot(delta, delta) / (radius * radius)) * uPointerStrength;
+    return (vec2(-delta.y, delta.x) * .14 + uPointer * .65) * influence;
+  }
+`;
+
+const protectionShader = /* glsl */ `
+  uniform vec4 uViewport;
+  uniform vec2 uScreenSize;
+  uniform int uProtectedCount;
+  uniform vec4 uProtectedRects[5];
+  float protection() {
+    vec2 screenUv = (gl_FragCoord.xy - uViewport.xy) / max(uViewport.zw, vec2(1.0));
+    screenUv.y = 1.0 - screenUv.y;
+    vec2 feather = vec2(22.0) / max(uScreenSize, vec2(1.0));
+    float protectedArea = 0.0;
+    for (int i = 0; i < 5; i++) {
+      if (i >= uProtectedCount) break;
+      vec4 rect = uProtectedRects[i];
+      vec2 enter = smoothstep(rect.xy - feather, rect.xy + feather, screenUv);
+      vec2 leave = 1.0 - smoothstep(rect.zw - feather, rect.zw + feather, screenUv);
+      protectedArea = max(protectedArea, enter.x * enter.y * leave.x * leave.y);
+    }
+    return protectedArea;
+  }
+`;
+
+/** One tiny tileable scalar texture: RGB = broad billows / folds / grain.
+ * Two detail samples and one directional-gradient sample replace a costly
+ * per-fragment procedural noise stack. */
+function cloudTexture() {
+  const size = 256, pixels = new Uint8Array(size * size * 4);
+  const hash = (x: number, y: number, salt: number) => {
+    let value = Math.imul(x + salt * 37, 374761393) ^ Math.imul(y + salt * 17, 668265263);
+    value = Math.imul(value ^ (value >>> 13), 1274126177);
+    return ((value ^ (value >>> 16)) >>> 0) / 4294967295;
   };
+  const noise = (x: number, y: number, cells: number, salt: number) => {
+    const gx = x * cells / size, gy = y * cells / size, ix = Math.floor(gx), iy = Math.floor(gy);
+    const fx = gx - ix, fy = gy - iy, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const a = hash(ix % cells, iy % cells, salt), b = hash((ix + 1) % cells, iy % cells, salt);
+    const c = hash(ix % cells, (iy + 1) % cells, salt), d = hash((ix + 1) % cells, (iy + 1) % cells, salt);
+    return (a + (b - a) * sx) * (1 - sy) + (c + (d - c) * sx) * sy;
+  };
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const index = (y * size + x) * 4;
+    pixels[index] = Math.round(noise(x, y, 8, 3) * 255);
+    pixels[index + 1] = Math.round(noise(x, y, 24, 7) * 255);
+    pixels[index + 2] = Math.round(noise(x, y, 64, 11) * 255);
+    pixels[index + 3] = 255;
+  }
+  const texture = new THREE.DataTexture(pixels, size, size, THREE.RGBAFormat);
+  texture.name = 'Passage wormhole scalar field';
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.generateMipmaps = true;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+function tubeGeometry() {
+  const positions: number[] = [], coordinates: number[] = [], indices: number[] = [];
+  for (let ring = 0; ring <= DEPTH_SEGMENTS; ring++) {
+    const depth = -4 + (LENGTH + 4) * ring / DEPTH_SEGMENTS;
+    for (let side = 0; side <= RADIAL_SEGMENTS; side++) {
+      const angle = side / RADIAL_SEGMENTS * Math.PI * 2;
+      const t = Math.max(0, Math.min(1, depth / LENGTH)), smooth = t * t * (3 - 2 * t);
+      const centreT = Math.max(0, Math.min(1, (t - .1) / .9));
+      const centreX = 5.2 * centreT * centreT * (3 - 2 * centreT) + 2.3 * Math.sin(t * 3.5) * t;
+      const centreY = 2 * Math.sin(t * 2.3) * t + .8 * t * t;
+      const radius = 17 + (9.4 - 17) * smooth;
+      positions.push(centreX + Math.cos(angle) * radius, centreY + Math.sin(angle) * radius, -depth);
+      coordinates.push(side / RADIAL_SEGMENTS, depth / LENGTH);
+      if (ring < DEPTH_SEGMENTS && side < RADIAL_SEGMENTS) {
+        const a = ring * (RADIAL_SEGMENTS + 1) + side, b = a + RADIAL_SEGMENTS + 1;
+        // Outward winding; BackSide exposes only the hollow interior.
+        indices.push(a, b, a + 1, a + 1, b, b + 1);
+      }
+    }
+  }
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
-  const material = new THREE.ShaderMaterial({
-    name: 'Passage organic wormhole',
-    uniforms,
-    transparent: false,
-    depthWrite: false,
-    depthTest: false,
-    blending: THREE.NoBlending,
-    toneMapped: false,
-    fog: false,
+  geometry.name = 'Passage wormhole curved hollow tube 132m';
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(coordinates, 2));
+  geometry.setIndex(indices);
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function streakGeometry() {
+  const geometry = new THREE.InstancedBufferGeometry();
+  geometry.name = 'Passage wormhole GPU instanced streaks';
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, 0, 1, 0, 0, -1, 1, 0, 1, 1, 0], 3));
+  // The shader's across vector is the left perpendicular of tail-to-head,
+  // so this winding faces the viewer after its perspective expansion.
+  geometry.setIndex([0, 2, 1, 1, 2, 3]);
+  const seeds = new Float32Array(MAX_STREAKS * 4);
+  let seed = 85143;
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  for (let i = 0; i < MAX_STREAKS; i++) seeds.set([random(), random(), random(), random()], i * 4);
+  geometry.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seeds, 4));
+  geometry.instanceCount = 1180;
+  return geometry;
+}
+
+/** Real finite geometry in Passage's existing scene and camera. Two draws:
+ * a deformed hollow cloud tube and instanced world-space stars. No secondary
+ * renderer, scene, camera, full-screen primitive, or render target. */
+export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
+  const field = cloudTexture();
+  const protectedRects = Array.from({ length: 5 }, () => new THREE.Vector4(-2, -2, -1, -1));
+  const uniforms = {
+    uCloud: { value: field }, uViewport: { value: new THREE.Vector4(0, 0, 1, 1) },
+    uScreenSize: { value: new THREE.Vector2(1, 1) }, uFlow: { value: 0 }, uEnergy: { value: 0 },
+    uPointer: { value: new THREE.Vector2() }, uPointerStrength: { value: 0 }, uAspect: { value: 1 },
+    uTanHalfFov: { value: Math.tan(THREE.MathUtils.degToRad(59 / 2)) },
+    uCalm: { value: 0 }, uCompact: { value: 0 }, uDetail: { value: 1 },
+    uProtectedRects: { value: protectedRects }, uProtectedCount: { value: 0 },
+  };
+  const commonVertex = /* glsl */ `
+    uniform float uFlow, uEnergy, uPointerStrength, uAspect, uTanHalfFov;
+    uniform vec2 uPointer;
+    ${tubeShader}
+  `;
+  const wallGeometry = tubeGeometry();
+  const wallMaterial = new THREE.ShaderMaterial({
+    name: 'Passage wormhole dimensional wall', uniforms,
+    side: THREE.BackSide, transparent: true, depthWrite: false, depthTest: true,
+    blending: THREE.NormalBlending, fog: false,
     vertexShader: /* glsl */ `
-      varying vec2 vUv;
+      ${commonVertex}
+      uniform sampler2D uCloud;
+      varying vec2 vTube;
+      varying float vBillow;
       void main() {
-        vUv = position.xy * .5 + .5;
-        gl_Position = vec4(position.xy, .9999, 1.0);
+        float angle = uv.x * TAU, depth = uv.y * 132.0;
+        float phase = depth * .018 + uFlow * .0024;
+        float billow = texture2D(uCloud, vec2(uv.x * 2.0, phase)).r;
+        float folds = sin(angle * 5.0 + depth * .086 + billow * 3.5) * .64
+          + sin(angle * 9.0 - depth * .119 + billow * 2.0) * .26;
+        float radius = tubeRadius(depth) + (billow - .5) * 2.6 + folds;
+        vec2 point = tubeCentre(depth) + vec2(cos(angle), sin(angle)) * radius;
+        point += current(point, depth);
+        vTube = vec2(angle, depth);
+        vBillow = billow;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(point, -depth, 1.0);
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform vec2 uResolution, uPointer;
-      uniform float uFlow, uEnergy, uPointerStrength, uCalm, uCompact;
-      uniform int uOctaves, uProtectedCount;
-      uniform vec4 uProtectedRects[4];
-      varying vec2 vUv;
-
-      const float TAU = 6.28318530718;
-      float hash13(vec3 p) {
-        p = fract(p * .1031);
-        p += dot(p, p.yzx + 33.33);
-        return fract((p.x + p.y) * p.z);
-      }
-      float hash12(vec2 p) {
+      uniform sampler2D uCloud;
+      uniform float uFlow, uEnergy, uCalm, uCompact, uDetail;
+      varying vec2 vTube;
+      varying float vBillow;
+      ${protectionShader}
+      float hash(vec2 p) {
         vec3 q = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
         q += dot(q, q.yzx + 33.33);
         return fract((q.x + q.y) * q.z);
       }
-      float noise(vec3 p) {
-        vec3 i = floor(p), f = fract(p);
-        f = f * f * (3.0 - 2.0 * f);
-        return mix(
-          mix(mix(hash13(i), hash13(i + vec3(1, 0, 0)), f.x),
-              mix(hash13(i + vec3(0, 1, 0)), hash13(i + vec3(1, 1, 0)), f.x), f.y),
-          mix(mix(hash13(i + vec3(0, 0, 1)), hash13(i + vec3(1, 0, 1)), f.x),
-              mix(hash13(i + vec3(0, 1, 1)), hash13(i + vec3(1, 1, 1)), f.x), f.y), f.z);
-      }
-      // Four value-noise octaves maximum. The coarse field warps later octaves
-      // into billowing edges without a second fbm stack or ray-marching loop.
-      vec3 clouds(vec3 p) {
-        float sum = 0.0, weight = .53, total = 0.0, coarse = 0.0, detail = 0.0;
-        mat3 turn = mat3(.00, .80, .60, -.80, .36, -.48, -.60, -.48, .64);
-        for (int octave = 0; octave < 4; octave++) {
-          if (octave >= uOctaves) break;
-          float n = noise(p);
-          if (octave == 0) coarse = n;
-          detail = n;
-          sum += n * weight;
-          total += weight;
-          p = turn * p * 2.03 + vec3(3.7, 8.2, 1.4) + (n - .5) * .63;
-          weight *= .49;
-        }
-        return vec3(sum / total, coarse, detail);
-      }
       float segment(vec2 p, vec2 a, vec2 b) {
         vec2 edge = b - a;
-        float t = clamp(dot(p - a, edge) / dot(edge, edge), 0.0, 1.0);
-        return length(p - a - edge * t);
+        return length(p - a - edge * clamp(dot(p - a, edge) / dot(edge, edge), 0.0, 1.0));
       }
       float glyph(vec2 p, float seed, float aa) {
-        float stroke = segment(p, vec2(-.18, -.30), vec2(-.18, .30));
-        stroke = min(stroke, segment(p, vec2(-.18, .30), vec2(.18, .12)));
-        if (seed > .45) stroke = min(stroke, segment(p, vec2(-.18, -.09), vec2(.17, .08)));
-        if (seed < .72) stroke = min(stroke, segment(p, vec2(.17, .08), vec2(.17, -.28)));
-        if (seed > .70) stroke = min(stroke, segment(p, vec2(-.18, -.28), vec2(.15, -.28)));
-        return 1.0 - smoothstep(.013, .013 + aa, stroke);
-      }
-      float protection() {
-        vec2 topUv = vec2(vUv.x, 1.0 - vUv.y);
-        vec2 feather = vec2(24.0) / max(uResolution, vec2(1.0));
-        float protectedArea = 0.0;
-        for (int i = 0; i < 4; i++) {
-          if (i >= uProtectedCount) break;
-          vec4 rect = uProtectedRects[i];
-          vec2 enter = smoothstep(rect.xy - feather, rect.xy + feather, topUv);
-          vec2 leave = 1.0 - smoothstep(rect.zw - feather, rect.zw + feather, topUv);
-          protectedArea = max(protectedArea, enter.x * enter.y * leave.x * leave.y);
-        }
-        return protectedArea;
+        float stroke = segment(p, vec2(-.17, -.31), vec2(-.17, .31));
+        stroke = min(stroke, segment(p, vec2(-.17, .26), vec2(.18, .10)));
+        if (seed > .4) stroke = min(stroke, segment(p, vec2(-.17, -.08), vec2(.18, .04)));
+        if (seed < .7) stroke = min(stroke, segment(p, vec2(.18, .10), vec2(.18, -.29)));
+        if (seed > .7) stroke = min(stroke, segment(p, vec2(-.17, -.29), vec2(.18, -.29)));
+        return 1.0 - smoothstep(.015, .015 + aa, stroke);
       }
       void main() {
-        float aspect = uResolution.x / max(uResolution.y, 1.0);
-        vec2 p = (vUv - .5) * vec2(aspect, 1.0) * 2.0;
-        // The pointer only bends this current locally. It never changes the
-        // camera, the foreground projection or the position of a reading panel.
-        vec2 pointer = uPointer * vec2(aspect, 1.0);
-        vec2 delta = p - pointer;
-        float influence = exp(-dot(delta, delta) * 2.8) * uPointerStrength;
-        p += (vec2(-delta.y, delta.x) * .075 + delta * .025) * influence;
-        p -= vec2(.035, .075);
-        float radius = length(p);
-        float logRadius = log(max(radius, .035));
-        float angle = atan(p.y, p.x);
-        float spiral = angle + logRadius * .79;
-        // Sampling against a continuously decreasing longitudinal coordinate
-        // moves each cloud and star from the core out towards the visitor.
-        float depth = logRadius * 2.25 - uFlow;
-        vec3 field = clouds(vec3(cos(spiral) * 2.8, sin(spiral) * 2.8, depth));
-        float arm = .5 + .5 * sin(spiral * 2.0 + field.y * 3.4 + depth * .31);
-        float density = smoothstep(.36, .84, field.x + arm * .12);
-        float folds = 1.0 - abs(field.x * 2.0 - 1.0);
-        float lightEdge = pow(clamp(density, 0.0, 1.0), 2.6);
-        float cloudWall = smoothstep(.115, .31, radius);
-        float abyss = smoothstep(.085, .185, radius + (field.y - .5) * .026);
-        float warmth = smoothstep(-.39, .59, sin(spiral + field.y * 2.4 + .35));
-        vec3 copper = mix(vec3(.025, .008, .004), vec3(.42, .135, .045), lightEdge);
-        vec3 slate = mix(vec3(.008, .014, .020), vec3(.095, .135, .165), lightEdge);
-        vec3 cloudColor = mix(slate, copper, warmth);
-        vec3 color = vec3(.0031, .0046, .0051);
-        float shadow = .30 + .70 * smoothstep(.21, .71, field.y);
-        color += cloudColor * (.16 + density * 1.23) * shadow * cloudWall;
-        // Soft ivory light inside the densest folds creates volume, avoiding a
-        // flat plasma gradient or a neon outline around the dark central void.
-        float silver = pow(density, 5.0) * (.25 + .75 * folds);
-        color += vec3(.48, .43, .34) * silver * .20 * cloudWall;
-        float haze = exp(-abs(radius - .25) * 7.5) * (.35 + .65 * density);
-        color += mix(vec3(.024, .038, .049), vec3(.11, .052, .024), warmth) * haze;
-
-        // A sparse, jittered cylindrical star field: no reset plane, uniform
-        // burst, screen-space dot grid or repeating concentric speed rings.
-        float starAngle = angle / TAU + logRadius * .014;
-        vec2 starDomain = vec2(starAngle * 154.0, (logRadius - uFlow * .82) * 6.8);
-        vec2 starCell = floor(starDomain), starUv = fract(starDomain);
-        starCell.x = mod(starCell.x, 154.0);
-        float seed = hash12(starCell + 29.7);
-        float starExists = step(mix(.903, .94, uCompact), seed);
-        float jitter = hash12(starCell + 72.8);
-        float x = starUv.x - mix(.23, .77, jitter);
-        float y = starUv.y - .68;
-        float angularAA = max(308.0 / (TAU * max(radius, .035) * uResolution.y), .006);
-        float width = mix(.018, .043, jitter);
-        float line = 1.0 - smoothstep(width, width + angularAA, abs(x));
-        float streakLength = mix(.10, .42, jitter) * (1.0 + uEnergy * .55);
-        float tail = smoothstep(-streakLength, -.025, y) * (1.0 - smoothstep(-.005, .044, y));
-        float head = exp(-abs(y) * 87.0) * (1.0 - smoothstep(width * .7, width * 2.8 + angularAA, abs(x)));
-        float halo = exp(-abs(x) * 15.0 - abs(y) * 22.0) * .14;
-        float starFade = smoothstep(.12, .27, radius) * min(1.0, radius * .74 + .15);
-        vec3 starColor = mix(vec3(.68, .73, .72), vec3(1.0, .70, .43), step(.58, jitter));
-        color += starColor * (line * tail * .91 + head * 1.3 + halo) * starExists * starFade * (1.04 + uEnergy * .22);
-
-        // Faint angular marks travel on the same curved surface as the clouds.
-        // Their irregular spacing and small area read as traces in the current.
-        vec2 glyphDomain = vec2((angle / TAU + logRadius * .021) * 31.0, (logRadius - uFlow * .58) * 9.0);
-        vec2 glyphCell = floor(glyphDomain);
-        glyphCell.x = mod(glyphCell.x, 31.0);
-        float glyphSeed = hash12(glyphCell + 93.2);
-        vec2 glyphUv = (fract(glyphDomain) - .5) * vec2(1.45, 1.0);
-        float glyphAA = 18.0 / (max(radius, .035) * uResolution.y) + .007;
-        float trace = glyph(glyphUv, hash12(glyphCell + 18.4), glyphAA);
-        trace *= step(.954, glyphSeed) * smoothstep(.28, .65, radius) * (1.0 - smoothstep(1.3, 2.7, radius));
-        color += mix(vec3(.15, .18, .18), vec3(.34, .14, .059), step(.98, glyphSeed)) * trace * .29 * (1.0 - uCompact * .65);
-
-        color *= mix(.29, 1.0, abyss);
-        float edge = 1.0 - smoothstep(.67, 1.42, length((vUv - .5) * 1.42));
-        color *= mix(.68, 1.0, edge);
-        // Preserve the surrounding cloud walls even during a reading hold.
-        color *= (1.0 - uCalm * .13) * (1.0 - uCompact * .18);
-        color = mix(color, vec3(.004, .005, .006) + color * .20, protection() * .77);
-        gl_FragColor = vec4(color, 1.0);
+        float angle = vTube.x, depth = vTube.y;
+        float phase = depth * .018 + uFlow * .0024;
+        vec2 domain = vec2(angle / 6.28318530718 * 2.0, phase);
+        vec3 first = texture2D(uCloud, domain).rgb;
+        vec3 second = texture2D(uCloud, domain * vec2(2.0, 1.73)
+          + vec2(first.r * .20, first.g * .13)).rgb;
+        float lightSlope = first.r - texture2D(uCloud, domain + vec2(.013, .008)).r;
+        // Broken diagonal cloud arms and dark porous regions. All material
+        // coordinates follow physical tube depth, rather than radial screen UV.
+        float arm = pow(.5 + .5 * cos(angle * 2.0 - 1.45 - depth * .014 + (first.r - .5) * 2.0), 2.4);
+        float density = first.r * .56 + second.g * .28 + first.b * .16;
+        float torn = smoothstep(.27, .63, first.g * .55 + second.r * .45);
+        float mass = smoothstep(.28, .78, density + arm * .17) * mix(.36, 1.0, torn);
+        float folds = pow(clamp(density + arm * .17, 0.0, 1.0), 2.2);
+        float crest = pow(smoothstep(.60, .87, density + arm * .12), 2.0)
+          * smoothstep(.48, .80, first.g);
+        // A derivative along the authored light direction gives each billow a
+        // bright face and a shadow. It costs one extra scalar texture sample.
+        float shade = clamp(.66 + lightSlope * 4.0, .24, 1.12) * (.68 + .32 * vBillow);
+        vec3 copper = mix(vec3(.017, .005, .002), vec3(.31, .095, .033), folds);
+        vec3 slate = mix(vec3(.003, .008, .014), vec3(.09, .155, .215), folds);
+        vec3 cloud = mix(slate, copper, smoothstep(.15, .70, arm));
+        vec3 color = cloud * (.25 + mass * 1.08) * shade * (.89 + second.b * .22);
+        color += mix(vec3(.18, .27, .34), vec3(.69, .51, .33), arm) * crest * .18 * shade;
+        color += vec3(.60, .60, .53) * pow(crest, 3.0) * .08;
+        float filament = pow(max(0.0, 1.0 - abs(second.r - .54) * 13.0), 5.0)
+          * smoothstep(.46, .78, first.r) * torn;
+        color += vec3(.53, .49, .39) * filament * .05 * uDetail;
+        // Sparse Matrix-like traces are attached to the physical tube wall.
+        vec2 codeDomain = vec2(angle / 6.28318530718 * 92.0, (depth + uFlow * .14) * .87);
+        vec2 cell = floor(codeDomain);
+        cell.x = mod(cell.x, 92.0);
+        float codeSeed = hash(cell + 63.7);
+        vec2 codePixel = fwidth(codeDomain);
+        float codeAA = max(max(codePixel.x, codePixel.y), .008);
+        float code = 0.0;
+        if (codeSeed > .979 && depth > 14.0 && depth < 100.0 && uCompact < .5) {
+          code = glyph((fract(codeDomain) - .5) * vec2(1.32, 1.0), hash(cell + 17.2), codeAA);
+          code *= smoothstep(14.0, 30.0, depth) * (1.0 - smoothstep(72.0, 100.0, depth));
+        }
+        color += vec3(.25, .30, .27) * code * .16;
+        float ends = smoothstep(-3.0, 8.0, depth) * (1.0 - smoothstep(112.0, 132.0, depth));
+        float abyss = 1.0 - smoothstep(77.0, 132.0, depth) * .77;
+        float quiet = (1.0 - uCalm * .12) * (1.0 - uCompact * .12);
+        float protectionAmount = protection();
+        color *= abyss * quiet * (1.0 + uEnergy * .09) * (1.0 - protectionAmount * .50);
+        float alpha = (.23 + mass * .62) * ends * (1.0 - protectionAmount * .88);
+        gl_FragColor = vec4(color, alpha);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
       }
     `,
   });
-  // Cloud detail is deliberately softer than the foreground hardware. Compute
-  // it at a bounded resolution, then resolve once into the main scene.
-  const target = new THREE.WebGLRenderTarget(1, 1, {
-    depthBuffer: false, stencilBuffer: false, minFilter: THREE.LinearFilter,
-    magFilter: THREE.LinearFilter, generateMipmaps: false,
-  });
-  const fieldScene = new THREE.Scene(), fieldCamera = new THREE.Camera();
-  const fieldMesh = new THREE.Mesh(geometry, material); fieldMesh.frustumCulled = false;
-  fieldScene.add(fieldMesh);
-  const resolve = new THREE.ShaderMaterial({
-    uniforms: { tField: { value: target.texture } },
-    depthTest: false, depthWrite: false, transparent: false, blending: THREE.NoBlending,
-    vertexShader: material.vertexShader,
-    fragmentShader: `varying vec2 vUv; uniform sampler2D tField;
-      void main(){gl_FragColor=texture2D(tField,vUv);
-      #include <tonemapping_fragment>
-      #include <colorspace_fragment>
-      }`,
-  });
-  const mesh = new THREE.Mesh(geometry, resolve);
-  mesh.name = 'Passage distant wormhole';
-  mesh.frustumCulled = false;
-  mesh.renderOrder = -10000;
-  scene.add(mesh);
+  const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+  wall.name = 'Passage wormhole finite curved tube';
+  wall.renderOrder = -40;
+  wall.frustumCulled = false; // CPU bounds cannot account for GPU displacement.
 
-  let compact = false;
-  let disposed = false;
+  const starsGeometry = streakGeometry();
+  const starsMaterial = new THREE.ShaderMaterial({
+    name: 'Passage wormhole instanced streaks', uniforms,
+    transparent: true, depthWrite: false, depthTest: true,
+    blending: THREE.AdditiveBlending, fog: false,
+    vertexShader: /* glsl */ `
+      ${commonVertex}
+      uniform vec4 uViewport;
+      uniform vec2 uScreenSize;
+      attribute vec4 aSeed;
+      varying vec2 vStreak;
+      varying float vFade;
+      varying vec3 vTint;
+      vec3 streamPoint(float depth, float angle, float spread) {
+        float curvedAngle = angle + sin(depth * .016 + angle * 2.0) * .075;
+        vec2 point = tubeCentre(depth) + vec2(cos(curvedAngle), sin(curvedAngle)) * tubeRadius(depth) * spread;
+        return vec3(point + current(point, depth), -depth);
+      }
+      void main() {
+        float speed = .74 + aSeed.w * .57;
+        float phase = fract(aSeed.x + uFlow / 132.0 * speed);
+        float depth = 129.0 - phase * 130.0;
+        float angle = aSeed.y * TAU;
+        float spread = .16 + sqrt(aSeed.z) * .78;
+        float streakLength = (.16 + pow(aSeed.w, 2.0) * 3.35) * (1.0 + uEnergy * .65);
+        vec4 head = projectionMatrix * modelViewMatrix * vec4(streamPoint(depth, angle, spread), 1.0);
+        vec4 tail = projectionMatrix * modelViewMatrix * vec4(streamPoint(depth + streakLength, angle, spread), 1.0);
+        vec2 delta = (head.xy / max(head.w, .1) - tail.xy / max(tail.w, .1)) * uViewport.zw;
+        vec2 direction = normalize(delta + vec2(.00001, 0.0));
+        // Preserve a small point-like head at depth; world-space anchors and
+        // depth remain unchanged, as with any perspective particle billboard.
+        float minimumLength = 2.5 * uViewport.w / max(uScreenSize.y, 1.0);
+        if (length(delta) < minimumLength) {
+          tail.xy = (head.xy / max(head.w, .1) - direction * minimumLength / max(uViewport.zw, vec2(1.0))) * tail.w;
+        }
+        vec2 across = vec2(-direction.y, direction.x);
+        vec4 point = mix(tail, head, position.y);
+        float nearAmount = 1.0 - clamp(depth / 132.0, 0.0, 1.0);
+        float width = (.50 + aSeed.w * .45 + nearAmount * nearAmount * .52)
+          * uViewport.w / max(uScreenSize.y, 1.0);
+        point.xy += across * position.x * width * 2.0 / max(uViewport.zw, vec2(1.0)) * point.w;
+        gl_Position = point;
+        vStreak = position.xy;
+        vFade = smoothstep(1.0, 9.0, depth) * (1.0 - smoothstep(105.0, 129.0, depth));
+        vFade *= .38 + pow(aSeed.w, 2.0) * .95;
+        vTint = mix(vec3(.56, .68, .77), vec3(.98, .73, .48), step(.61, aSeed.w));
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uEnergy, uCalm, uCompact;
+      varying vec2 vStreak;
+      varying float vFade;
+      varying vec3 vTint;
+      ${protectionShader}
+      void main() {
+        float width = abs(vStreak.x);
+        float core = pow(max(0.0, 1.0 - width), 3.5);
+        float halo = pow(max(0.0, 1.0 - width), 1.5) * .06;
+        float tail = pow(vStreak.y, .65) * (1.0 - smoothstep(.90, 1.0, vStreak.y));
+        float alpha = (core + halo) * tail * vFade * (1.0 - protection() * .98);
+        alpha *= (1.0 - uCalm * .18) * (1.0 - uCompact * .15);
+        if (alpha < .003) discard;
+        gl_FragColor = vec4(vTint * (1.12 + uEnergy * .22), alpha);
+        #include <tonemapping_fragment>
+        #include <colorspace_fragment>
+      }
+    `,
+  });
+  const stars = new THREE.Mesh(starsGeometry, starsMaterial);
+  stars.name = 'Passage wormhole GPU perspective streaks';
+  stars.frustumCulled = false;
+  stars.renderOrder = -39;
+  // Honour the real viewport even when the owner's cinematic pass uses a
+  // differently sized target; the effect itself never creates or renders one.
+  const readViewport = () => { renderer.getCurrentViewport(uniforms.uViewport.value); };
+  wall.onBeforeRender = readViewport;
+  stars.onBeforeRender = readViewport;
+  const mesh = new THREE.Group();
+  mesh.name = 'Passage dimensional wormhole';
+  mesh.add(wall, stars);
+  scene.add(mesh);
+  let compact = false, disposed = false;
   const clamp = THREE.MathUtils.clamp;
   return {
     mesh,
+    /** Follow the actual shared camera's Z only; never modify the camera. */
+    setCamera(camera: THREE.PerspectiveCamera) {
+      if (disposed) return;
+      mesh.position.z = camera.position.z;
+      uniforms.uAspect.value = camera.aspect;
+      uniforms.uTanHalfFov.value = Math.tan(THREE.MathUtils.degToRad(camera.fov * .5));
+    },
     configure(width: number, height: number, isCompact: boolean, quality: PassageWormholeQuality) {
       if (disposed) return;
       compact = isCompact;
-      uniforms.uResolution.value.set(Math.max(1, width), Math.max(1, height));
-      const limit = compact ? 384 : quality === 'light' ? 512 : quality === 'detail' ? 960 : 768;
-      const scale = Math.min(1, limit / Math.max(width, height));
-      target.setSize(Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)));
+      uniforms.uScreenSize.value.set(Math.max(1, width), Math.max(1, height));
       uniforms.uCompact.value = Number(compact);
-      uniforms.uOctaves.value = compact || quality === 'light' ? 2 : quality === 'detail' ? 4 : 3;
+      uniforms.uDetail.value = quality === 'light' || compact ? .25 : 1;
+      starsGeometry.instanceCount = compact ? 340 : quality === 'light' ? 620 : quality === 'detail' ? MAX_STREAKS : 1180;
+      readViewport();
     },
-    /** Rectangles use normalized viewport coordinates with a top-left origin. */
+    /** Normalized viewport rectangles, with a top-left origin. */
     setProtectedRects(rects: readonly PassageWormholeRect[]) {
       if (disposed) return;
       let count = 0;
-      for (let index = 0; index < rects.length && count < 4; index++) {
+      for (let index = 0; index < rects.length && count < 5; index++) {
         const rect = rects[index];
-        if (!Number.isFinite(rect.left + rect.top + rect.right + rect.bottom) || rect.right <= rect.left || rect.bottom <= rect.top) continue;
-        protectedRects[count].set(clamp(rect.left, 0, 1), clamp(rect.top, 0, 1), clamp(rect.right, 0, 1), clamp(rect.bottom, 0, 1));
-        count++;
+        if (!Number.isFinite(rect.left + rect.top + rect.right + rect.bottom)) continue;
+        const left = clamp(rect.left, 0, 1), top = clamp(rect.top, 0, 1);
+        const right = clamp(rect.right, 0, 1), bottom = clamp(rect.bottom, 0, 1);
+        if (right <= left || bottom <= top) continue;
+        protectedRects[count++].set(left, top, right, bottom);
       }
       uniforms.uProtectedCount.value = count;
     },
     update(time: number, travelDistance: number, energy: number, pointer: readonly [number, number], pointerStrength: number, calm: number, reduced: boolean) {
       if (disposed) return;
       const still = compact || reduced;
-      // The owner supplies a pause-aware clock and an integrated scroll boost.
-      // Never multiply an absolute time by changing energy: that makes jumps.
-      uniforms.uFlow.value = still ? 0 : Math.max(0, time) * .23 + Math.max(0, travelDistance) * .42;
+      // Pause-aware time plus integrated travel; changing energy cannot jump
+      // the phase as it would when multiplying an absolute clock by speed.
+      uniforms.uFlow.value = still ? 0 : Math.max(0, time) * 8.4 + Math.max(0, travelDistance) * 1.7;
       uniforms.uEnergy.value = still ? 0 : clamp(energy, 0, 1);
       uniforms.uPointer.value.set(still ? 0 : clamp(pointer[0], -1, 1), still ? 0 : clamp(pointer[1], -1, 1));
       uniforms.uPointerStrength.value = still ? 0 : clamp(pointerStrength, 0, 1);
       uniforms.uCalm.value = clamp(calm, 0, 1);
-      const previousTarget = renderer.getRenderTarget();
-      try { renderer.setRenderTarget(target); renderer.render(fieldScene, fieldCamera); }
-      finally { renderer.setRenderTarget(previousTarget); }
+    },
+    stats() {
+      return {
+        draws: 2, renderTargets: 0, geometries: 2, textures: 1,
+        tubeVertices: wallGeometry.getAttribute('position').count,
+        tubeTriangles: (wallGeometry.index?.count ?? 0) / 3,
+        streakInstances: starsGeometry.instanceCount, length: LENGTH,
+      };
     },
     dispose() {
       if (disposed) return;
       disposed = true;
-      scene.remove(mesh);
-      geometry.dispose();
-      material.dispose();
-      resolve.dispose(); target.dispose(); fieldScene.clear();
+      scene.remove(mesh); mesh.clear();
+      wallGeometry.dispose(); starsGeometry.dispose();
+      wallMaterial.dispose(); starsMaterial.dispose(); field.dispose();
     },
   };
 }

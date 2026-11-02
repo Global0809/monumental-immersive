@@ -3,6 +3,29 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createTunnelCutaway, liningIntersection } from '../src/components/spatial/tunnelCutaway.ts';
 import { passageLiningRadius } from '../src/services/passageEnvelope.ts';
+import { PASSAGE_LINING, PASSAGE_LINING_CELLS, passageLiningCell, passageLiningOccupied } from '../src/services/passageLining.ts';
+
+function sparseLining(scene: THREE.Scene) {
+  const geometry = new THREE.BoxGeometry(1, 1, 1), material = new THREE.MeshStandardMaterial();
+  material.userData.passageShell = true;
+  const mesh = new THREE.InstancedMesh(geometry, material, PASSAGE_LINING_CELLS.length), dummy = new THREE.Object3D();
+  mesh.name = 'passage-led-lining';
+  PASSAGE_LINING_CELLS.forEach((cell, index) => {
+    dummy.position.set(Math.cos(cell.angle) * (cell.radius + .17), Math.sin(cell.angle) * (cell.radius + .17), cell.z);
+    dummy.rotation.z = cell.angle + Math.PI / 2;
+    dummy.scale.set(cell.span * PASSAGE_LINING.wallWidth, PASSAGE_LINING.wallThickness, PASSAGE_LINING.wallDepth);
+    dummy.updateMatrix(); mesh.setMatrixAt(index, dummy.matrix);
+  });
+  mesh.computeBoundingSphere(); scene.add(mesh);
+  return { mesh, dispose() { scene.remove(mesh); mesh.dispose(); geometry.dispose(); material.dispose(); } };
+}
+
+function aimAtCell(camera: THREE.PerspectiveCamera, row: number, lane: number) {
+  const cell = passageLiningCell(row, lane);
+  camera.position.set(0, 0, cell.z);
+  camera.lookAt(Math.cos(cell.angle) * cell.radius, Math.sin(cell.angle) * cell.radius, cell.z);
+  camera.updateMatrixWorld();
+}
 
 test('the inspection probe meets the lining at a finite world-space point', () => {
   const target = new THREE.Vector3();
@@ -34,26 +57,38 @@ test('the probe does not invent a nearby surface at the vanishing point or outsi
 
 test('service bays stay within the local geometry budget and upload only when the inspected rows change', () => {
   const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(59, 1440 / 900, .16, 165);
-  camera.position.set(0, 0, 14); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
+  const lining = sparseLining(scene);
+  aimAtCell(camera, 3, 0);
   const controller = createTunnelCutaway(scene, {} as THREE.WebGLRenderer, camera);
-  controller.update([.8, .1], true, 1440, 900, 1 / 60);
+  controller.update([0, 0], true, 1440, 900, 1 / 60);
   const batches: THREE.InstancedMesh[] = [];
-  scene.traverse(object => { if (object instanceof THREE.InstancedMesh) batches.push(object); });
+  scene.getObjectByName('passage-service-bays')!.traverse(object => { if (object instanceof THREE.InstancedMesh) batches.push(object); });
   const instances = batches.reduce((sum, mesh) => sum + mesh.count, 0);
   const triangles = batches.reduce((sum, mesh) => sum + (mesh.geometry.index?.count ?? mesh.geometry.getAttribute('position').count) / 3 * mesh.count, 0);
-  assert.ok(instances <= 800, `bounded local instances, got ${instances}`);
+  assert.equal(instances, 252, 'only four occupied cells per row have internal hardware');
   assert.ok(triangles <= 30000, `bounded local triangles, got ${triangles}`);
   const versions = batches.map(mesh => mesh.instanceMatrix.version);
-  for (let frame = 0; frame < 60; frame++) controller.update([.8, .1], true, 1440, 900, 1 / 60);
+  for (let frame = 0; frame < 60; frame++) controller.update([0, 0], true, 1440, 900, 1 / 60);
   assert.deepEqual(batches.map(mesh => mesh.instanceMatrix.version), versions, 'a held cursor never reuploads the service geometry');
   const initialDepths = batches.map(mesh => mesh.boundingSphere!.center.z);
-  camera.position.z -= 60; camera.updateMatrixWorld();
-  for (let frame = 0; frame < 18; frame++) controller.update([.8, .1], true, 1440, 900, 1 / 60);
+  aimAtCell(camera, 21, 0);
+  for (let frame = 0; frame < 18; frame++) controller.update([0, 0], true, 1440, 900, 1 / 60);
   batches.forEach((mesh, index) => {
     assert.equal(mesh.instanceMatrix.version, versions[index] + 1, 'one upload selects the new row window');
     assert.ok(mesh.boundingSphere!.center.z < initialDepths[index] - 50, 'bounds follow actual distant world coordinates');
   });
-  controller.destroy();
+  controller.destroy(); lining.dispose();
+});
+
+test('sparse lining opens X-ray only on built housings, never in the intervening wormhole openings', () => {
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(59, 1440 / 900, .16, 165);
+  const lining = sparseLining(scene), controller = createTunnelCutaway(scene, {} as THREE.WebGLRenderer, camera);
+  try {
+    for (const row of [0, 2, 15, 45, 89]) for (let lane = 0; lane < PASSAGE_LINING.lanes; lane++) {
+      controller.reset(); aimAtCell(camera, row, lane);
+      assert.equal(controller.update([0, 0], true, 1440, 900, 1 / 60), passageLiningOccupied(row, lane), `row ${row}, lane ${lane}`);
+    }
+  } finally { controller.destroy(); lining.dispose(); }
 });
 
 test('cutaway activation is reversible, protects media, and releases only its own scene resources', () => {
@@ -72,6 +107,8 @@ test('cutaway activation is reversible, protects media, and releases only its ow
   geometry.addEventListener('dispose', () => { externalDisposed = true; });
   const camera = new THREE.PerspectiveCamera(59, 1440 / 900, .16, 165);
   camera.position.set(0, 0, 14); camera.lookAt(0, 0, 0); camera.updateMatrixWorld();
+  const fixtureRay = new THREE.Raycaster(); fixtureRay.setFromCamera(new THREE.Vector2(.8, .1), camera);
+  originals[0].name = 'passage-led-lining'; fixtureRay.ray.at(12, originals[0].position);
   const controller = createTunnelCutaway(scene, {} as THREE.WebGLRenderer, camera);
   const assembly = scene.children.find(child => !originals.includes(child as THREE.Mesh))!;
   const ownedGeometry = new Set<THREE.BufferGeometry>(), ownedMaterials = new Set<THREE.Material>();

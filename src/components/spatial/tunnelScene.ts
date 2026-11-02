@@ -45,13 +45,14 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const pointer:[number,number]=[0,0],pointerTarget:[number,number]=[0,0];
   let previousZ=frame.z,scrollEnergy=0,lightCalm=Number(passageReading(frame));
   let scanHold=0,scanPlayed=false,lastScan=-Infinity,cutawayOptics=0;
-  let pointerPresent=false,pointerPress=false,relayTime=0,warpDistance=0;
+  let pointerPresent=false,pointerPress=false,relayTime=0,warpDistance=0,warpPointerStrength=0;
   const pulse=createTunnelPulse();
   const relayCycle:RelayAutomation={open:false,part:null,pull:0,phase:0};
   const signalCadence=createTunnelSignalCadence();let automaticSignals=0;
   let activeTexture:THREE.VideoTexture|null=null,textureEpoch=-1,textureChapter=-1;
   const cadence=createFrameCadence(),canvas=renderer.domElement;
   const cinematic=createCinematicRenderer(renderer),protectedSurfaces:CinematicRect[]=[];
+  const wormholeRects:CinematicRect[]=[];
   const protectedMedia:CinematicRect={left:0,top:0,right:0,bottom:0};
   canvas.className='spatial-world-canvas';canvas.setAttribute('aria-hidden','true');
   Object.assign(canvas.style,{width:'100%',height:'100%',display:'block',touchAction:'pan-y',pointerEvents:'none'});host.appendChild(canvas);
@@ -299,15 +300,10 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     // velocity, never an absolute offset that could jump on station changes.
     const warpStill=compact||state.reducedMotion;
     if(inPassage&&!warpStill&&!inspection.expanded)warpDistance+=dt*scrollEnergy*.5;
-    wormhole.mesh.visible=inPassage;
-    wormhole.setProtectedRects(telemetryRects);
-    wormhole.update(warpStill?0:elapsed,warpStill?0:warpDistance,scrollEnergy,pointer,
-      pointerPresent&&!overImage&&!overInterface&&!inspection.expanded&&!warpStill?1:0,lightCalm,warpStill);
     canvas.dataset.wormholeTime=(warpStill?0:elapsed).toFixed(3);
     canvas.dataset.wormholeEnergy=scrollEnergy.toFixed(3);
     canvas.dataset.wormholeMode=warpStill?'still':'flow';
     canvas.dataset.wormholePointer=warpStill||!pointerPresent?'0,0':pointer.join(',');
-    canvas.dataset.wormholeDraws='2';
     updateMediaTexture();
     protectedSurfaces.length=0;
     if(imageBounds){
@@ -315,6 +311,17 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
       protectedMedia.right=imageBounds.right/width;protectedMedia.bottom=imageBounds.bottom/height;
       protectedSurfaces.push(protectedMedia);
     }
+    wormholeRects.length=0;
+    for(const rect of telemetryRects)wormholeRects.push(rect);
+    if(imageBounds)wormholeRects.push(protectedMedia);
+    wormhole.mesh.visible=inPassage;
+    wormhole.setCamera(camera);
+    wormhole.setProtectedRects(wormholeRects);
+    const warpPointerTarget=pointerPresent&&!overImage&&!overInterface&&!inspection.expanded&&!warpStill?1:0;
+    warpPointerStrength=warpStill?0:warpPointerStrength+(warpPointerTarget-warpPointerStrength)*(1-Math.exp(-dt*9));
+    wormhole.update(warpStill?0:elapsed,warpStill?0:warpDistance,scrollEnergy,pointer,
+      warpPointerStrength,lightCalm,warpStill);
+    canvas.dataset.wormholeDraws='2';
     cinematic.render(scene,camera,{
       enabled:inPassage&&!compact&&!state.reducedMotion&&preferences.quality!=='light'&&reduction<.3,
       strength:THREE.MathUtils.lerp(reading?.16:.24,.08,cutawayOptics),

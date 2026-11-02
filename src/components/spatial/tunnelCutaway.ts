@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createCutawayMotion, type CutawayTarget } from '../../services/cutawayMotion';
-import { passageBayExpansion, passageLiningRadius } from '../../services/passageEnvelope';
+import { passageLiningRadius } from '../../services/passageEnvelope';
+import { PASSAGE_LINING, PASSAGE_LINING_CELLS } from '../../services/passageLining';
 
 /** The probe intersects the lining in world space. A finite inspection volume
  * exposes one bay, rather than erasing every surface beneath a screen circle. */
@@ -38,14 +39,14 @@ export function createTunnelCutaway(scene: THREE.Scene, _renderer: THREE.WebGLRe
   const section = { value: new THREE.Vector4(0, 0, 0, 0) };
   const patched = new Set<THREE.Material>();
   const originals: { material: THREE.MeshStandardMaterial; compile: THREE.MeshStandardMaterial['onBeforeCompile']; key: THREE.MeshStandardMaterial['customProgramCacheKey']; alpha: boolean }[] = [];
-  const relayShells: THREE.Mesh[] = [];
+  const probeShells: THREE.Mesh[] = [];
   function bindMaterials() {
     scene.traverse(object => {
       if (!(object instanceof THREE.Mesh)) return;
       const materials = Array.isArray(object.material) ? object.material : [object.material];
       for (const material of materials) {
         if (!(material instanceof THREE.MeshStandardMaterial) || !material.userData.passageShell || material.map) continue;
-        if (object.name === 'relay-shell-components' && !relayShells.includes(object)) relayShells.push(object);
+        if ((object.name === 'relay-shell-components' || object.name === 'passage-led-lining') && !probeShells.includes(object)) probeShells.push(object);
         if (patched.has(material)) continue;
         patched.add(material);
         const compile = material.onBeforeCompile, key = material.customProgramCacheKey, prior = key.call(material);
@@ -95,7 +96,7 @@ export function createTunnelCutaway(scene: THREE.Scene, _renderer: THREE.WebGLRe
   }
   const titanium = interior(0x818781, .82, .34), graphite = interior(0x222a26, .62, .52);
   const insulation = interior(0x742c23, .27, .61), fastener = interior(0xc4c5b9, .88, .27);
-  const rows = 90, lanes = 12, visibleRows = 7;
+  const rows = PASSAGE_LINING.rows, lanes = PASSAGE_LINING.occupiedPerRow, visibleRows = 7;
   const templates = new Map<THREE.InstancedMesh, { matrices: Float32Array; instancesPerRow: number }>();
   function batch(geometry: THREE.BufferGeometry, material: THREE.Material, instancesPerBay: number) {
     const instancesPerRow = lanes * instancesPerBay;
@@ -110,33 +111,32 @@ export function createTunnelCutaway(scene: THREE.Scene, _renderer: THREE.WebGLRe
   const collars = batch(new THREE.CylinderGeometry(1, 1, 1, 12), fastener, 4);
   const dummy = new THREE.Object3D(), start = new THREE.Vector3(), end = new THREE.Vector3(), direction = new THREE.Vector3(), axis = new THREE.Vector3(0, 1, 0);
   function put(mesh: THREE.InstancedMesh, index: number) { dummy.updateMatrix(); dummy.matrix.toArray(templates.get(mesh)!.matrices, index * 16); }
-  for (let row = 0; row < rows; row++) for (let lane = 0; lane < lanes; lane++) {
-    const index = row * lanes + lane, angle = lane * Math.PI / 6 + row * .058;
-    const z = 18 - row * 3.65 - 1.35, radius = 8.8 + Math.sin(row * .46) * .34 + passageBayExpansion(z);
-    const c = Math.cos(angle), s = Math.sin(angle), span = 2 * radius * Math.sin(Math.PI / 12) * .95;
+  for (let index = 0; index < PASSAGE_LINING_CELLS.length; index++) {
+    const { z, angle, radius, span } = PASSAGE_LINING_CELLS[index];
+    const c = Math.cos(angle), s = Math.sin(angle), width = span * PASSAGE_LINING.wallWidth;
     // Twin flanges and a recessed chassis follow the same bay pitch as the
     // outer wall. Their depth, fixings and cable routing survive camera travel.
     for (let side = 0; side < 2; side++) {
-      dummy.position.set(c * (radius + .78), s * (radius + .78), z + (side ? 1.17 : -1.17));
-      dummy.rotation.set(0, 0, angle + Math.PI / 2); dummy.scale.set(span, .16, .12); put(rails, index * 2 + side);
+      dummy.position.set(c * (radius + .78), s * (radius + .78), z + (side ? .68 : -.68));
+      dummy.rotation.set(0, 0, angle + Math.PI / 2); dummy.scale.set(width * .98, .16, .12); put(rails, index * 2 + side);
     }
     dummy.position.set(c * (radius + 1.12), s * (radius + 1.12), z);
-    dummy.rotation.set(0, 0, angle + Math.PI / 2); dummy.scale.set(span * .92, .11, 2.4); put(housings, index);
+    dummy.rotation.set(0, 0, angle + Math.PI / 2); dummy.scale.set(width * .90, .11, PASSAGE_LINING.wallDepth - .14); put(housings, index);
     for (let cable = 0; cable < 2; cable++) {
       const offset = (cable ? 1 : -1) * .32;
-      start.set(c * (radius + .88) - s * offset, s * (radius + .88) + c * offset, z - 1.75);
-      end.copy(start); end.z += 3.5; direction.subVectors(end, start);
+      start.set(c * (radius + .88) - s * offset, s * (radius + .88) + c * offset, z - .65);
+      end.copy(start); end.z += 1.3; direction.subVectors(end, start);
       dummy.position.copy(start).add(end).multiplyScalar(.5); dummy.quaternion.setFromUnitVectors(axis, direction.normalize());
-      dummy.scale.set(.055, 3.5, .055); put(cables, index * 2 + cable);
+      dummy.scale.set(.055, 1.3, .055); put(cables, index * 2 + cable);
       for (let mount = 0; mount < 2; mount++) {
-        dummy.position.copy(start); dummy.position.z = z + (mount ? 1.17 : -1.17);
+        dummy.position.copy(start); dummy.position.z = z + (mount ? .60 : -.60);
         dummy.scale.set(.085, .12, .085); put(collars, index * 4 + cable * 2 + mount);
       }
     }
   }
   let firstVisibleRow = -1;
   function selectRows(z: number) {
-    const focusRow = Math.round((18 - 1.35 - z) / 3.65);
+    const focusRow = Math.round((PASSAGE_LINING.start - PASSAGE_LINING.wallOffset - z) / PASSAGE_LINING.pitch);
     const first = THREE.MathUtils.clamp(focusRow - Math.floor(visibleRows / 2), 0, rows - visibleRows);
     if (first === firstVisibleRow) return;
     firstVisibleRow = first;
@@ -181,14 +181,17 @@ export function createTunnelCutaway(scene: THREE.Scene, _renderer: THREE.WebGLRe
       }
       raycaster.setFromCamera(point, camera);
       hits.length = 0;
-      for (const mesh of relayShells) {
+      for (const mesh of probeShells) {
         let visible = true; for (let parent: THREE.Object3D | null = mesh; parent; parent = parent.parent) if (!parent.visible) visible = false;
         if (visible) { mesh.updateWorldMatrix(true, false); mesh.raycast(raycaster, hits); }
       }
       hits.sort((a, b) => a.distance - b.distance);
-      const relay = hits[0];
-      if (relay) focus.copy(relay.point);
-      else if (!liningIntersection(raycaster.ray, focus)) return present(null, dt);
+      const surface = hits[0];
+      // A gap is open space, not a hidden wall. Only an actual housing hit
+      // exposes the matching sparse service kit behind that housing.
+      if (!surface || surface.distance > 56) return present(null, dt);
+      const relay = surface.object.name === 'relay-shell-components' ? surface : null;
+      focus.copy(surface.point);
       view.copy(focus).applyMatrix4(camera.matrixWorldInverse);
       const focalLength = height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)));
       const radius = relay ? .88 : THREE.MathUtils.clamp(155 * -view.z / focalLength, 1.2, 3.9);
@@ -200,7 +203,7 @@ export function createTunnelCutaway(scene: THREE.Scene, _renderer: THREE.WebGLRe
       if (destroyed) return;
       destroyed = true; reset();
       for (const entry of originals) { entry.material.onBeforeCompile = entry.compile; entry.material.customProgramCacheKey = entry.key; entry.material.alphaToCoverage = entry.alpha; entry.material.needsUpdate = true; }
-      scene.remove(root); batches.forEach(mesh => mesh.dispose()); geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); templates.clear(); patched.clear(); relayShells.length = 0;
+      scene.remove(root); batches.forEach(mesh => mesh.dispose()); geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); templates.clear(); patched.clear(); probeShells.length = 0;
     },
   };
 }

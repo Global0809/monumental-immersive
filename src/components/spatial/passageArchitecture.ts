@@ -9,6 +9,7 @@ import { createCinematicMaterials } from '../../services/cinematicMaterials';
 import { sampleCinematicLight } from '../../services/cinematicLight';
 import { createPanelTelemetry } from '../../services/panelTelemetry';
 import { passageBayExpansion } from '../../services/passageEnvelope';
+import { PASSAGE_LINING, PASSAGE_LINING_CELLS } from '../../services/passageLining';
 
 type ArchitectureFrame = {
   active: number; progress: number; elapsed: number; reducedMotion: boolean; delta?: number;
@@ -77,34 +78,45 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     for (let i = 0; i < count; i++) { dummy.position.set(0, 0, 0); dummy.rotation.set(0, 0, 0); dummy.scale.set(1, 1, 1); fill(i, dummy); dummy.updateMatrix(); mesh.setMatrixAt(i, dummy.matrix); }
     mesh.instanceMatrix.needsUpdate = true; mesh.computeBoundingSphere(); parent.add(mesh); return mesh;
   }
-  // Three instanced draw calls form the entire spiral lining. Tangential ribs
-  // alternate depth; the broad dark inner layers make it feel like a structure.
-  const ringCount = 90, ringSides = 12;
-  function ribTransform(i: number, object: THREE.Object3D, layer: number) {
+  // Open structural ribs frame the current beyond the machine. Solid LED
+  // housings occupy four lanes per row; the remaining lanes are real openings.
+  const ringCount = PASSAGE_LINING.rows, ringSides = PASSAGE_LINING.lanes;
+  const ribCells = Array.from({ length: ringCount * ringSides }, (_, i) => i)
+    .filter(i => Math.floor(i / ringSides) % 2 === 0);
+  function ribTransform(i: number, object: THREE.Object3D, layer: 0 | 1) {
     const n = Math.floor(i / ringSides), j = i % ringSides, a = j * Math.PI / 6 + n * .058;
-    const z = 18 - n * 3.65 - (layer === 2 ? 1.35 : 0);
+    const z = PASSAGE_LINING.start - n * PASSAGE_LINING.pitch;
     const r = 8.8 + Math.sin(n * .46) * .34 + passageBayExpansion(z), span = 2 * r * Math.sin(Math.PI / 12) * .95;
-    const radius = r + (layer === 2 ? .17 : layer === 1 ? -.13 : 0);
+    const radius = r + (layer === 1 ? -.13 : 0);
     object.position.set(Math.cos(a) * radius, Math.sin(a) * radius, z);
     object.rotation.z = a + Math.PI / 2;
-    if (layer === 0) object.scale.set(span, .19, n % 4 === 0 ? .85 : .36);
+    if (layer === 0) object.scale.set(span, .12, n % 4 === 0 ? .40 : .20);
     if (layer === 1) object.scale.set(span * (j % 3 === 0 ? .78 : .24), .026, .035);
-    if (layer === 2) object.scale.set(span * .93, .66, 1.75);
   }
-  const structuralRibs = instanced(tunnel, ribAlloy, ringCount * ringSides, (i, o) => ribTransform(i, o, 0));
-  const conduits = instanced(tunnel, red, ringCount * ringSides, (i, o) => ribTransform(i, o, 1));
+  const structuralRibs = instanced(tunnel, ribAlloy, ribCells.length, (i, o) => ribTransform(ribCells[i], o, 0));
+  const conduits = instanced(tunnel, red, ribCells.length, (i, o) => ribTransform(ribCells[i], o, 1));
   const whiteColor = new THREE.Color(0xd5d2c6), redColor = new THREE.Color(0xff4d32);
   for (let i = 0; i < conduits.count; i++) conduits.setColorAt(i, redColor);
   // Use white base material so the per-instance ivory remains neutral.
   const conduitMaterial = material(new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
   conduits.material = conduitMaterial;
-  const wallFaces = instanced(tunnel, wallAlloy, ringCount * ringSides, (i, o) => ribTransform(i, o, 2));
+  const wallFaces = instanced(tunnel, wallAlloy, PASSAGE_LINING_CELLS.length, (i, o) => {
+    const cell = PASSAGE_LINING_CELLS[i], radius = cell.radius + .17;
+    o.position.set(Math.cos(cell.angle) * radius, Math.sin(cell.angle) * radius, cell.z);
+    o.rotation.z = cell.angle + Math.PI / 2;
+    o.scale.set(cell.span * PASSAGE_LINING.wallWidth, PASSAGE_LINING.wallThickness, PASSAGE_LINING.wallDepth);
+  });
   wallFaces.name = 'passage-led-lining';
   const structuralTint = new THREE.Color();
   for (let i = 0; i < structuralRibs.count; i++) {
     const level = .48 + ((i * 17 + Math.floor(i / ringSides) * 5) % 13) / 24;
     structuralTint.setRGB(level * .94, level, level * .97); structuralRibs.setColorAt(i, structuralTint);
-    structuralTint.multiplyScalar(i % 7 === 0 ? .77 : .56); wallFaces.setColorAt(i, structuralTint);
+  }
+  for (let i = 0; i < wallFaces.count; i++) {
+    const cell = PASSAGE_LINING_CELLS[i], source = cell.row * ringSides + cell.lane;
+    const level = .48 + ((source * 17 + cell.row * 5) % 13) / 24;
+    structuralTint.setRGB(level * .94, level, level * .97).multiplyScalar(source % 7 === 0 ? .77 : .56);
+    wallFaces.setColorAt(i, structuralTint);
   }
 
   // Depth-tested light bleed is attached to real conduits, rather than a
@@ -116,9 +128,9 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   }));
   haloMaterial.forceSinglePass = true;
   const haloPlane = geometry('signal-halo', () => new THREE.PlaneGeometry(1, 1));
-  const conduitHalos = new THREE.InstancedMesh(haloPlane, haloMaterial, ringCount * ringSides); instances.add(conduitHalos);
+  const conduitHalos = new THREE.InstancedMesh(haloPlane, haloMaterial, ribCells.length); instances.add(conduitHalos);
   for (let i = 0; i < conduitHalos.count; i++) {
-    ribTransform(i, dummy, 1); dummy.position.z += .20; dummy.scale.y = .28; dummy.scale.z = 1; dummy.scale.x *= 1.12; dummy.updateMatrix(); conduitHalos.setMatrixAt(i, dummy.matrix); conduitHalos.setColorAt(i, i % 5 === 0 ? whiteColor : redColor);
+    ribTransform(ribCells[i], dummy, 1); dummy.position.z += .20; dummy.scale.y = .28; dummy.scale.z = 1; dummy.scale.x *= 1.12; dummy.updateMatrix(); conduitHalos.setMatrixAt(i, dummy.matrix); conduitHalos.setColorAt(i, i % 5 === 0 ? whiteColor : redColor);
   }
   conduitHalos.instanceMatrix.needsUpdate = true; conduitHalos.computeBoundingSphere(); tunnel.add(conduitHalos);
 
