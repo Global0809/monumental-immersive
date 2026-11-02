@@ -69,29 +69,45 @@ const protectionShader = /* glsl */ `
   }
 `;
 
-/** One tiny tileable scalar texture: RGB = broad billows / folds / grain.
- * Two detail samples and one directional-gradient sample replace a costly
- * per-fragment procedural noise stack. */
+/** One tileable multiscale field: RGBA = billows / folds / fine turbulence /
+ * wisps. Small precomputed lattices avoid hashing for every octave/pixel.
+ * The wall still uses three samples; the detail is baked once, not evaluated
+ * as a procedural noise stack over every screen pixel on every frame. */
 function cloudTexture() {
-  const size = 256, pixels = new Uint8Array(size * size * 4);
+  const size = 512, pixels = new Uint8Array(size * size * 4);
   const hash = (x: number, y: number, salt: number) => {
     let value = Math.imul(x + salt * 37, 374761393) ^ Math.imul(y + salt * 17, 668265263);
     value = Math.imul(value ^ (value >>> 13), 1274126177);
     return ((value ^ (value >>> 16)) >>> 0) / 4294967295;
   };
-  const noise = (x: number, y: number, cells: number, salt: number) => {
-    const gx = x * cells / size, gy = y * cells / size, ix = Math.floor(gx), iy = Math.floor(gy);
-    const fx = gx - ix, fy = gy - iy, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
-    const a = hash(ix % cells, iy % cells, salt), b = hash((ix + 1) % cells, iy % cells, salt);
-    const c = hash(ix % cells, (iy + 1) % cells, salt), d = hash((ix + 1) % cells, (iy + 1) % cells, salt);
+  const lattice = (cells: number, salt: number) => {
+    const data = new Float32Array(cells * cells);
+    for (let y = 0; y < cells; y++) for (let x = 0; x < cells; x++) data[y * cells + x] = hash(x, y, salt);
+    const indices = new Uint16Array(size), next = new Uint16Array(size), weights = new Float32Array(size);
+    for (let i = 0; i < size; i++) {
+      const coordinate = i * cells / size, cell = Math.floor(coordinate), f = coordinate - cell;
+      indices[i] = cell; next[i] = (cell + 1) % cells;
+      weights[i] = f * f * f * (f * (f * 6 - 15) + 10);
+    }
+    return { cells, data, indices, next, weights };
+  };
+  const octaves = [lattice(8, 3), lattice(16, 19), lattice(24, 7), lattice(48, 23), lattice(96, 11), lattice(192, 31)];
+  const noise = (x: number, y: number, octave: typeof octaves[number]) => {
+    const { cells, data, indices, next, weights } = octave;
+    const ix = indices[x], iy = indices[y], nextX = next[x], nextY = next[y], sx = weights[x], sy = weights[y];
+    const a = data[iy * cells + ix], b = data[iy * cells + nextX];
+    const c = data[nextY * cells + ix], d = data[nextY * cells + nextX];
     return (a + (b - a) * sx) * (1 - sy) + (c + (d - c) * sx) * sy;
   };
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const index = (y * size + x) * 4;
-    pixels[index] = Math.round(noise(x, y, 8, 3) * 255);
-    pixels[index + 1] = Math.round(noise(x, y, 24, 7) * 255);
-    pixels[index + 2] = Math.round(noise(x, y, 64, 11) * 255);
-    pixels[index + 3] = 255;
+    const broad = noise(x, y, octaves[0]), billow = noise(x, y, octaves[1]);
+    const fold = noise(x, y, octaves[2]), curl = noise(x, y, octaves[3]);
+    const fine = noise(x, y, octaves[4]), micro = noise(x, y, octaves[5]);
+    pixels[index] = Math.round((broad * .79 + billow * .21) * 255);
+    pixels[index + 1] = Math.round((fold * .74 + curl * .26) * 255);
+    pixels[index + 2] = Math.round((fine * .72 + micro * .28) * 255);
+    pixels[index + 3] = Math.round((curl * .66 + fine * .24 + micro * .10) * 255);
   }
   const texture = new THREE.DataTexture(pixels, size, size, THREE.RGBAFormat);
   texture.name = 'Passage wormhole scalar field';
@@ -153,6 +169,7 @@ function streakGeometry() {
  * renderer, scene, camera, full-screen primitive, or render target. */
 export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
   const field = cloudTexture();
+  field.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
   const protectedRects = Array.from({ length: 5 }, () => new THREE.Vector4(-2, -2, -1, -1));
   const uniforms = {
     uCloud: { value: field }, uViewport: { value: new THREE.Vector4(0, 0, 1, 1) },
@@ -226,31 +243,42 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
         float angle = vTube.x, depth = vTube.y;
         float phase = depth * .018 + uFlow * .0024;
         vec2 domain = vec2(angle / 6.28318530718 * 2.0, phase);
-        vec3 first = texture2D(uCloud, domain).rgb;
-        vec3 second = texture2D(uCloud, domain * vec2(2.0, 1.73)
-          + vec2(first.r * .20, first.g * .13)).rgb;
-        float lightSlope = first.r - texture2D(uCloud, domain + vec2(.013, .008)).r;
+        vec4 first = texture2D(uCloud, domain);
+        vec2 curledDomain = domain * vec2(2.0, 1.73)
+          + vec2(first.r * .26 + first.g * .055, first.g * .17 - first.r * .04);
+        vec4 second = texture2D(uCloud, curledDomain);
+        vec4 lightSample = texture2D(uCloud, domain + vec2(.009, .006));
+        float lightSlope = (first.r - lightSample.r) * .76 + (first.g - lightSample.g) * .24;
         // Broken diagonal cloud arms and dark porous regions. All material
         // coordinates follow physical tube depth, rather than radial screen UV.
         float arm = pow(.5 + .5 * cos(angle * 2.0 - 1.45 - depth * .014 + (first.r - .5) * 2.0), 2.4);
-        float density = first.r * .56 + second.g * .28 + first.b * .16;
-        float torn = smoothstep(.27, .63, first.g * .55 + second.r * .45);
-        float mass = smoothstep(.28, .78, density + arm * .17) * mix(.36, 1.0, torn);
-        float folds = pow(clamp(density + arm * .17, 0.0, 1.0), 2.2);
-        float crest = pow(smoothstep(.60, .87, density + arm * .12), 2.0)
-          * smoothstep(.48, .80, first.g);
+        float density = first.r * .58 + second.g * .27 + first.b * .15;
+        float torn = smoothstep(.26, .64, first.g * .55 + second.r * .45);
+        float mass = smoothstep(.27, .77, density + arm * .17) * mix(.30, 1.0, torn);
+        float folds = pow(clamp(density + arm * .17, 0.0, 1.0), 2.05);
+        float crest = pow(smoothstep(.57, .84, density + arm * .12), 2.0)
+          * smoothstep(.44, .76, first.g);
         // A derivative along the authored light direction gives each billow a
         // bright face and a shadow. It costs one extra scalar texture sample.
-        float shade = clamp(.66 + lightSlope * 4.0, .24, 1.12) * (.68 + .32 * vBillow);
-        vec3 copper = mix(vec3(.017, .005, .002), vec3(.31, .095, .033), folds);
-        vec3 slate = mix(vec3(.003, .008, .014), vec3(.09, .155, .215), folds);
+        float shade = clamp(.65 + lightSlope * 5.6, .22, 1.24) * (.68 + .32 * vBillow);
+        vec3 copper = mix(vec3(.012, .004, .002), vec3(.35, .12, .047), folds);
+        vec3 slate = mix(vec3(.002, .006, .011), vec3(.085, .155, .225), folds);
         vec3 cloud = mix(slate, copper, smoothstep(.15, .70, arm));
         vec3 color = cloud * (.25 + mass * 1.08) * shade * (.89 + second.b * .22);
-        color += mix(vec3(.18, .27, .34), vec3(.69, .51, .33), arm) * crest * .18 * shade;
-        color += vec3(.60, .60, .53) * pow(crest, 3.0) * .08;
-        float filament = pow(max(0.0, 1.0 - abs(second.r - .54) * 13.0), 5.0)
-          * smoothstep(.46, .78, first.r) * torn;
-        color += vec3(.53, .49, .39) * filament * .05 * uDetail;
+        color += mix(vec3(.18, .30, .41), vec3(.76, .56, .36), arm) * crest * .24 * shade;
+        color += vec3(.66, .64, .55) * pow(crest, 3.0) * .10;
+        // Folded wisps follow the same advecting material as the large billows.
+        // Derivative-aware edges and distance rolloff avoid sparkling noise at
+        // the throat. These are lit creases, not a separate neon overlay.
+        float ridgeField = second.g + (first.a - .5) * .22 + (second.a - .5) * .13;
+        float ridgeAA = max(fwidth(ridgeField) * 1.2, .0025);
+        float crease = 1.0 - smoothstep(.008, .025 + ridgeAA, abs(ridgeField - .52));
+        float detailVisibility = (1.0 - smoothstep(62.0, 113.0, depth)) * uDetail;
+        float wisp = crease * smoothstep(.40, .70, first.r) * torn * detailVisibility;
+        vec3 rim = mix(vec3(.28, .47, .60), vec3(.80, .61, .39), arm);
+        color += rim * wisp * (.095 + crest * .09) * shade;
+        // Broad directional cavities retain clean shadows between bright folds.
+        color *= .82 + .18 * smoothstep(.22, .70, second.a);
         // Sparse Matrix-like traces are attached to the physical tube wall.
         vec2 codeDomain = vec2(angle / 6.28318530718 * 92.0, (depth + uFlow * .14) * .87);
         vec2 cell = floor(codeDomain);

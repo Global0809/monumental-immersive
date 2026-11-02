@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { PASSAGE_CHAPTERS } from '../../services/passageChapters';
 import { passageStationMotion, passagePose, passageReading } from '../../services/passageJourney';
-import { samplePassageAssembly } from '../../services/passageAssembly';
+import { samplePassageAssembly, type PassageAssembly } from '../../services/passageAssembly';
 import { createChapterAssemblyKit, type ChapterAssembly } from './chapterAssembly';
 import { createPassageThresholds } from './passageThresholds';
 import { createPassageInstruments } from './passageInstruments';
@@ -17,6 +17,7 @@ type ArchitectureFrame = {
   pointerActive?: boolean; cameraZ?: number;
   audio?: { rms: number; bass: number; mid: number; treble: number };
   inspection: { station: string | null; expanded: boolean; rotation: number };
+  assemblies?: readonly PassageAssembly[]; assemblyAges?: Float64Array;
 };
 type ImageSurface = THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial>;
 type Link = { body: THREE.Mesh; piston: THREE.Mesh; signal: THREE.Mesh };
@@ -24,6 +25,7 @@ type Assembly = {
   root: THREE.Group; media: ImageSurface; screen: THREE.Group; screenSlides: THREE.Mesh[]; exhibit: THREE.Group; movement: THREE.Group;
   housing: THREE.Group; editorial: THREE.Group; editorialBody: THREE.Mesh; editorialEdges: THREE.Mesh[]; editorialFinish: THREE.MeshStandardMaterial;
   mechanics: ChapterAssembly;
+  finish: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>; mediaReady: number;
   armRoot: THREE.Group; arms: Link[]; motors: THREE.Group[]; hub: THREE.Group;
   target: THREE.Vector3; inspection: number; turn: number;
 };
@@ -39,6 +41,10 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   const axis = new THREE.Vector3(0, 1, 0), worldTarget = new THREE.Vector3();
   const posters: (THREE.Texture | null)[] = PASSAGE_CHAPTERS.map(() => null), activeTextures = [...posters];
   const loadVersions = PASSAGE_CHAPTERS.map(() => 0);
+  // A real black map keeps the image shader compiled before asynchronous
+  // posters arrive. Loading a poster no longer adds a shader variant mid-reveal.
+  const emptyImage = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+  emptyImage.colorSpace = THREE.SRGBColorSpace; emptyImage.needsUpdate = true; textures.add(emptyImage);
   const collectionMounts: THREE.Group[] = [], collectionSurfaces: ImageSurface[] = [], collectionTextures: (THREE.Texture | null)[] = [null, null, null];
   let destroyed = false, collectionKey = '', collectionVersion = 0, pointerX = 0, pointerY = 0, readingAmount = 0;
   function geometry<T extends THREE.BufferGeometry>(key: string, make: () => T): T {
@@ -193,7 +199,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   instanced(entrance, alloy, 12, (i, o) => { const a = i * Math.PI / 6; o.position.set(Math.cos(a) * 8.05, Math.sin(a) * 8.05, -.7); o.rotation.z = a; o.scale.set(.65, .3, 2.0); });
 
   function imageSurface(parent: THREE.Object3D, width: number, height: number): ImageSurface {
-    const mat = material(new THREE.MeshBasicMaterial({ color: 0x111513, toneMapped: false, fog: false, side: THREE.FrontSide }));
+    const mat = material(new THREE.MeshBasicMaterial({ color: 0xffffff, map: emptyImage, toneMapped: false, fog: false, side: THREE.FrontSide }));
     const mesh = new THREE.Mesh(geometry(`image-${width}-${height}`, () => new THREE.PlaneGeometry(width, height)), mat); parent.add(mesh); return mesh;
   }
   function containImage(surface: ImageSurface, texture: THREE.Texture | null) {
@@ -225,7 +231,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     // One solid mounting plate supports the semantic DOM. Its face sits just
     // behind the text, with real thickness visible during the drawer approach.
     const editorial = new THREE.Group(); editorial.name = `${spec.id}-editorial-carrier`; editorial.position.fromArray(spec.panel.position); root.add(editorial);
-    const editorialFinish = material(charcoal.clone()); editorialFinish.transparent = true;
+    const editorialFinish = material(charcoal.clone());
     const editorialBody = box(editorial, 0, 0, -.14, 5.94, 7.6, .18, editorialFinish);
     const editorialEdges = [-1, 1].map(side => box(editorial, side * 2.99, 0, -.14, .045, 7.6, .2, editorialFinish));
     const screen = new THREE.Group(); screen.name = `${spec.id}-cultural-window`; screen.position.fromArray(spec.media.position); screen.rotation.y = spec.media.yaw; root.add(screen);
@@ -242,6 +248,25 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     for (const side of [-1, 1]) { box(screen, 0, side * (h / 2 + .06), -.01, w + .21, .075, .23, alloy); box(screen, side * (w / 2 + .06), 0, -.01, .075, h + .1, .23, graphite); }
     box(screen, -w / 2 + .66, -h / 2 - .125, .02, 1.25, .025, .025, red);
     const media = imageSurface(screen, w, h); media.position.z = .015;
+    // A fine registration trace belongs to the bezel, never the picture. It
+    // makes one quiet lap as the last clamps seat, then becomes fully absent.
+    const finishMaterial = material(new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, toneMapped: false,
+      uniforms: { uPhase: { value: 0 }, uSize: { value: new THREE.Vector2(w + .22, h + .22) } },
+      vertexShader: 'varying vec2 vUv; void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+      fragmentShader: `varying vec2 vUv; uniform float uPhase; uniform vec2 uSize;
+        void main(){
+          vec2 d=min(vUv,1.0-vUv)*uSize;
+          float edge=1.0-smoothstep(.014,.036,min(d.x,d.y));
+          float angle=atan((vUv.y-.5)*uSize.y,(vUv.x-.5)*uSize.x)/6.2831853+.5;
+          float tail=fract(angle-uPhase*1.15+1.0);
+          float trace=(1.0-smoothstep(.015,.24,tail))*pow(sin(clamp(uPhase,0.0,1.0)*3.1415926),2.0);
+          gl_FragColor=vec4(mix(vec3(1.0,.24,.10),vec3(1.0,.86,.68),trace),edge*trace*.58);
+          #include <colorspace_fragment>
+        }`,
+    }));
+    const finish = new THREE.Mesh(geometry(`finish-${w}`, () => new THREE.PlaneGeometry(w + .22, h + .22)), finishMaterial);
+    finish.name = `${spec.id}-lock-registration`; finish.position.z = .15; finish.visible = false; screen.add(finish);
     const spill = new THREE.Mesh(geometry('spill-plane', () => new THREE.PlaneGeometry(5, 3)), spillMat); spill.position.set(spec.media.position[0], -3.8, -.9); spill.rotation.x = -Math.PI * .32; root.add(spill);
     const exhibit = new THREE.Group(); exhibit.name = `${spec.id}-inspection`; exhibit.position.fromArray(spec.exhibit); root.add(exhibit);
     const movement = new THREE.Group(); exhibit.add(movement);
@@ -252,7 +277,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     const hub = new THREE.Group(); root.add(hub); hub.position.set(side * 7.15, -3.25, .18);
     ring(hub, .56, .045, alloy, Math.PI * 1.82); ring(hub, .39, .017, red, Math.PI * 1.7).rotation.y = .6;
     const core = new THREE.Mesh(geometry('hub-core', () => new THREE.IcosahedronGeometry(.18, 1)), ivory); hub.add(core);
-    return { root, media, screen, screenSlides, housing, editorial, editorialBody, editorialEdges, editorialFinish, exhibit, movement, mechanics, armRoot, arms, motors, hub, target: new THREE.Vector3(), inspection: 0, turn: 0 };
+    return { root, media, screen, screenSlides, housing, editorial, editorialBody, editorialEdges, editorialFinish, exhibit, movement, mechanics, finish, mediaReady: 0, armRoot, arms, motors, hub, target: new THREE.Vector3(), inspection: 0, turn: 0 };
   });
   // Small, recognisable objects remain inspectable. Their movement is below the
   // camera/assembly transform and can never displace text or playback controls.
@@ -289,9 +314,14 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   }
   function setActiveTexture(index: number, texture: THREE.Texture | null) {
     if (destroyed || !chapters[index]) return;
-    activeTextures[index] = texture; const surface = chapters[index].media, map = texture || posters[index]; containImage(surface, map);
+    activeTextures[index] = texture; const surface = chapters[index].media, map = texture || posters[index] || emptyImage; containImage(surface, map);
     if (surface.material.map === map) return;
-    surface.material.map = map; surface.material.color.set(map ? 0xffffff : 0x111513); surface.material.needsUpdate = true; onInvalidate();
+    const wasVideo = Boolean((surface.material.map as THREE.VideoTexture | null)?.isVideoTexture);
+    surface.material.map = map;
+    // Three's video path needs its sRGB decode define; ordinary poster swaps
+    // keep the same shader, but switching map type must refresh that define.
+    if (wasVideo !== Boolean((map as THREE.VideoTexture).isVideoTexture)) surface.material.needsUpdate = true;
+    onInvalidate();
   }
   function setCollection(urlsInput: string[]) {
     if (destroyed) return;
@@ -350,7 +380,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
       chapter.root.visible = pose.visible&&!state.compact; chapter.armRoot.visible = pose.visible&&!state.compact;
       if (!chapter.root.visible) { dummy.scale.setScalar(0); dummy.updateMatrix(); mechanismGlow.setMatrixAt(i, dummy.matrix); return; }
       chapter.root.position.fromArray(pose.position); chapter.root.rotation.set(...pose.rotation);
-      const assembly = samplePassageAssembly(i, state);
+      const assembly = state.assemblies?.[i] ?? samplePassageAssembly(i, state);
       const screenExtension = assembly.screen;
       // A straight drawer stays parallel to its rails. Tilting a full-width
       // screen during retraction drove its back corners into the rear housing.
@@ -362,8 +392,17 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
       chapter.housing.position.set(spec.media.position[0] * cassetteScale, spec.media.position[1] * cassetteScale, spec.media.position[2] - recess);
       chapter.screen.position.set(spec.media.position[0] * cassetteScale, spec.media.position[1] * cassetteScale, spec.media.position[2] - recess - (1 - screenExtension) * .96 * cassetteScale);
       chapter.screen.rotation.x = 0;
-      chapter.editorial.visible = assembly.content > .001;
-      chapter.editorialFinish.opacity = assembly.content;
+      // The backing is a solid drawer present before its typography powers on.
+      // It follows the same clearance envelope as the screen, not an opacity pop.
+      chapter.editorial.visible = true;
+      chapter.editorial.scale.setScalar(cassetteScale);
+      chapter.editorial.position.set(spec.panel.position[0] * cassetteScale, spec.panel.position[1] * cassetteScale, spec.panel.position[2] - recess);
+      if (chapter.media.material.map !== emptyImage) chapter.mediaReady = Math.min(1, chapter.mediaReady + dt / .42);
+      const power = THREE.MathUtils.smoothstep(assembly.screen, .28, .96) * THREE.MathUtils.smoothstep(chapter.mediaReady, 0, 1);
+      chapter.media.material.color.setScalar(power);
+      const finishAge = state.assemblyAges?.[i] ?? -1;
+      chapter.finish.visible = !reducedMotion && finishAge >= 0 && finishAge < 1.2 && assembly.content > .99;
+      chapter.finish.material.uniforms.uPhase.value = Math.max(0, finishAge / 1.2);
       chapter.screenSlides.forEach(slide => { slide.scale.z = .08 + screenExtension * 1.17; slide.position.z = -1.27 + slide.scale.z * .5; });
       const selected = inspection.expanded && inspection.station === spec.id, rate = reducedMotion ? 1 : 1 - Math.exp(-dt * 12);
       chapter.inspection += ((selected ? 1 : 0) - chapter.inspection) * rate; chapter.turn += ((selected ? inspection.rotation : 0) - chapter.turn) * rate;

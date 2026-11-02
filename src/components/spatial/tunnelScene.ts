@@ -10,8 +10,8 @@ import { sampleCinematicLight, type CinematicRect } from '../../services/cinemat
 import { getSpatialPreferences, subscribeSpatialPreferences } from '../../services/spatialPreferences';
 import { getTunnelFrame, getTunnelPanels, getTunnelInspection, subscribeTunnelFrame, subscribeTunnelPanels, subscribeTunnelInspection, tunnelCompact, type TunnelPanelBinding } from '../../services/tunnelJourney';
 import { PASSAGE_CHAPTERS } from '../../services/passageChapters';
-import { passagePose, passageContentOpacity, passageStationMotion, passageReading } from '../../services/passageJourney';
-import { samplePassageAssembly } from '../../services/passageAssembly';
+import { passagePose, passageStationMotion, passageReading } from '../../services/passageJourney';
+import { createAssemblyPresentation } from '../../services/assemblyPresentation';
 import { sampleRelayAutomation, type RelayAutomation } from '../../services/passageMechanisms';
 import { acquirePassageMedia, PASSAGE_MEDIA } from '../../services/passageMedia';
 import { bindPassageSound } from '../../services/passageSound';
@@ -48,6 +48,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   let scanHold=0,scanPlayed=false,lastScan=-Infinity,cutawayOptics=0;
   let pointerPresent=false,parallaxPresent=false,pointerPress=false,relayTime=0,warpDistance=0,warpPointerStrength=0;
   const parallax=createWormholeParallax();
+  const assemblyPresentation=createAssemblyPresentation();
   const finePointer=matchMedia('(hover: hover) and (pointer: fine)');
   // Compact is a content layout choice, not proof that the visitor is on touch.
   const wormholeMotionAllowed=()=>!state.reducedMotion&&(!compact||finePointer.matches);
@@ -104,6 +105,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     if(panel.style===null)el.removeAttribute('style');else el.setAttribute('style',panel.style);
     el.inert=panel.inert;if(panel.aria===null)el.removeAttribute('aria-hidden');else el.setAttribute('aria-hidden',panel.aria);
     el.removeAttribute('data-tunnel-mounted');el.removeAttribute('data-assembly-progress');el.removeAttribute('data-assembly-locked');panel.reveal=-1;panel.attached=false;
+    for(const name of ['screen','lock','content','settle'])el.removeAttribute(`data-assembly-${name}`);
   }
   function syncPanels(){
     const spatial=!compact&&!unavailable&&!state.reducedMotion;
@@ -136,11 +138,11 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     if(state.paused||compact||unavailable)return;
     for(const panel of panels.values()){
       if(!panel.attached)continue;
-      const motion=passageStationMotion(panel.binding.index,frame),assembly=samplePassageAssembly(panel.binding.index,frame),spec=PASSAGE_CHAPTERS[panel.binding.index];
+      const motion=passageStationMotion(panel.binding.index,frame),assembly=assemblyPresentation.poses[panel.binding.index],spec=PASSAGE_CHAPTERS[panel.binding.index];
       const [x,y,z]=spec.panel.position,s=Math.sin(motion.rotation[1]),c=Math.cos(motion.rotation[1]);
       panel.object.position.set(motion.position[0]+x*c+z*s,motion.position[1]+y,motion.position[2]-x*s+z*c);
       panel.object.rotation.set(...motion.rotation);
-      const opacity=state.room==='atrium'?passageContentOpacity(panel.binding.index,frame):0;
+      const opacity=state.room==='atrium'&&panel.binding.index===frame.active?assembly.content:0;
       const readable=opacity>.99&&assembly.lock>=.999&&!travel&&document.documentElement.dataset.spatialPassage!=='departing';
       const el=panel.binding.element;el.style.visibility=opacity>.001?'visible':'hidden';el.style.opacity=String(opacity);
       if(panel.reveal!==assembly.deployment){
@@ -148,14 +150,18 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
         // The semantic interface never becomes a sliced mechanical texture.
         el.style.clipPath='none';el.dataset.assemblyProgress=assembly.deployment.toFixed(3);
         el.dataset.assemblyLocked=String(assembly.lock>=.999);
+        el.dataset.assemblyScreen=assembly.screen.toFixed(4);
+        el.dataset.assemblyLock=assembly.lock.toFixed(4);
+        el.dataset.assemblyContent=assembly.content.toFixed(4);
         panel.reveal=assembly.deployment;
       }
+      el.dataset.assemblySettle=assemblyPresentation.ages[panel.binding.index].toFixed(4);
       if(el.inert!==!readable)el.inert=!readable;
       const aria=String(!readable);if(el.getAttribute('aria-hidden')!==aria)el.setAttribute('aria-hidden',aria);
     }
   }
   function updateMediaProtection(){
-    if(compact||state.reducedMotion||unavailable||state.room!=='atrium'||frame.active<0||samplePassageAssembly(frame.active,frame).screen<.01){setPassageMediaBounds(null);return;}
+    if(compact||state.reducedMotion||unavailable||state.room!=='atrium'||frame.active<0||assemblyPresentation.poses[frame.active].screen<.01){setPassageMediaBounds(null);return;}
     const screen=architecture.chapters[frame.active].media;
     screen.updateWorldMatrix(true,false);
     const w=screen.geometry.parameters.width/2,h=screen.geometry.parameters.height/2;
@@ -270,7 +276,8 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     scene.environmentRotation.y=.24+illumination.drift*.035;
     studySound.setActive(inPassage&&frame.active===3&&media.getSnapshot().ready&&!compact&&!state.reducedMotion&&!state.paused);
     const spectrum=studySound.sample();
-    architecture.update({active:frame.active,progress:frame.progress,elapsed,delta:dt,reducedMotion:state.reducedMotion||compact,compact,quality:preferences.quality,inspection,pointer,pointerActive:pointerPresent&&!pointerPress,cameraZ:camera.position.z,energy:scrollEnergy,audio:spectrum});
+    assemblyPresentation.step(frame,dt,state.reducedMotion||compact,inspection.expanded||!!travel);
+    architecture.update({active:frame.active,progress:frame.progress,elapsed,delta:dt,reducedMotion:state.reducedMotion||compact,compact,quality:preferences.quality,inspection,pointer,pointerActive:pointerPresent&&!pointerPress,cameraZ:camera.position.z,energy:scrollEnergy,audio:spectrum,assemblies:assemblyPresentation.poses,assemblyAges:assemblyPresentation.ages});
     host.dataset.passageAudioEnergy=spectrum.rms.toFixed(4);
     const lifeEnabled=inPassage&&!compact&&!state.reducedMotion;
     if(lifeEnabled&&!inspection.expanded)pulse.advance(dt);

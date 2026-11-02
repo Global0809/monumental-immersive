@@ -9,6 +9,27 @@ const clamp = (value: number) => Number.isFinite(value) ? Math.max(0, Math.min(1
 const ease = (value: number) => { const p = clamp(value); return p * p * p * (p * (p * 6 - 15) + 10); };
 const stage = (value: number, start: number, end: number) => ease((value - start) / (end - start));
 
+/** The one mechanism score. Its input is a linear phase, not an already eased
+ * camera distance: easing a camera, then deployment, then each joint made the
+ * old sequence race through most of its movement in a few scroll pixels.
+ * The renderer may bound this phase during a skipped scroll while retaining
+ * the exact same poses for the hardware, editorial face and sound crossings. */
+export function sampleAssemblyDeployment(value: number, visible = true): PassageAssembly {
+  const deployment = clamp(value);
+  return {
+    deployment,
+    release: stage(deployment, 0, .16),
+    spine: stage(deployment, .08, .40),
+    hinges: stage(deployment, .20, .52),
+    leaves: stage(deployment, .36, .68),
+    screen: stage(deployment, .58, .82),
+    lock: stage(deployment, .74, .94),
+    // Whole words resolve only after the physical doors and screen have cleared.
+    content: stage(deployment, .86, 1),
+    visible,
+  };
+}
+
 /** A physical assembly score shared by the machine, its editorial face and
  * sound crossings. All poses are reconstructed from native-scroll coordinates;
  * stopping, reversing and skipping cannot leave a timed sequence behind. */
@@ -17,17 +38,9 @@ export function samplePassageAssembly(index: number, frame: Pick<TunnelFrame, 'a
   const active = Math.max(-1, Math.min(5, Number.isFinite(frame.active) ? Math.floor(frame.active) : -1));
   const p = clamp(frame.progress), z = active < 0 ? tunnelEntranceZ(p) : tunnelChapterZ(active, p);
   const distance = z - PASSAGE_CHAPTERS[i].center[2];
-  const deployment = (1 - stage(distance, 11.8, 27.5)) * stage(distance, 8, 11.2);
-  return {
-    deployment,
-    release: stage(deployment, .015, .18),
-    spine: stage(deployment, .09, .49),
-    hinges: stage(deployment, .24, .67),
-    leaves: stage(deployment, .40, .82),
-    screen: stage(deployment, .61, .94),
-    lock: stage(deployment, .86, .995),
-    // Content waits for the plates to clear; no text is sliced into shutters.
-    content: stage(deployment, .95, .998),
-    visible: distance > -26 && distance < 88,
-  };
+  // Adjacent checkpoints meet at a stowed pose. Only this station's approach
+  // opens it; using its linear scroll fraction gives every actuation room to
+  // read. Retraction remains tied to physical clearance before camera crossing.
+  const deployment = active === i ? clamp(p / .38) * stage(distance, 8, 11.2) : 0;
+  return sampleAssemblyDeployment(deployment, distance > -26 && distance < 88);
 }

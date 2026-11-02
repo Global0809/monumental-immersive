@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { samplePassageAssembly } from '../src/services/passageAssembly.ts';
+import { sampleAssemblyDeployment, samplePassageAssembly } from '../src/services/passageAssembly.ts';
 import { passageContentOpacity } from '../src/services/passageJourney.ts';
 
 const stages = ['deployment','release','spine','hinges','leaves','screen','lock','content'] as const;
@@ -48,5 +48,50 @@ test('mechanical stages precede the image and fold before crossing the carrier',
       assert.ok(state.hinges >= state.leaves && state.leaves >= state.screen);
     }
     if (index < 5) assert.equal(samplePassageAssembly(index, { active: index, progress: 1 }).deployment, 0);
+  }
+});
+
+test('approach gives the mechanism a linear phase instead of compounding camera easing', () => {
+  for (let index = 0; index < 6; index++) for (let step = 0; step <= 38; step++) {
+    const progress = step / 100;
+    assert.ok(Math.abs(samplePassageAssembly(index, { active: index, progress }).deployment - progress / .38) < 1e-10);
+  }
+});
+
+test('major actuations have visible travel intervals and a deliberate order', () => {
+  const primary = ['spine', 'hinges', 'leaves', 'screen', 'lock'] as const;
+  let previousMiddle = -1;
+  for (const field of primary) {
+    const phases = Array.from({ length: 1001 }, (_, index) => index / 1000);
+    const start = phases.find(phase => sampleAssemblyDeployment(phase)[field] >= .1)!;
+    const end = phases.find(phase => sampleAssemblyDeployment(phase)[field] >= .9)!;
+    const middle = phases.find(phase => sampleAssemblyDeployment(phase)[field] >= .5)!;
+    assert.ok(end - start >= .10, `${field} must not snap through its main travel`);
+    assert.ok(middle > previousMiddle, `${field} has its own mechanical beat`);
+    previousMiddle = middle;
+  }
+  assert.equal(sampleAssemblyDeployment(0).content, 0);
+  assert.equal(sampleAssemblyDeployment(1).content, 1);
+});
+
+test('adjacent chapter boundaries keep every mechanism stowed without a pose discontinuity', () => {
+  const boundaries = [
+    [{ active: -1, progress: 1 }, { active: 0, progress: 0 }],
+    ...Array.from({ length: 5 }, (_, active) => [{ active, progress: 1 }, { active: active + 1, progress: 0 }]),
+  ];
+  for (const [before, after] of boundaries) for (let index = 0; index < 6; index++) {
+    const a = samplePassageAssembly(index, before), b = samplePassageAssembly(index, after);
+    assert.deepEqual(a, b);
+  }
+});
+
+test('resolved phase preserves exact endpoints, malformed input safety and clear apertures', () => {
+  for (const value of [NaN, -Infinity, -1, 0, .2, .6, .9, 1, 2, Infinity]) {
+    const state = sampleAssemblyDeployment(value, false);
+    assert.equal(state.visible, false);
+    for (const field of stages) assert.ok(Number.isFinite(state[field]) && state[field] >= 0 && state[field] <= 1);
+    if (state.content > 0) {
+      assert.equal(state.leaves, 1); assert.equal(state.screen, 1); assert.equal(state.hinges, 1);
+    }
   }
 });
