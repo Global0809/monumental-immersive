@@ -148,8 +148,15 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
   const wallGeometry = tubeGeometry();
   const wallMaterial = new THREE.ShaderMaterial({
     name: 'Passage wormhole dimensional wall', uniforms,
-    side: THREE.BackSide, transparent: true, depthWrite: false, depthTest: true,
-    blending: THREE.NormalBlending, fog: false,
+    // Queue this atmosphere before opaque metal: its curved, narrowing wall
+    // can cross distant straight service bays. Explicit normal-alpha factors
+    // preserve the cloud appearance while later metal draws fully cover it,
+    // without hiding or repositioning any mechanism or writing cloud depth.
+    side: THREE.BackSide, transparent: false, depthWrite: false, depthTest: true,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    blendEquationAlpha: THREE.AddEquation, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
+    fog: false,
     vertexShader: /* glsl */ `
       ${commonVertex}
       uniform sampler2D uCloud;
@@ -248,7 +255,7 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
   });
   const wall = new THREE.Mesh(wallGeometry, wallMaterial);
   wall.name = 'Passage wormhole finite curved tube';
-  wall.renderOrder = -40;
+  wall.renderOrder = -40; // First within the opaque queue; its alpha still blends.
   wall.frustumCulled = false; // CPU bounds cannot account for GPU displacement.
 
   const starsGeometry = streakGeometry();

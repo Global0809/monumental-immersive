@@ -5,6 +5,7 @@ import { chromium } from 'playwright';
 const base = process.env.SITE_URL || 'http://127.0.0.1:5184/';
 const output = process.env.WORMHOLE_OUTPUT || 'output/playwright/passage-wormhole';
 const recordVideo = process.env.WORMHOLE_VIDEO === '1';
+const failFast = process.env.WORMHOLE_FAIL_FAST === '1';
 const checks = [], errors = [], measurements = [], limitations = [];
 const chapters = ['entrance', 'world', 'time-machine', 'movies', 'music', 'culture', 'my-world'];
 await mkdir(output, { recursive: true });
@@ -40,7 +41,11 @@ async function instrument(context) {
     const contextState = gl => {
       if (!contexts.has(gl)) contexts.set(gl, {
         canvas: gl.canvas, draws: 0, program: null, vertexArray: null, framebuffer: null,
-        frames: [], programRecords: new Set(), buffer: null, vaos: new Map(),
+        frames: [], programRecords: new Set(), buffer: null, vaos: new Map(), depthClears: new Map(),
+        // Initial WebGL defaults; every subsequent state mutation is observed.
+        drawState: { blend: false, depthTest: false, depthWrite: true, depthFunc: 513,
+          blendEquationRGB: 32774, blendEquationAlpha: 32774,
+          blendSrcRGB: 1, blendDstRGB: 0, blendSrcAlpha: 1, blendDstAlpha: 0 },
       });
       return contexts.get(gl);
     };
@@ -67,6 +72,7 @@ async function instrument(context) {
         perspective: /projectionMatrix\s*\*/.test(vertex) && /(?:modelViewMatrix|viewMatrix)\s*\*/.test(vertex),
         // A vertex shader writing clip-space xy directly is the old backdrop.
         fullscreen: /gl_Position\s*=\s*vec4\(\s*position\.xy/.test(vertex),
+        sky: /background|sky|environment/i.test(/#define SHADER_NAME ([^\n]+)/.exec(combined)?.[1] || '') || /gl_Position\.z\s*=\s*gl_Position\.w/.test(vertex),
         vertexSource: vertex,
       };
     };
@@ -96,14 +102,19 @@ async function instrument(context) {
       const framebuffer = id(state.framebuffer), vao = id(state.vertexArray);
       const projection = matrixKey(program.matrices.projectionMatrix);
       const view = matrixKey(program.matrices.viewMatrix);
-      const signature = `${program.id}:${vao}:${framebuffer}:${method}:${count}:${instances}`;
+      const drawState = { ...state.drawState }, depthEpoch = state.depthClears.get(framebuffer) || 0;
+      const signature = `${program.id}:${vao}:${framebuffer}:${method}:${count}:${instances}:${Number(drawState.blend)}:${Number(drawState.depthWrite)}:${Number(drawState.depthTest)}:${depthEpoch}`;
       if (description.wormhole) frame.wormhole[signature] = { program: program.id, name: description.name, vao, framebuffer,
         method, count, instances, projection, view, perspective: description.perspective,
         fullscreen: description.fullscreen, elementBuffer: id(vaoState(state).elementBuffer),
+        order: frame.calls, drawState, depthEpoch,
         instanceAttributes: [...vaoState(state).attributes.values()].filter(attribute => attribute.divisor > 0).length,
         vertexBuffers: [...new Set([...vaoState(state).attributes.values()].map(attribute => id(attribute.buffer)))],
       };
-      else frame.baseline[signature] = { vao };
+      else frame.baseline[signature] = { vao, program: program.id, name: description.name, framebuffer,
+        projection, perspective: description.perspective, sky: description.sky,
+        order: frame.baseline[signature]?.order ?? frame.calls, lastOrder: frame.calls,
+        drawState, depthEpoch };
       if (description.wormhole) { frame.wormholeCalls++; if (instanced) frame.instancedCalls++; }
       else {
         frame.baselineFramebuffers.add(framebuffer);
@@ -125,6 +136,33 @@ async function instrument(context) {
       wrap('attachShader', (gl, [program, shader]) => programState(program).shaders.add(shader));
       wrap('linkProgram', (gl, [program]) => { const state = programState(program); state.links++; delete state.description; });
       wrap('useProgram', (gl, [program]) => { contextState(gl).program = program; });
+      const capability = (gl, name, enabled) => {
+        if (name === gl.BLEND) contextState(gl).drawState.blend = enabled;
+        if (name === gl.DEPTH_TEST) contextState(gl).drawState.depthTest = enabled;
+      };
+      wrap('enable', (gl, [name]) => capability(gl, name, true));
+      wrap('disable', (gl, [name]) => capability(gl, name, false));
+      wrap('depthMask', (gl, [value]) => { contextState(gl).drawState.depthWrite = value; });
+      wrap('depthFunc', (gl, [value]) => { contextState(gl).drawState.depthFunc = value; });
+      wrap('blendEquation', (gl, [value]) => {
+        Object.assign(contextState(gl).drawState, { blendEquationRGB: value, blendEquationAlpha: value });
+      });
+      wrap('blendEquationSeparate', (gl, [rgb, alpha]) => {
+        Object.assign(contextState(gl).drawState, { blendEquationRGB: rgb, blendEquationAlpha: alpha });
+      });
+      wrap('blendFunc', (gl, [source, destination]) => {
+        Object.assign(contextState(gl).drawState, { blendSrcRGB: source, blendDstRGB: destination, blendSrcAlpha: source, blendDstAlpha: destination });
+      });
+      wrap('blendFuncSeparate', (gl, [sourceRGB, destinationRGB, sourceAlpha, destinationAlpha]) => {
+        Object.assign(contextState(gl).drawState, { blendSrcRGB: sourceRGB, blendDstRGB: destinationRGB, blendSrcAlpha: sourceAlpha, blendDstAlpha: destinationAlpha });
+      });
+      const depthClear = gl => {
+        const state = contextState(gl), framebuffer = id(state.framebuffer);
+        state.depthClears.set(framebuffer, (state.depthClears.get(framebuffer) || 0) + 1);
+      };
+      wrap('clear', (gl, [mask]) => { if (mask & gl.DEPTH_BUFFER_BIT) depthClear(gl); });
+      wrap('clearBufferfv', (gl, [buffer]) => { if (buffer === gl.DEPTH) depthClear(gl); });
+      wrap('clearBufferfi', (gl, [buffer]) => { if (buffer === gl.DEPTH_STENCIL) depthClear(gl); });
       wrap('getUniformLocation', (gl, [program, name], location) => {
         if (location) uniformLocations.set(location, { program: programState(program), name });
       });
@@ -239,6 +277,33 @@ async function gpuEvidence(page, label) {
     new Set(submitted.map(draw => draw.framebuffer)).size === 1 &&
     submitted.every(draw => frame.baselineFramebuffers.includes(draw.framebuffer) && draw.projection && frame.baselineProjections.includes(draw.projection)) &&
     submitted.every(draw => !frame.baseline.some(existing => existing.vao === draw.vao)), detail);
+  const wall = submitted.find(draw => /dimensional wall/i.test(draw.name));
+  const streaks = submitted.find(draw => /instanced streaks/i.test(draw.name));
+  // Compare within this perspective scene and framebuffer. Post-processing,
+  // sky/background passes and transparent ornaments are deliberately excluded.
+  const opaqueStructure = (frame?.baseline || []).filter(draw => wall &&
+    draw.framebuffer === wall.framebuffer && draw.projection === wall.projection &&
+    draw.perspective && !draw.sky && draw.drawState.depthTest && draw.drawState.depthWrite && !draw.drawState.blend);
+  const occlusion = { wall, streaks, opaqueStructureCount: opaqueStructure.length,
+    firstOpaqueOrder: Math.min(...opaqueStructure.map(draw => draw.order)),
+    lastOpaqueOrder: Math.max(...opaqueStructure.map(draw => draw.lastOrder)),
+    opaqueDepthEpochs: [...new Set(opaqueStructure.map(draw => draw.depthEpoch))],
+  };
+  measurements.push({ name: `${label} actual GL atmosphere and metal compositing order`, ...occlusion });
+  await writeFile(`${output}/${label}-gpu-draw-order.json`, JSON.stringify({ ...occlusion, opaqueStructure }, null, 2));
+  check(`${label} draws the cloud wall before opaque structure in the same scene`,
+    wall && opaqueStructure.length >= 5 && opaqueStructure.every(draw => wall.order < draw.order && wall.depthEpoch === draw.depthEpoch), occlusion);
+  const wallState = wall?.drawState;
+  check(`${label} alpha blends the cloud wall without writing structural depth`, wallState &&
+    wallState.blend && wallState.depthTest && !wallState.depthWrite && [513, 515].includes(wallState.depthFunc) &&
+    wallState.blendEquationRGB === 32774 && wallState.blendEquationAlpha === 32774 &&
+    wallState.blendSrcRGB === 770 && wallState.blendDstRGB === 771 &&
+    wallState.blendSrcAlpha === 1 && wallState.blendDstAlpha === 771, occlusion);
+  const streakState = streaks?.drawState;
+  check(`${label} depth tests streaks against the already drawn opaque structure`, streakState &&
+    streakState.blend && streakState.depthTest && !streakState.depthWrite && [513, 515].includes(streakState.depthFunc) &&
+    streaks.framebuffer === wall.framebuffer && streaks.projection === wall.projection &&
+    opaqueStructure.length >= 5 && opaqueStructure.every(draw => streaks.order > draw.lastOrder && streaks.depthEpoch === draw.depthEpoch), occlusion);
   return programs;
 }
 
@@ -290,6 +355,7 @@ async function scenario(name, options, run) {
     checks.push({ name: `${name} completed`, passed: false, detail: error.stack });
     console.error(`FAIL ${name}: ${error.message}`);
     await screenshot(page, `failure-${name}`).catch(() => {});
+    if (failFast) throw error;
   } finally {
     clearTimeout(timeout);
     const video = page.video();

@@ -31,3 +31,11 @@ Final checks on 2026-11-02:
 - Opening, World, Music and compact screenshots reviewed directly; independent review found no obvious new carrier clipping, media overdraw or content collision. The first clouds were too creamy/stretched, so the final material uses darker porous masses, directional billow shading, restrained highlights and clearer narrow streaks.
 
 Evidence: `output/playwright/passage-wormhole-volume-final/` (six screenshots, results and compiled shader evidence) and `output/playwright/mechanism-clearance/verify/` (all six chapters and interaction checks). The existing entrance iris intentionally remains in front of the distant throat. Compact/reduced presentations are static. Prior release source is retained at `backup/volume-before-20261102`.
+
+## Mechanism clipping correction — 2026-11-03
+
+The user identified metal panels appearing sliced. The curved atmospheric tube can cross distant straight service bays, and its former transparent queue drew those crossing clouds after opaque metal. This was a compositing defect, not a camera near/far-plane failure.
+
+The cloud wall now draws before the opaque structure while retaining explicit normal-alpha blending, depth testing and disabled depth writes. Metal therefore remains complete in front of the atmosphere. Perspective geometry, source alpha, colours, flow, camera, protected text/media and the separately depth-tested streaks are unchanged. There is no additional pass, target or draw call.
+
+The focused GL probe now checks actual wall/metal/streak submission order, blending factors and depth state. Public v64 fails the new regression: its cloud wall was draw 92, after opaque structure at draws 1–91. The fixed build submits wall 1, opaque structure 2–92, then streaks 93, retaining the same structural depth buffer. All 39 focused checks and 55 six-chapter checks pass, with zero runtime/shader errors; production build and TypeScript pass. Evidence is in `output/playwright/wormhole-clipping-before/`, `output/playwright/wormhole-clipping-after/` and the mechanism-clearance captures. The change adds no draw calls.
