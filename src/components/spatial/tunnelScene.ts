@@ -3,6 +3,7 @@ import { createPassageReflectionEnvironment } from './passageLighting';
 import { createPassageWormhole } from './passageWormhole';
 import { CSS3DObject, CSS3DRenderer } from 'three/addons/renderers/CSS3DRenderer.js';
 import { createFrameCadence } from '../../services/frameCadence';
+import { createWormholeParallax } from '../../services/wormholeParallax';
 import { requestVisualFrame, cancelVisualFrame } from '../../services/visualFrame';
 import { createCinematicRenderer } from '../../services/cinematicRenderer';
 import { sampleCinematicLight, type CinematicRect } from '../../services/cinematicLight';
@@ -45,7 +46,11 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const pointer:[number,number]=[0,0],pointerTarget:[number,number]=[0,0];
   let previousZ=frame.z,scrollEnergy=0,lightCalm=Number(passageReading(frame));
   let scanHold=0,scanPlayed=false,lastScan=-Infinity,cutawayOptics=0;
-  let pointerPresent=false,pointerPress=false,relayTime=0,warpDistance=0,warpPointerStrength=0;
+  let pointerPresent=false,parallaxPresent=false,pointerPress=false,relayTime=0,warpDistance=0,warpPointerStrength=0;
+  const parallax=createWormholeParallax();
+  const finePointer=matchMedia('(hover: hover) and (pointer: fine)');
+  // Compact is a content layout choice, not proof that the visitor is on touch.
+  const wormholeMotionAllowed=()=>!state.reducedMotion&&(!compact||finePointer.matches);
   const pulse=createTunnelPulse();
   const relayCycle:RelayAutomation={open:false,part:null,pull:0,phase:0};
   const signalCadence=createTunnelSignalCadence();let automaticSignals=0;
@@ -216,11 +221,14 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   }
   function resize(){
     if(disposed)return;
+    const oldWidth=width,oldHeight=height,oldRatio=ratio;
     const bounds=host.getBoundingClientRect();width=Math.max(1,bounds.width);height=Math.max(1,bounds.height);
     compact=tunnelCompact(width,height,state.reducedMotion);
-    if(compact){signalCadence.reset();pulse.reset();pointerPress=false;relayTime=0;}
+    if(compact){signalCadence.reset();pulse.reset();pointerPress=false;relayTime=0;warpPointerStrength=0;}
+    if(!wormholeMotionAllowed()){parallaxPresent=false;parallax.reset();}
     ratio=Math.max(.8,Math.min(devicePixelRatio||1,compact?1:preferences.quality==='light'?1:1.4)-reduction);
-    renderer.setPixelRatio(ratio);renderer.setSize(width,height,false);css.setSize(width,height);
+    if(width!==oldWidth||height!==oldHeight||ratio!==oldRatio)renderer.setDrawingBufferSize(width,height,ratio);
+    if(width!==oldWidth||height!==oldHeight)css.setSize(width,height);
     camera.aspect=width/height;camera.updateProjectionMatrix();
     atmosphere.configure(height,ratio,compact,preferences.quality,Math.min(45,preferences.light));
     wormhole.configure(width,height,compact,preferences.quality);
@@ -229,9 +237,9 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   function render(time:number){
     request=0;if(disposed||unavailable||state.paused||document.hidden)return;
     if(!cadence.ready(time)){wake();return;}
-    const raw=lastTime?time-lastTime:16.7,dt=Math.min(raw/1000,.05);lastTime=time;
+    const resumed=lastTime===0,raw=lastTime?time-lastTime:16.7,dt=Math.min(raw/1000,.05);lastTime=time;
     const inPassage=state.room==='atrium';
-    if(inPassage&&!state.reducedMotion&&!inspection.expanded)elapsed+=dt;
+    if(inPassage&&wormholeMotionAllowed()&&!inspection.expanded)elapsed+=dt;
     if(raw<90){average=THREE.MathUtils.lerp(average,raw,.025);samples++;}
     if(samples>180&&average>25&&reduction<.3){reduction+=.15;samples=0;average=16.7;resize();}
     let done:(()=>void)|null=null;
@@ -246,6 +254,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     camera.lookAt(look);camera.updateMatrixWorld();
     const response=1-Math.exp(-dt*10);
     pointer[0]+=(pointerTarget[0]-pointer[0])*response;pointer[1]+=(pointerTarget[1]-pointer[1])*response;
+    if(resumed){previousZ=camera.position.z;scrollEnergy=0;}
     scrollEnergy+=(Math.min(1,Math.abs(camera.position.z-previousZ)/Math.max(dt,1/120)/45)-scrollEnergy)*(1-Math.exp(-dt*7));previousZ=camera.position.z;
     const chapter=PASSAGE_CHAPTERS[Math.max(0,frame.active)];
     const reading=passageReading(frame);
@@ -298,7 +307,10 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     if(atmosphere.points.visible&&!inspection.expanded)atmosphere.update(elapsed,dt,false,scrollEnergy,pulse.value);
     // A distant flow moves around the stable journey camera. Scroll adds
     // velocity, never an absolute offset that could jump on station changes.
-    const warpStill=compact||state.reducedMotion;
+    const warpStill=!wormholeMotionAllowed();
+    if(warpStill)parallax.reset();
+    else if(inPassage&&!inspection.expanded)parallax.step(dt,parallaxPresent?pointerTarget[0]:0,parallaxPresent?pointerTarget[1]:0);
+    wormhole.setParallax(parallax.state.x,parallax.state.y,parallax.state.vx,parallax.state.vy);
     if(inPassage&&!warpStill&&!inspection.expanded)warpDistance+=dt*scrollEnergy*.5;
     canvas.dataset.wormholeTime=(warpStill?0:elapsed).toFixed(3);
     canvas.dataset.wormholeEnergy=scrollEnergy.toFixed(3);
@@ -317,7 +329,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     wormhole.mesh.visible=inPassage;
     wormhole.setCamera(camera);
     wormhole.setProtectedRects(wormholeRects);
-    const warpPointerTarget=pointerPresent&&!overImage&&!overInterface&&!inspection.expanded&&!warpStill?1:0;
+    const warpPointerTarget=pointerPresent&&!compact&&!overImage&&!overInterface&&!inspection.expanded&&!warpStill?1:0;
     warpPointerStrength=warpStill?0:warpPointerStrength+(warpPointerTarget-warpPointerStrength)*(1-Math.exp(-dt*9));
     wormhole.update(warpStill?0:elapsed,warpStill?0:warpDistance,scrollEnergy,pointer,
       warpPointerStrength,lightCalm,warpStill);
@@ -335,7 +347,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     host.dataset.passageLife=lifeEnabled?'active':'off';host.dataset.passageRelayOpen=String(relayCycle.open);host.dataset.passageRelayPart=String(relayCycle.part??'');host.dataset.passageRelayPhase=relayCycle.phase.toFixed(3);host.dataset.passageSignal=String(automaticSignals);
     if(!ready){ready=true;options.onProject?.([]);options.onReady();}
     done?.();
-    if((inPassage&&!compact&&!state.reducedMotion)||(travel&&!travel.settled))wake();
+    if((inPassage&&wormholeMotionAllowed())||(travel&&!travel.settled))wake();
   }
   function cancelTravel(){if(travel)travel.done=null;travel=null;wake();}
   function lifeAvailable(){return !disposed&&!unavailable&&state.room==='atrium'&&!state.paused&&!state.reducedMotion&&!compact&&!inspection.expanded&&!travel;}
@@ -351,12 +363,14 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     });
   }
   function pointerMove(event:PointerEvent){
-    if(state.room!=='atrium'||state.paused||state.reducedMotion||compact||inspection.expanded)return;
-    pointerPresent=event.pointerType==='mouse'&&event.buttons===0;
+    if(state.room!=='atrium'||state.paused||state.reducedMotion||inspection.expanded)return;
+    pointerPresent=!compact&&event.pointerType==='mouse'&&event.buttons===0;
+    parallaxPresent=event.pointerType==='mouse';
     pointerTarget[0]=event.clientX/width*2-1;pointerTarget[1]=1-event.clientY/height*2;
+    if(compact)return;
     // Keep physical cursor coordinates even over protected UI. If scrolling
     // uncovers the scene beneath it, the next frame resumes at this position.
-    if(pointerOverInterface(event.clientX,event.clientY)){
+    if(isInterface(event.target)){
       atmosphere.input.leave();cutaway.reset();scanHold=0;scanPlayed=false;return;
     }
     atmosphere.input.move(pointerTarget[0],pointerTarget[1],event.timeStamp,event.pointerType==='touch');
@@ -373,9 +387,9 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     pointerMove(event);
   }
   function clearCutaway(){pointerPresent=false;scanHold=0;scanPlayed=false;cutaway.reset();host.dataset.passageCutaway='false';}
-  function leavePointer(){pointerPresent=false;atmosphere.input.leave();wake();}
+  function leavePointer(){pointerPresent=false;parallaxPresent=false;atmosphere.input.leave();wake();}
   function scrollPointer(){wake();}
-  function resetPointer(){atmosphere.input.reset();clearCutaway();pointerPress=false;pointerTarget[0]=pointerTarget[1]=pointer[0]=pointer[1]=0;}
+  function resetPointer(){atmosphere.input.reset();clearCutaway();pointerPress=false;parallaxPresent=false;pointerTarget[0]=pointerTarget[1]=0;}
   function visibility(){lastTime=0;cadence.reset();signalCadence.reset();resetPointer();if(document.hidden){cancelVisualFrame(request);request=0;}else wake();}
   function contextLost(event:Event){
     event.preventDefault();unavailable=true;signalCadence.reset();cancelVisualFrame(request);request=0;
@@ -389,6 +403,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const offMedia=media.subscribe(()=>{updateMediaTexture();wake();});
   const offViewer=subscribeViewer(syncCollection);
   const observer=new ResizeObserver(resize);observer.observe(host);
+  finePointer.addEventListener('change',resize);
   document.addEventListener('visibilitychange',visibility);document.addEventListener('pointerleave',leavePointer);window.addEventListener('scroll',scrollPointer,{passive:true});window.addEventListener('pointermove',pointerMove,{passive:true});window.addEventListener('pointerdown',pointerDown,{passive:true});window.addEventListener('pointerup',pointerUp,{passive:true});window.addEventListener('pointercancel',resetPointer,{passive:true});window.addEventListener('blur',resetPointer);
   canvas.addEventListener('webglcontextlost',contextLost);
   resize();registerPanels(getTunnelPanels());syncMedia();
@@ -419,7 +434,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
       if(disposed)return;disposed=true;if(travel)travel.done=null;travel=null;setPassageMediaBounds(null);
       cancelVisualFrame(request);observer.disconnect();panelObserver.disconnect();offFrame();offPanels();offInspection();offPreferences();offMedia();offViewer();
       panels.forEach(restorePanel);panels.clear();document.removeEventListener('visibilitychange',visibility);document.removeEventListener('pointerleave',leavePointer);window.removeEventListener('scroll',scrollPointer);window.removeEventListener('pointermove',pointerMove);window.removeEventListener('pointerdown',pointerDown);window.removeEventListener('pointerup',pointerUp);window.removeEventListener('pointercancel',resetPointer);window.removeEventListener('blur',resetPointer);
-      canvas.removeEventListener('webglcontextlost',contextLost);
+      canvas.removeEventListener('webglcontextlost',contextLost);finePointer.removeEventListener('change',resize);
       activeTexture?.dispose();cutaway.destroy();architecture.destroy();wormhole.dispose();atmosphere.dispose();signals.destroy();relays.destroy();signalCadence.reset();pulse.reset();environment.dispose();
       studySound.destroy();media.setSuspended('passage-scene-route',false);media.setSuspended('passage-scene-paused',false);media.setSuspended('passage-scene-reduced',false);mediaLease.release();
       cinematic.dispose();scene.clear();cssScene.clear();renderer.dispose();renderer.forceContextLoss();canvas.remove();css.domElement.remove();

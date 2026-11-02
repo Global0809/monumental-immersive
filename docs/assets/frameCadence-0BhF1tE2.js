@@ -1,0 +1,1 @@
+function i(a=60){const n=1e3/Math.max(1,a);let e=-1/0;return{ready(r){if((!Number.isFinite(e)||r-e>n*4)&&(e=r),r+.75<e)return!1;const t=Math.max(0,Math.floor((r+.75-e)/n));return e+=(t+1)*n,t>0&&e-r<n-.75&&(e+=n),!0},reset(){e=-1/0}}}export{i as c};

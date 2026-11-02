@@ -24,6 +24,28 @@ const tubeShader = /* glsl */ `
     float influence = exp(-dot(delta, delta) / (radius * radius)) * uPointerStrength;
     return (vec2(-delta.y, delta.x) * .14 + uPointer * .65) * influence;
   }
+  // One physical displacement field for the wall and every streak endpoint.
+  // Near folds travel substantially farther than the almost anchored throat;
+  // velocity adds a small torsional wake, without another clock or camera.
+  vec3 parallaxPoint(vec2 point, float depth) {
+    float nearLayer = 1.0 - smoothstep(8.0, 128.0, depth);
+    float weight = .03 + .97 * nearLayer * nearLayer;
+    vec2 radial = point - tubeCentre(depth);
+    float torsion = clamp(uParallaxVelocity.x * .012 - uParallaxVelocity.y * .008,
+      -.034906585, .034906585) * weight;
+    float turnCos = cos(torsion) - 1.0, turnSin = sin(torsion);
+    vec2 turn = vec2(radial.x * turnCos - radial.y * turnSin,
+      radial.x * turnSin + radial.y * turnCos);
+    vec2 displacement = -uParallax * vec2(3.3, 2.4) * weight;
+    vec2 wake = -uParallaxVelocity * .10 * weight;
+    // Lean the actual geometry in Z, with zero displacement near the camera
+    // and at the far seam. The input clamp bounds this to .7 world units.
+    float leanGate = smoothstep(10.0, 24.0, depth) * (1.0 - smoothstep(105.0, 130.0, depth));
+    float lean = clamp(dot(uParallax, radial / max(length(radial), .001)), -1.0, 1.0)
+      * .7 * weight * leanGate;
+    // Delta form preserves the original point exactly at zero input.
+    return vec3(point + turn + displacement + wake, -depth + lean);
+  }
 `;
 
 const protectionShader = /* glsl */ `
@@ -136,13 +158,14 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
     uCloud: { value: field }, uViewport: { value: new THREE.Vector4(0, 0, 1, 1) },
     uScreenSize: { value: new THREE.Vector2(1, 1) }, uFlow: { value: 0 }, uEnergy: { value: 0 },
     uPointer: { value: new THREE.Vector2() }, uPointerStrength: { value: 0 }, uAspect: { value: 1 },
+    uParallax: { value: new THREE.Vector2() }, uParallaxVelocity: { value: new THREE.Vector2() },
     uTanHalfFov: { value: Math.tan(THREE.MathUtils.degToRad(59 / 2)) },
     uCalm: { value: 0 }, uCompact: { value: 0 }, uDetail: { value: 1 },
     uProtectedRects: { value: protectedRects }, uProtectedCount: { value: 0 },
   };
   const commonVertex = /* glsl */ `
     uniform float uFlow, uEnergy, uPointerStrength, uAspect, uTanHalfFov;
-    uniform vec2 uPointer;
+    uniform vec2 uPointer, uParallax, uParallaxVelocity;
     ${tubeShader}
   `;
   const wallGeometry = tubeGeometry();
@@ -173,7 +196,7 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
         point += current(point, depth);
         vTube = vec2(angle, depth);
         vBillow = billow;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(point, -depth, 1.0);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(parallaxPoint(point, depth), 1.0);
       }
     `,
     fragmentShader: /* glsl */ `
@@ -274,7 +297,7 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
       vec3 streamPoint(float depth, float angle, float spread) {
         float curvedAngle = angle + sin(depth * .016 + angle * 2.0) * .075;
         vec2 point = tubeCentre(depth) + vec2(cos(curvedAngle), sin(curvedAngle)) * tubeRadius(depth) * spread;
-        return vec3(point + current(point, depth), -depth);
+        return parallaxPoint(point + current(point, depth), depth);
       }
       void main() {
         float speed = .74 + aSeed.w * .57;
@@ -283,8 +306,20 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
         float angle = aSeed.y * TAU;
         float spread = .16 + sqrt(aSeed.z) * .78;
         float streakLength = (.16 + pow(aSeed.w, 2.0) * 3.35) * (1.0 + uEnergy * .65);
-        vec4 head = projectionMatrix * modelViewMatrix * vec4(streamPoint(depth, angle, spread), 1.0);
-        vec4 tail = projectionMatrix * modelViewMatrix * vec4(streamPoint(depth + streakLength, angle, spread), 1.0);
+        vec4 headView = modelViewMatrix * vec4(streamPoint(depth, angle, spread), 1.0);
+        vec4 tailView = modelViewMatrix * vec4(streamPoint(depth + streakLength, angle, spread), 1.0);
+        float visibleDepth = -headView.z;
+        vStreak = position.xy;
+        vFade = smoothstep(1.0, 9.0, visibleDepth) * (1.0 - smoothstep(105.0, 129.0, visibleDepth));
+        vTint = mix(vec3(.56, .68, .77), vec3(.98, .73, .48), step(.61, aSeed.w));
+        // Fade against transformed view depth before perspective division.
+        // Invisible recycled tips cannot produce camera-plane clip triangles.
+        if (visibleDepth <= 1.0 || visibleDepth >= 129.0) {
+          gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+          return;
+        }
+        vec4 head = projectionMatrix * headView;
+        vec4 tail = projectionMatrix * tailView;
         vec2 delta = (head.xy / max(head.w, .1) - tail.xy / max(tail.w, .1)) * uViewport.zw;
         vec2 direction = normalize(delta + vec2(.00001, 0.0));
         // Preserve a small point-like head at depth; world-space anchors and
@@ -300,10 +335,7 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
           * uViewport.w / max(uScreenSize.y, 1.0);
         point.xy += across * position.x * width * 2.0 / max(uViewport.zw, vec2(1.0)) * point.w;
         gl_Position = point;
-        vStreak = position.xy;
-        vFade = smoothstep(1.0, 9.0, depth) * (1.0 - smoothstep(105.0, 129.0, depth));
         vFade *= .38 + pow(aSeed.w, 2.0) * .95;
-        vTint = mix(vec3(.56, .68, .77), vec3(.98, .73, .48), step(.61, aSeed.w));
       }
     `,
     fragmentShader: /* glsl */ `
@@ -339,7 +371,7 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
   mesh.name = 'Passage dimensional wormhole';
   mesh.add(wall, stars);
   scene.add(mesh);
-  let compact = false, disposed = false;
+  let compact = false, reducedMotion = false, disposed = false;
   const clamp = THREE.MathUtils.clamp;
   return {
     mesh,
@@ -349,6 +381,20 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
       mesh.position.z = camera.position.z;
       uniforms.uAspect.value = camera.aspect;
       uniforms.uTanHalfFov.value = Math.tan(THREE.MathUtils.degToRad(camera.fov * .5));
+    },
+    /** The owner supplies critically damped position and velocity, separate
+     * from the localized pointer current. No allocations or scene transforms. */
+    setParallax(x: number, y: number, vx: number, vy: number) {
+      if (disposed) return;
+      if (reducedMotion) {
+        uniforms.uParallax.value.set(0, 0);
+        uniforms.uParallaxVelocity.value.set(0, 0);
+        return;
+      }
+      uniforms.uParallax.value.set(Number.isFinite(x) ? clamp(x, -1, 1) : 0, Number.isFinite(y) ? clamp(y, -1, 1) : 0);
+      const velocity = uniforms.uParallaxVelocity.value;
+      velocity.set(Number.isFinite(vx) ? clamp(vx, -3, 3) : 0, Number.isFinite(vy) ? clamp(vy, -3, 3) : 0);
+      if (velocity.lengthSq() > 9) velocity.setLength(3);
     },
     configure(width: number, height: number, isCompact: boolean, quality: PassageWormholeQuality) {
       if (disposed) return;
@@ -375,10 +421,19 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
     },
     update(time: number, travelDistance: number, energy: number, pointer: readonly [number, number], pointerStrength: number, calm: number, reduced: boolean) {
       if (disposed) return;
-      const still = compact || reduced;
+      reducedMotion = reduced;
+      // The controller separates touch fallback from a narrow mouse desktop.
+      // Compact controls detail density; the explicit flag owns motion.
+      const still = reduced;
+      if (still) {
+        uniforms.uParallax.value.set(0, 0);
+        uniforms.uParallaxVelocity.value.set(0, 0);
+      }
       // Pause-aware time plus integrated travel; changing energy cannot jump
       // the phase as it would when multiplying an absolute clock by speed.
-      uniforms.uFlow.value = still ? 0 : Math.max(0, time) * 8.4 + Math.max(0, travelDistance) * 1.7;
+      // Hold the last atmospheric pose when changing presentation modes;
+      // resetting its phase here made resize/reduced-motion toggles jump.
+      if (!still) uniforms.uFlow.value = Math.max(0, time) * 8.4 + Math.max(0, travelDistance) * 1.7;
       uniforms.uEnergy.value = still ? 0 : clamp(energy, 0, 1);
       uniforms.uPointer.value.set(still ? 0 : clamp(pointer[0], -1, 1), still ? 0 : clamp(pointer[1], -1, 1));
       uniforms.uPointerStrength.value = still ? 0 : clamp(pointerStrength, 0, 1);

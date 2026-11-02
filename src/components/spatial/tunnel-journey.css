@@ -126,8 +126,8 @@ html[data-spatial-passage=departing] .tunnel-css-world{opacity:0;pointer-events:
 .tunnel-compact-window>button:hover{background:#efeee9;color:#080909}
 .tunnel-compact-media figcaption{font-size:11px;line-height:1.6;letter-spacing:.015em;color:#c1c6ba;margin:11px 0 0;padding:0 5px 4px;max-width:70ch;min-height:53px}
 .tunnel-compact-media figcaption>span{display:block;position:absolute;top:12px;left:12px;right:12px;max-width:max-content;padding:7px 10px;background:#080909ed;color:#efeee9;pointer-events:none}
-.tunnel-journey[data-compact=true] .tunnel-hero-checkpoint{height:auto;min-height:100svh}
-.tunnel-journey[data-compact=true] .tunnel-hero{position:relative;min-height:100svh;opacity:1;transform:none;padding-bottom:150px;isolation:isolate}
+.tunnel-journey[data-compact=true] .tunnel-hero-checkpoint{height:auto;min-height:calc(100svh - var(--header))}
+.tunnel-journey[data-compact=true] .tunnel-hero{position:relative;min-height:calc(100svh - var(--header));opacity:1;transform:none;padding-bottom:150px;isolation:isolate}
 .tunnel-journey[data-compact=true] .tunnel-hero::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(90deg,#080909b8 0%,#08090980 40%,#08090918 75%,transparent),linear-gradient(0deg,#08090988,transparent 50%)}
 .tunnel-journey[data-compact=true] .tunnel-hero h1{text-shadow:2px 4px 14px #000c}
 .tunnel-journey[data-compact=true] .tunnel-hero-copy>p{max-width:36ch;padding:10px 12px;margin-left:-12px;background:#080909d9}

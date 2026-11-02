@@ -6,13 +6,14 @@ const base = process.env.SITE_URL || 'http://127.0.0.1:5184/';
 const output = process.env.WORMHOLE_OUTPUT || 'output/playwright/passage-wormhole';
 const recordVideo = process.env.WORMHOLE_VIDEO === '1';
 const failFast = process.env.WORMHOLE_FAIL_FAST === '1';
+const selectedScenarios = new Set((process.env.WORMHOLE_SCENARIOS || '').split(',').filter(Boolean));
 const checks = [], errors = [], measurements = [], limitations = [];
 const chapters = ['entrance', 'world', 'time-machine', 'movies', 'music', 'culture', 'my-world'];
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ channel: process.env.PLAYWRIGHT_CHANNEL || 'chrome', headless: true });
 const address = route => { const url = new URL(base); url.hash = route; return url.href; };
 const canvas = page => page.locator('canvas.spatial-world-canvas');
-const persistResults = () => writeFile(`${output}/results.json`, JSON.stringify({ base, checkedAt: new Date().toISOString(), checks, errors, measurements, limitations }, null, 2));
+const persistResults = () => writeFile(`${output}/results.json`, JSON.stringify({ base, checkedAt: new Date().toISOString(), scenarios: [...selectedScenarios], checks, errors, measurements, limitations }, null, 2));
 process.once('SIGINT', async () => { await persistResults(); await browser.close(); process.exit(130); });
 
 function check(name, passed, detail = '') {
@@ -57,7 +58,7 @@ async function instrument(context) {
     const programState = program => {
       if (!program) return null;
       if (!programs.has(program)) programs.set(program, {
-        id: id(program), shaders: new Set(), links: 0, matrices: {}, draws: 0,
+        id: id(program), shaders: new Set(), links: 0, matrices: {}, vectors: {}, vectorUploads: {}, scalars: {}, draws: 0,
       });
       return programs.get(program);
     };
@@ -107,7 +108,7 @@ async function instrument(context) {
       if (description.wormhole) frame.wormhole[signature] = { program: program.id, name: description.name, vao, framebuffer,
         method, count, instances, projection, view, perspective: description.perspective,
         fullscreen: description.fullscreen, elementBuffer: id(vaoState(state).elementBuffer),
-        order: frame.calls, drawState, depthEpoch,
+        order: frame.calls, drawState, depthEpoch, vectors: { ...program.vectors }, vectorUploads: { ...program.vectorUploads }, flow: program.scalars.uFlow,
         instanceAttributes: [...vaoState(state).attributes.values()].filter(attribute => attribute.divisor > 0).length,
         vertexBuffers: [...new Set([...vaoState(state).attributes.values()].map(attribute => id(attribute.buffer)))],
       };
@@ -170,6 +171,18 @@ async function instrument(context) {
         const uniform = uniformLocations.get(location);
         if (uniform && /^(projectionMatrix|viewMatrix)$/.test(uniform.name)) uniform.program.matrices[uniform.name] = Array.from(values);
       });
+      const observeVector = (location, values) => {
+        const uniform = uniformLocations.get(location);
+        if (!uniform || !/^(uParallax|uParallaxVelocity)$/.test(uniform.name)) return;
+        uniform.program.vectors[uniform.name] = values;
+        uniform.program.vectorUploads[uniform.name] = (uniform.program.vectorUploads[uniform.name] || 0) + 1;
+      };
+      wrap('uniform2f', (gl, [location, x, y]) => observeVector(location, [x, y]));
+      wrap('uniform2fv', (gl, [location, values, offset = 0]) => observeVector(location, Array.from(values).slice(offset, offset + 2)));
+      wrap('uniform1f', (gl, [location, value]) => {
+        const uniform = uniformLocations.get(location);
+        if (uniform?.name === 'uFlow') uniform.program.scalars.uFlow = value;
+      });
       wrap('bindFramebuffer', (gl, [target, framebuffer]) => {
         if (target === gl.FRAMEBUFFER || target === gl.DRAW_FRAMEBUFFER) contextState(gl).framebuffer = framebuffer;
       });
@@ -194,6 +207,15 @@ async function instrument(context) {
     const active = () => [...contexts.values()].filter(state => state.canvas?.isConnected && state.canvas.classList.contains('spatial-world-canvas'));
     window.__wormholeAudit = {
       draws: () => active().reduce((sum, state) => sum + state.draws, 0),
+      parallax: (since = null) => active().flatMap(state => {
+        const frames = state.frames.filter(frame => frame.wormholeCalls > 0 && (since === null || frame.time >= since));
+        const selected = since === null ? frames.slice(-1) : frames;
+        return selected.map(frame => ({ time: frame.time, rafTime: frame.rafTime,
+          draws: Object.values(frame.wormhole).map(draw => ({ name: draw.name, vectors: draw.vectors,
+            projection: draw.projection, uploads: draw.vectorUploads, flow: draw.flow,
+          })),
+        }));
+      }),
       snapshot: (since = 0) => active().map(state => ({
         draws: state.draws,
         programs: [...state.programRecords].filter(program => describeProgram(program).wormhole).map(program => ({
@@ -230,6 +252,7 @@ async function state(page) {
       time: Number(element?.dataset.wormholeTime), energy: Number(element?.dataset.wormholeEnergy),
       mode: element?.dataset.wormholeMode, pointer: (element?.dataset.wormholePointer || '').split(',').map(Number),
       wormholeDraws: Number(element?.dataset.wormholeDraws), draws: window.__wormholeAudit.draws(),
+      gpuParallax: window.__wormholeAudit.parallax(),
       scrollY, camera: camera?.style.transform || '', chapter: host?.dataset.passageChapter,
       reading: host?.dataset.passageReading, panelTransform: activePanel?.style.transform || '',
       canvasCount: document.querySelectorAll('canvas.spatial-world-canvas').length,
@@ -238,6 +261,23 @@ async function state(page) {
     };
   });
 }
+
+const parallaxDraws = value => value.gpuParallax?.at(-1)?.draws || [];
+const parallaxPosition = value => parallaxDraws(value).find(draw => /dimensional wall/i.test(draw.name))?.vectors.uParallax || [];
+const vectorDistance = (a, b) => a.length === 2 && b.length === 2 ? Math.hypot(a[0] - b[0], a[1] - b[1]) : Infinity;
+const parallaxValues = value => parallaxDraws(value).map(draw => ({ name: draw.name, vectors: draw.vectors }));
+const validParallax = value => parallaxDraws(value).length === 2 && parallaxDraws(value).every(draw => {
+  const position = draw.vectors.uParallax || [], velocity = draw.vectors.uParallaxVelocity || [];
+  return position.length === 2 && velocity.length === 2 && position.every(Number.isFinite) && velocity.every(Number.isFinite) &&
+    position.every(axis => Math.abs(axis) <= 1.001) && Math.hypot(...velocity) <= 3.001 &&
+    draw.uploads.uParallax >= 1 && draw.uploads.uParallaxVelocity >= 1;
+});
+const maxParallaxStep = frames => {
+  const positions = frames.map(frame => parallaxPosition({ gpuParallax: [frame] })).filter(value => value.length === 2);
+  return Math.max(0, ...positions.slice(1).map((position, index) => vectorDistance(position, positions[index])));
+};
+const sameReadingFrame = (a, b) => a.camera !== '' && a.camera === b.camera && a.panelTransform === b.panelTransform &&
+  a.chapter === b.chapter && a.reading === 'true' && b.reading === 'true' && Math.abs(a.scrollY - b.scrollY) < 1;
 
 async function screenshot(page, name) {
   await page.screenshot({ path: `${output}/${name}.png` });
@@ -332,6 +372,7 @@ async function sampleFrames(page) {
 }
 
 async function scenario(name, options, run) {
+  if (selectedScenarios.size && !selectedScenarios.has(name)) return;
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 }, reducedMotion: 'no-preference',
     ...(recordVideo && name === 'desktop-flow' ? { recordVideo: { dir: `${output}/video`, size: { width: 1440, height: 900 } } } : {}),
@@ -397,7 +438,10 @@ try {
     await page.getByRole('button', { name: 'Close The World exhibit', exact: true }).waitFor();
     await page.waitForTimeout(200);
     const inspected = await state(page); await page.waitForTimeout(700);
-    check('Exhibit inspection freezes wormhole time', (await state(page)).time === inspected.time, inspected.time);
+    const inspectionHeld = await state(page);
+    check('Exhibit inspection freezes wormhole time', inspectionHeld.time === inspected.time, inspected.time);
+    check('Exhibit inspection freezes actual GPU parallax and velocity uniforms', validParallax(inspected) && validParallax(inspectionHeld) &&
+      JSON.stringify(parallaxValues(inspected)) === JSON.stringify(parallaxValues(inspectionHeld)), { inspected: parallaxValues(inspected), held: parallaxValues(inspectionHeld) });
     await page.keyboard.press('Escape');
     await page.waitForFunction(time => Number(document.querySelector('canvas.spatial-world-canvas')?.dataset.wormholeTime) > time + .15, inspected.time);
     check('Closing inspection resumes the flow', (await state(page)).time > inspected.time);
@@ -405,6 +449,8 @@ try {
     await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); });
     const hidden = await state(page); await page.waitForTimeout(650); const held = await state(page);
     check('Simulated hidden visibility freezes time and WebGL drawing', held.time === hidden.time && held.draws === hidden.draws, { hidden, held });
+    check('Hidden visibility retains the last submitted GPU parallax without advancing it', validParallax(hidden) && validParallax(held) &&
+      JSON.stringify(parallaxValues(hidden)) === JSON.stringify(parallaxValues(held)), { hidden: parallaxValues(hidden), held: parallaxValues(held) });
     await page.evaluate(() => { delete document.hidden; document.dispatchEvent(new Event('visibilitychange')); });
     await page.waitForFunction(time => Number(document.querySelector('canvas.spatial-world-canvas')?.dataset.wormholeTime) > time + .1, held.time);
     const resumed = await state(page);
@@ -433,6 +479,119 @@ try {
     check('Returning to Passage resumes animation', (await state(page)).time > returned.time);
   });
 
+  await scenario('desktop-parallax', {}, async page => {
+    await station(page, 'The World', 'world');
+    await page.mouse.move(720, 450, { steps: 8 }); await page.waitForTimeout(850);
+    const center = await state(page);
+    check('Both rendered wormhole passes receive bounded GPU parallax uniforms', validParallax(center) &&
+      Math.hypot(...parallaxPosition(center)) < .08, parallaxValues(center));
+    await screenshot(page, '07-parallax-center');
+
+    const started = await page.evaluate(() => performance.now());
+    await page.mouse.move(120, 490, { steps: 12 }); await page.waitForTimeout(750);
+    const left = await state(page); await screenshot(page, '08-parallax-left');
+    await page.mouse.move(1320, 490, { steps: 18 }); await page.waitForTimeout(750);
+    const right = await state(page); await screenshot(page, '09-parallax-right');
+    const sweep = await page.evaluate(since => window.__wormholeAudit.parallax(since), started);
+    measurements.push({ name: 'Pointer center and side views at The World reading hold', center, left, right,
+      maximumSubmittedStep: maxParallaxStep(sweep), note: 'Screenshots retain the live flow clock; only pointer input changes. They are not frozen-time pixel comparisons.' });
+    await writeFile(`${output}/desktop-parallax-sweep.json`, JSON.stringify(sweep, null, 2));
+    check('Pointer left and right reach signed actual GPU parallax in both passes', validParallax(left) && validParallax(right) &&
+      parallaxDraws(left).every(draw => draw.vectors.uParallax[0] < -.35) &&
+      parallaxDraws(right).every(draw => draw.vectors.uParallax[0] > .35), { left: parallaxValues(left), right: parallaxValues(right) });
+    check('Parallax preserves the reading camera, DOM panel and native scroll', sameReadingFrame(center, left) && sameReadingFrame(center, right), { center, left, right });
+    check('GPU parallax uses bounded velocity and intermediate rendered positions', sweep.length >= 8 &&
+      sweep.every(frame => validParallax({ gpuParallax: [frame] })) &&
+      sweep.some(frame => frame.draws.some(draw => Math.hypot(...(draw.vectors.uParallaxVelocity || [])) > .08)) &&
+      maxParallaxStep(sweep) < .35, { renderedSamples: sweep.length, maximumSubmittedStep: maxParallaxStep(sweep) });
+
+    const index = await page.getByRole('button', { name: 'Open Index', exact: true }).boundingBox();
+    assert.ok(index, 'The visible Index button supplies the UI-crossing target');
+    const crossingStarted = await page.evaluate(() => performance.now());
+    await page.mouse.move(index.x + index.width / 2, index.y + index.height / 2, { steps: 12 });
+    await page.waitForTimeout(650);
+    const overUI = await state(page);
+    const crossing = await page.evaluate(since => window.__wormholeAudit.parallax(since), crossingStarted);
+    check('Crossing onto interface controls preserves directional GPU parallax', validParallax(overUI) &&
+      parallaxDraws(overUI).every(draw => draw.vectors.uParallax[0] > .45 && draw.vectors.uParallax[1] > .45) &&
+      crossing.every(frame => parallaxPosition({ gpuParallax: [frame] })[0] > .3) && sameReadingFrame(center, overUI),
+    { overUI: parallaxValues(overUI), renderedSamples: crossing.length });
+
+    await page.mouse.move(1320, 500, { steps: 12 }); await page.waitForTimeout(750);
+    const beforePress = await state(page), pressStarted = await page.evaluate(() => performance.now());
+    await page.mouse.down(); await page.waitForTimeout(320); const pressed = await state(page);
+    await page.mouse.up(); await page.waitForTimeout(320); const released = await state(page);
+    const press = await page.evaluate(since => window.__wormholeAudit.parallax(since), pressStarted);
+    check('Click hold and release retain GPU parallax without snapping or resetting', [beforePress, pressed, released].every(validParallax) &&
+      vectorDistance(parallaxPosition(beforePress), parallaxPosition(pressed)) < .06 &&
+      vectorDistance(parallaxPosition(pressed), parallaxPosition(released)) < .06 && maxParallaxStep(press) < .12 &&
+      sameReadingFrame(center, released), { before: parallaxValues(beforePress), pressed: parallaxValues(pressed), released: parallaxValues(released), maximumSubmittedStep: maxParallaxStep(press) });
+
+    const leaveStarted = await page.evaluate(() => performance.now());
+    await page.mouse.move(-30, 500); await page.waitForTimeout(1100);
+    const leftPage = await state(page), decay = await page.evaluate(since => window.__wormholeAudit.parallax(since), leaveStarted);
+    const startMagnitude = Math.hypot(...parallaxPosition(released));
+    const decayMagnitudes = decay.map(frame => Math.hypot(...parallaxPosition({ gpuParallax: [frame] })));
+    await writeFile(`${output}/desktop-parallax-interactions.json`, JSON.stringify({ crossing, press, decay }, null, 2));
+    check('Leaving the viewport eases GPU parallax through intermediate positions to rest', validParallax(leftPage) && decay.length >= 8 &&
+      decayMagnitudes.some(value => value > startMagnitude * .15 && value < startMagnitude * .85) &&
+      Math.hypot(...parallaxPosition(leftPage)) < .06 && maxParallaxStep(decay) < .35 && sameReadingFrame(center, leftPage),
+    { before: parallaxValues(released), after: parallaxValues(leftPage), renderedSamples: decay.length, maximumSubmittedStep: maxParallaxStep(decay) });
+    limitations.push('Pointer side-view screenshots use the live animation clock and unchanged reading camera/DOM. GPU uniform histories establish input continuity; these captures do not isolate parallax with a frozen-time image difference.');
+  });
+
+  await scenario('narrow-desktop', { viewport: { width: 1100, height: 900 }, hasTouch: false }, async page => {
+    const input = await page.evaluate(() => ({
+      fineHover: matchMedia('(hover: hover) and (pointer: fine)').matches,
+      coarse: matchMedia('(pointer: coarse)').matches,
+      compactLayout: document.querySelector('.tunnel-journey')?.getAttribute('data-compact'),
+    }));
+    check('Narrow desktop uses compact content layout with a fine hover pointer', input.fineHover && !input.coarse && input.compactLayout === 'true', input);
+    await page.mouse.move(550, 450); await page.waitForTimeout(500);
+    const first = await state(page); await page.waitForTimeout(700); const second = await state(page);
+    const flowBefore = parallaxDraws(first), flowAfter = parallaxDraws(second);
+    check('Narrow desktop keeps flow active in the actual GPU uniforms', first.mode === 'flow' && second.mode === 'flow' &&
+      second.time > first.time + .2 && second.draws > first.draws && flowBefore.length === 2 && flowAfter.length === 2 &&
+      flowAfter.every(draw => Number.isFinite(draw.flow) && draw.flow > flowBefore.find(before => before.name === draw.name)?.flow + .03),
+    { first: flowBefore, second: flowAfter, firstTime: first.time, secondTime: second.time });
+    const hintClearance = await page.evaluate(() => {
+      const hint = document.querySelector('.tunnel-hero-bottom button').getBoundingClientRect();
+      const nav = document.querySelector('.tunnel-wayfinder').getBoundingClientRect();
+      return { hintTop: hint.top, hintBottom: hint.bottom, hintHeight: hint.height, navigationTop: nav.top };
+    });
+    check('Narrow desktop scroll hint clears the fixed wayfinder', hintClearance.hintHeight > 0 && hintClearance.hintTop >= 0 &&
+      hintClearance.hintBottom <= hintClearance.navigationTop - 8, hintClearance);
+    await screenshot(page, '10-narrow-desktop-opening');
+    await page.mouse.move(100, 450, { steps: 10 }); await page.waitForTimeout(750); const left = await state(page);
+    await page.mouse.move(1000, 450, { steps: 14 }); await page.waitForTimeout(750); const right = await state(page);
+    check('Narrow desktop mouse drives signed GPU parallax in both wormhole passes', validParallax(left) && validParallax(right) &&
+      parallaxDraws(left).every(draw => draw.vectors.uParallax[0] < -.35) &&
+      parallaxDraws(right).every(draw => draw.vectors.uParallax[0] > .35), { left: parallaxValues(left), right: parallaxValues(right) });
+    await page.getByRole('button', { name: 'Travel to The World', exact: true }).click();
+    await page.waitForFunction(() => {
+      const mount = document.querySelector('[data-tunnel-station="world"]');
+      // Compact cards restore ordinary DOM semantics: aria-hidden is absent,
+      // whereas a mounted CSS3D panel explicitly sets it to "false".
+      return document.querySelector('[data-passage-chapter]')?.getAttribute('data-passage-chapter') === 'world' &&
+        mount && mount.getAttribute('aria-hidden') !== 'true' && !mount.inert;
+    });
+    await page.waitForTimeout(550);
+    const card = page.locator('[data-tunnel-station="world"] .tunnel-panel');
+    const layout = await card.evaluate(element => {
+      const heading = element.querySelector('h2'), bounds = heading.getBoundingClientRect();
+      return { transform: getComputedStyle(element).transform, text: heading.textContent,
+        heading: { left: bounds.left, right: bounds.right, width: bounds.width, height: bounds.height },
+        viewport: innerWidth, overflow: document.documentElement.scrollWidth > innerWidth };
+    });
+    check('Narrow desktop retains readable normal DOM cards without horizontal overflow', await card.isVisible() &&
+      layout.transform === 'none' && /EVERY PLACE/i.test(layout.text) && layout.heading.width >= 200 && layout.heading.height >= 20 &&
+      layout.heading.left >= -1 && layout.heading.right <= layout.viewport + 1 && !layout.overflow, layout);
+    const retained = await state(page);
+    check('Narrow desktop retains one renderer and all six chapter interfaces', retained.canvasCount === 1 && retained.cssScenes === 1 && retained.panels === 6, retained);
+    measurements.push({ name: 'Narrow desktop fine-pointer compact layout', input, layout, left: parallaxValues(left), right: parallaxValues(right) });
+    await screenshot(page, '11-narrow-desktop-world');
+  });
+
   for (const [name, options] of [
     ['compact', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }],
     ['reduced', { reducedMotion: 'reduce' }],
@@ -443,6 +602,10 @@ try {
       check(`${name} presents a static wormhole`, first.mode === 'still' && second.mode === 'still' && first.time === second.time && second.pointer.every(value => value === 0), { first, second });
       check(`${name} retains usable content without overflow`, await page.getByRole('button', { name: 'ENTER THE WORLD', exact: true }).isVisible() && second.panels === 6 && await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), second);
       await gpuEvidence(page, name);
+      await page.mouse.move(options.viewport ? 350 : 1320, 400); await page.waitForTimeout(250);
+      const stillParallax = await state(page);
+      check(`${name} keeps actual GPU parallax and velocity at zero after pointer input`, validParallax(stillParallax) &&
+        parallaxDraws(stillParallax).every(draw => [...draw.vectors.uParallax, ...draw.vectors.uParallaxVelocity].every(value => value === 0)), parallaxValues(stillParallax));
       await screenshot(page, name === 'compact' ? '05-compact' : '06-reduced');
     });
   }

@@ -10,7 +10,13 @@ export function createFrameCadence(rate = 60) {
       // Resume immediately after visibility changes or a long main-thread stall.
       if (!Number.isFinite(next) || time - next > interval * 4) next = time;
       if (time + .75 < next) return false;
-      next += interval;
+      // Discard missed deadlines instead of repaying them on consecutive RAFs.
+      // Keep the fractional grid, including on 120/144 Hz displays. Following
+      // a stall, leave one full interval before the next eligible deadline so
+      // the immediate recovery frame cannot begin another catch-up burst.
+      const missed = Math.max(0, Math.floor((time + .75 - next) / interval));
+      next += (missed + 1) * interval;
+      if (missed > 0 && next - time < interval - .75) next += interval;
       return true;
     },
     reset() { next = -Infinity; },
