@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { PASSAGE_CHAPTERS } from '../../services/passageChapters';
+import { PASSAGE_IRIS_PLANES } from '../../services/passageThresholdLayout';
 import { passageIrisOpening } from '../../services/passageMechanisms';
 import { createPanelTelemetry } from '../../services/panelTelemetry';
 
@@ -10,7 +10,7 @@ export function createPassageThresholds(scene: THREE.Scene) {
   const geometries: THREE.BufferGeometry[] = [], materials: THREE.Material[] = [], batches: THREE.InstancedMesh[] = [];
   const dummy = new THREE.Object3D();
   // A threshold lies before each reading position, never across a reading image.
-  const gates = [-7, ...PASSAGE_CHAPTERS.map(chapter => chapter.center[2] + 23)];
+  const gates = PASSAGE_IRIS_PLANES;
   const last = gates.map(() => Number.NaN);
   const g = <T extends THREE.BufferGeometry>(geometry: T) => { geometries.push(geometry); return geometry; };
   const m = <T extends THREE.Material>(material: T) => { materials.push(material); return material; };

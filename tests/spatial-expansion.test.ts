@@ -25,8 +25,8 @@ test('collection export contains bounded story titles and no private notes or me
   assert.equal(escapeSvg('<script>"&\''),'&lt;script&gt;&quot;&amp;&apos;');
 });
 test('scene settings cannot produce unbounded resolution or invalid renderer values',()=>{
-  const prefs=validateSpatialPreferences({view:'unknown',light:Infinity,quality:'ultra',pinned:['world','unknown','world'],cutaway:1});
-  assert.deepEqual(prefs,{view:'gallery',light:55,quality:'balanced',pinned:['world'],cutaway:false});
+  const prefs=validateSpatialPreferences({view:'unknown',light:Infinity,quality:'ultra',pinned:['world','unknown','world'],cutaway:true});
+  assert.deepEqual(prefs,{view:'gallery',light:55,quality:'balanced',pinned:['world']});
   assert.equal(validateSpatialPreferences({light:-200}).light,15);
   assert.equal(validateSpatialPreferences({light:200}).light,100);
   assert.ok(qualityRatio('light',false)<qualityRatio('balanced',false));

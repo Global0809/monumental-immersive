@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { SplitText } from 'gsap/SplitText';
-import { mountStructuralReveal } from '../services/structuralReveal';
+import { mountAmbientField } from '../services/ambientField';
 import './reactive-world.css';
 gsap.registerPlugin(ScrollTrigger, SplitText);
 
@@ -10,7 +10,7 @@ export default function ReactiveWorld({path,reducedMotion}:{path:string;reducedM
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     if (!canvas.current) return;
-    return mountStructuralReveal(canvas.current, reducedMotion);
+    return mountAmbientField(canvas.current, reducedMotion);
   }, [path, reducedMotion]);
 
   useEffect(()=>{

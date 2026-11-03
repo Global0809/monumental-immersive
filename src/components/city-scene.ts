@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import gsap from 'gsap';
-import { attachXray } from '../services/xrayMaterial';
 import { createFrameCadence } from '../services/frameCadence';
 import { resolveDragAxis, type DragAxis } from '../services/exploreInteraction';
 import { createCinematicMaterials } from '../services/cinematicMaterials';
@@ -109,18 +108,6 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   }
   locationGroups.forEach((group, index) => group.traverse(object => { object.userData.location = index; if (object instanceof THREE.Mesh) clickTargets.push(object); }));
 
-  // Each location gets a small, deliberate structural overlay budget.
-  const scanMeshes = locationGroups.flatMap(group => {
-    const candidates: { mesh: THREE.Mesh; size: number }[] = [];
-    group.traverse(object => {
-      if (!(object instanceof THREE.Mesh)) return;
-      object.geometry.computeBoundingSphere();
-      candidates.push({ mesh: object, size: (object.geometry.boundingSphere?.radius || 0) * object.scale.length() });
-    });
-    return candidates.sort((a, b) => b.size - a.size).slice(0, 8).map(candidate => candidate.mesh);
-  });
-  const xray = attachXray(renderer, [chrome, pale, black, red, glass], scanMeshes, invalidate);
-
   let disposed = false, contextAvailable = true, raf = 0, width = 0, height = 0, inView = true, playingFilm = document.body.classList.contains('monumental-player-active'), dirty = true, active: number | null = null;
   let tween: gsap.core.Tween | undefined;
   const cameraState = { azimuth: .47, elevation: .58, radius: 25, x: 0, y: .5, z: 0 };
@@ -146,11 +133,10 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
     light.position.x = -5 + illumination.drift * .32;
     updateCamera();
     if (!options.reducedMotion) { pulse.position.copy(route.getPointAt((time * .000065) % 1)); pulses.forEach((ring, index) => { const scale = 1 + Math.sin(time * .002 + index) * .08; ring.scale.setScalar(active === index ? scale * 1.6 : scale); }); }
-    const scanSettling = xray.update(!options.reducedMotion && !playingFilm && !drag, time);
     cinematic.render(scene, camera, { enabled: !options.reducedMotion && window.innerWidth >= 980 && window.innerHeight >= 660 && getSpatialPreferences().quality !== 'light', strength: .12, lens: 0 });
     markers.forEach((position, index) => { projected.copy(position).project(camera); options.onProject(index, (projected.x + 1) * width / 2, (1 - projected.y) * height / 2, projected.z < 1 && Math.abs(projected.x) < .93 && Math.abs(projected.y) < .85); });
     dirty = false;
-    if (scanSettling || !options.reducedMotion || tween?.isActive()) raf = requestAnimationFrame(frame);
+    if (!options.reducedMotion || tween?.isActive()) raf = requestAnimationFrame(frame);
   }
   function invalidate() { dirty = true; if (!raf && canRender()) { cadence.reset(); raf = requestAnimationFrame(frame); } }
   function fit() {
@@ -193,7 +179,6 @@ export function createCityScene(host: HTMLElement, options: CityOptions): CitySc
   const resize = new ResizeObserver(fit); resize.observe(host); fit(); select(null, true);
   return { select, dispose() {
     disposed = true; cancelAnimationFrame(raf); tween?.kill(); observer.disconnect(); resize.disconnect();
-    xray.dispose();
     cinematic.dispose(); surfaceFinish.dispose();
     canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerup', up); canvas.removeEventListener('pointercancel', cancel); canvas.removeEventListener('webglcontextlost', contextLost);
     document.removeEventListener('visibilitychange', visibility); window.removeEventListener('monumental:playback', playback);

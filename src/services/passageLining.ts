@@ -1,4 +1,5 @@
 import { passageBayExpansion } from './passageEnvelope';
+import { passageIrisSlotOverlaps } from './passageThresholdLayout';
 
 /** The sparse housing and its hidden service kit share these physical cells.
  * Keep the original pitch and service-bay radius so parked carriers retain
@@ -10,7 +11,13 @@ export const PASSAGE_LINING = {
 
 export function passageLiningOccupied(row: number, lane: number) {
   return row >= 0 && row < PASSAGE_LINING.rows && lane >= 0 && lane < PASSAGE_LINING.lanes
-    && Number.isInteger(row) && Number.isInteger(lane) && lane % 3 === row % 3;
+    && Number.isInteger(row) && Number.isInteger(lane) && lane % 3 === row % 3
+    && !passageIrisSlotOverlaps(PASSAGE_LINING.start - row * PASSAGE_LINING.pitch - PASSAGE_LINING.wallOffset, PASSAGE_LINING.wallDepth / 2);
+}
+
+export function passageRibOccupied(row: number) {
+  return row >= 0 && row < PASSAGE_LINING.rows && Number.isInteger(row) && row % 2 === 0
+    && !passageIrisSlotOverlaps(PASSAGE_LINING.start - row * PASSAGE_LINING.pitch, row % 4 === 0 ? .20 : .10);
 }
 
 export function passageLiningCell(row: number, lane: number) {

@@ -72,7 +72,7 @@ export default function ObservatoryGallery({ reducedMotion }: { reducedMotion: b
   }
 
   return <section ref={host} className="observatory-gallery page-section" aria-labelledby="observatory-tools-title" data-reduced-motion={reducedMotion}
-    data-framework={prefs.cutaway} style={{ '--gallery-light': .1 + prefs.light / 150 } as CSSProperties}>
+    style={{ '--gallery-light': .1 + prefs.light / 150 } as CSSProperties}>
     <header className="room-gallery-heading">
       <h2 id="observatory-tools-title">EVERY DOOR<br/><span>OPENS A WORLD.</span></h2>
       <p>Choose what moves you.<br/>Take a closer look. Then step inside.</p>
@@ -140,8 +140,6 @@ export default function ObservatoryGallery({ reducedMotion }: { reducedMotion: b
             <button type="button" onClick={() => viewSpace('gallery')}>View gallery<ArrowUpRight size={15}/></button>
             <button type="button" onClick={() => viewSpace('overhead')}>View from above<ArrowUpRight size={15}/></button>
           </div></div>
-          <div><h3>Look beneath the surface</h3><p>Reveal the architecture around the films.</p><button type="button" className="room-framework" aria-pressed={prefs.cutaway} onClick={() => setSpatialPreferences({ cutaway: !prefs.cutaway })}>
-            Framework <span>{prefs.cutaway ? 'On' : 'Off'}</span></button></div>
           <label className="room-light"><span>Room illumination <output>{prefs.light}%</output></span><input aria-label="Room illumination" type="range" min="15" max="100" value={prefs.light} onChange={event => setSpatialPreferences({ light: Number(event.target.value) })}/><small>Light the space around the previews.</small></label>
         </div>
       </details>

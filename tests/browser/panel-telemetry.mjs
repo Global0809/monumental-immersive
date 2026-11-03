@@ -96,9 +96,9 @@ try {
       const chapter = page.locator('[data-tunnel-station="world"]');
       const copy = await chapter.locator('.tunnel-panel-copy p').boundingBox();
       await page.mouse.move(copy.x + copy.width / 2, copy.y + copy.height / 2); await wait(page);
-      check('Chapter copy remains outside the structural cutaway', (await snapshot(page)).cutaway === 'false');
+      check('Chapter copy has no structural cutaway', (await snapshot(page)).cutaway === undefined);
       const media = await mediaBounds(page); check('Primary footage has a valid protection region', !!media);
-      if (media) { await page.mouse.move(media.x, media.y); await wait(page); check('Primary footage stays outside the structural cutaway', (await snapshot(page)).cutaway === 'false'); }
+      if (media) { await page.mouse.move(media.x, media.y); await wait(page); check('Primary footage has no structural cutaway', (await snapshot(page)).cutaway === undefined); }
       const worldScroll = await page.evaluate(() => scrollY);
       await page.mouse.move(1390, 895); await page.mouse.wheel(0, 750); await wait(page, 450); await page.mouse.wheel(0, -750); await wait(page, 900);
       const reversed = await snapshot(page); check('Reverse scroll reconstructs the World reading position', reversed.chapter === 'world' && reversed.reading === 'true' && Math.abs(reversed.scrollY - worldScroll) < 3, reversed); await capture(page, 'world-reversed');
@@ -108,7 +108,7 @@ try {
       for (const point of [{ x: 1220, y: 660 }, { x: 1290, y: 310 }, { x: 1150, y: 200 }, { x: 1110, y: 735 }]) {
         await page.mouse.move(point.x, point.y); await wait(page, 400); if ((await snapshot(page)).cutaway === 'true') { hits.push(point); break; }
       }
-      check('Existing shell cutaway remains active on wall surfaces', hits.length > 0, hits); await capture(page, 'opening-cutaway');
+      check('Wall surfaces remain solid after pointer sweeps', hits.length === 0, hits); await capture(page, 'opening-solid-lining');
       await page.mouse.move(75, 200); await wait(page);
       await page.evaluate(() => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); });
       const hidden = await sample(page, 'hidden', 500); check('Hidden tab stops telemetry clock and Passage draws', main(hidden.after).uniforms.uPanelTime === main(hidden.before).uniforms.uPanelTime && main(hidden.after).draws === 0, main(hidden.after));

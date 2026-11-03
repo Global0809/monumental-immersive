@@ -9,7 +9,7 @@ import { createCinematicMaterials } from '../../services/cinematicMaterials';
 import { sampleCinematicLight } from '../../services/cinematicLight';
 import { createPanelTelemetry } from '../../services/panelTelemetry';
 import { passageBayExpansion } from '../../services/passageEnvelope';
-import { PASSAGE_LINING, PASSAGE_LINING_CELLS } from '../../services/passageLining';
+import { PASSAGE_LINING, PASSAGE_LINING_CELLS, passageRibOccupied } from '../../services/passageLining';
 
 type ArchitectureFrame = {
   active: number; progress: number; elapsed: number; reducedMotion: boolean; delta?: number;
@@ -88,7 +88,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
   // housings occupy four lanes per row; the remaining lanes are real openings.
   const ringCount = PASSAGE_LINING.rows, ringSides = PASSAGE_LINING.lanes;
   const ribCells = Array.from({ length: ringCount * ringSides }, (_, i) => i)
-    .filter(i => Math.floor(i / ringSides) % 2 === 0);
+    .filter(i => passageRibOccupied(Math.floor(i / ringSides)));
   function ribTransform(i: number, object: THREE.Object3D, layer: 0 | 1) {
     const n = Math.floor(i / ringSides), j = i % ringSides, a = j * Math.PI / 6 + n * .058;
     const z = PASSAGE_LINING.start - n * PASSAGE_LINING.pitch;
@@ -100,6 +100,7 @@ export function createPassageArchitecture(scene: THREE.Scene, onInvalidate: () =
     if (layer === 1) object.scale.set(span * (j % 3 === 0 ? .78 : .24), .026, .035);
   }
   const structuralRibs = instanced(tunnel, ribAlloy, ribCells.length, (i, o) => ribTransform(ribCells[i], o, 0));
+  structuralRibs.name = 'passage-structural-ribs';
   const conduits = instanced(tunnel, red, ribCells.length, (i, o) => ribTransform(ribCells[i], o, 1));
   const whiteColor = new THREE.Color(0xd5d2c6), redColor = new THREE.Color(0xff4d32);
   for (let i = 0; i < conduits.count; i++) conduits.setColorAt(i, redColor);

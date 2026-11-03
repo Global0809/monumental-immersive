@@ -26,10 +26,10 @@ await run('desktop-mechanisms',{},async page=>{
   await page.waitForFunction(()=>document.querySelector('[data-passage-relay-open]')?.dataset.passageRelayOpen==='false');
   check('Automatic reassembly clears component selection',await page.locator('[data-passage-relay-part]').getAttribute('data-passage-relay-part')==='');
   await page.mouse.move(1220,660);await page.waitForTimeout(300);
-  check('Structural lens responds over the actual tunnel',await page.locator('[data-passage-cutaway]').getAttribute('data-passage-cutaway')==='true');
-  await page.screenshot({path:`${out}/structural-lens.png`});
+  check('Pointer leaves tunnel surfaces solid without a cutaway',await page.locator('[data-passage-cutaway]').count()===0);
+  await page.screenshot({path:`${out}/solid-tunnel-surfaces.png`});
   await page.mouse.move(140,590);await page.waitForTimeout(500);
-  check('Structural lens yields to interface controls',await page.locator('[data-passage-cutaway]').getAttribute('data-passage-cutaway')==='false');
+  check('Controls do not mount a structural lens',await page.locator('[data-passage-cutaway]').count()===0);
   await page.getByRole('button',{name:'Travel to The World',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('[data-passage-reading]')?.dataset.passageReading==='true');
   const mediaBefore=await page.evaluate(()=>window.__nothing??document.querySelector('[data-passage-chapter]')?.dataset.passageChapter);

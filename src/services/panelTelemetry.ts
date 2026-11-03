@@ -240,7 +240,7 @@ export function createPanelTelemetry(material: THREE.MeshStandardMaterial, optio
     },
     dispose() {
       if (disposed) return; disposed = true;
-      // Later cutaway hooks own their cleanup; do not overwrite a newer patch.
+      // Later shader hooks own their cleanup; do not overwrite a newer patch.
       if (material.onBeforeCompile === compile) material.onBeforeCompile = originalCompile;
       if (material.customProgramCacheKey === cacheKey) material.customProgramCacheKey = originalKey;
       if (material.userData.panelTelemetry?.uniforms === uniforms) {

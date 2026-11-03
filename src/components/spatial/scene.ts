@@ -352,8 +352,6 @@ export function createSpatialScene(host: HTMLElement, options: SpatialSceneOptio
   const updatePreferences = () => {
     const previousQuality = preferences.quality;
     preferences = getSpatialPreferences();
-    brushed.wireframe = preferences.cutaway;
-    black.wireframe = preferences.cutaway;
     // Images and the central chrome instrument preserve their materials.
     key.intensity = .8 + preferences.light * .027;
     side.intensity = .65 + preferences.light * .025;

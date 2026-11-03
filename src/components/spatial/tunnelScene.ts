@@ -17,13 +17,11 @@ import { acquirePassageMedia, PASSAGE_MEDIA } from '../../services/passageMedia'
 import { bindPassageSound } from '../../services/passageSound';
 import { getViewer, subscribeViewer } from '../../services/viewer';
 import { videos } from '../../data/catalogue';
-import { playSound } from '../../services/audio';
 import { getPassageMediaBounds, setPassageMediaBounds } from '../../services/passageProtection';
 import { createPassageArchitecture } from './passageArchitecture';
 import { createTunnelAtmosphere } from './tunnelAtmosphere';
 import { createTunnelSignals } from './tunnelSignals';
 import { createTunnelRelays } from './tunnelRelays';
-import { createTunnelCutaway } from './tunnelCutaway';
 import { createTunnelPulse, createTunnelSignalCadence, type TunnelLifeFrame } from '../../services/tunnelLife';
 import { cameraEase } from './cameraPath';
 import type { SpatialSceneController, SpatialSceneOptions, SpatialSceneState } from './scene';
@@ -45,7 +43,6 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   let average=16.7,samples=0,reduction=0,travel:Travel|null=null;
   const pointer:[number,number]=[0,0],pointerTarget:[number,number]=[0,0];
   let previousZ=frame.z,scrollEnergy=0,lightCalm=Number(passageReading(frame));
-  let scanHold=0,scanPlayed=false,lastScan=-Infinity,cutawayOptics=0;
   let pointerPresent=false,parallaxPresent=false,pointerPress=false,relayTime=0,warpDistance=0,warpPointerStrength=0;
   const parallax=createWormholeParallax();
   const assemblyPresentation=createAssemblyPresentation();
@@ -82,7 +79,6 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
   const wormhole=createPassageWormhole(scene,renderer);
   const atmosphere=createTunnelAtmosphere();scene.add(atmosphere.points);
   const signals=createTunnelSignals(scene),relays=createTunnelRelays(scene);
-  const cutaway=createTunnelCutaway(scene,renderer,camera);
   const lifeFrame:TunnelLifeFrame={time:0,delta:0,cameraZ:14,active:-1,progress:0,pointer,energy:0,pulse:pulse.value,compact:false,reducedMotion:false,inspection:false,quality:preferences.quality};
   const mediaLease=acquirePassageMedia(),media=mediaLease.controller;
   const studySound=bindPassageSound(media.getVideo());
@@ -272,7 +268,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     key.position.copy(camera.position);key.position.x-=5;key.position.y+=9;key.position.z-=7;key.target.position.copy(look);
     fill.position.copy(look);fill.position.x+=3+illumination.drift*.24;fill.position.y+=2;fill.position.z+=5;
     accent.position.copy(look);accent.position.x+=7;accent.position.y-=2;accent.position.z-=5;
-    scene.environmentIntensity=preferences.cutaway?.95:.65+preferences.light*.003;
+    scene.environmentIntensity=.65+preferences.light*.003;
     scene.environmentRotation.y=.24+illumination.drift*.035;
     studySound.setActive(inPassage&&frame.active===3&&media.getSnapshot().ready&&!compact&&!state.reducedMotion&&!state.paused);
     const spectrum=studySound.sample();
@@ -298,18 +294,6 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     const imageBounds=getPassageMediaBounds(),cursorX=(pointerTarget[0]+1)*width/2,cursorY=(1-pointerTarget[1])*height/2;
     const overImage=!!imageBounds&&cursorX>=imageBounds.left&&cursorX<=imageBounds.right&&cursorY>=imageBounds.top&&cursorY<=imageBounds.bottom;
     const overInterface=pointerPresent&&pointerOverInterface(cursorX,cursorY);
-    const hardBlock=!lifeEnabled||overImage||overInterface||inspection.expanded||!!travel||!!pointerPress;
-    const cutawayVisible=cutaway.update(pointerTarget,pointerPresent&&!hardBlock,width,height,dt,hardBlock);
-    cutawayOptics+=(Number(cutawayVisible)-cutawayOptics)*(1-Math.exp(-dt*10));
-    if(cutawayVisible){
-      scanHold+=dt;
-      if(!scanPlayed&&scanHold>.22){
-        scanPlayed=true;
-        const now=performance.now();
-        if(now-lastScan>6500){lastScan=now;playSound('scan',{intensity:.42,pan:pointerTarget[0]*.45});}
-      }
-    }else{scanHold=0;scanPlayed=false;}
-    host.dataset.passageCutaway=String(cutawayVisible);
     atmosphere.points.visible=inPassage&&!compact&&!state.reducedMotion;
     if(atmosphere.points.visible&&!inspection.expanded)atmosphere.update(elapsed,dt,false,scrollEnergy,pulse.value);
     // A distant flow moves around the stable journey camera. Scroll adds
@@ -343,8 +327,8 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     canvas.dataset.wormholeDraws='2';
     cinematic.render(scene,camera,{
       enabled:inPassage&&!compact&&!state.reducedMotion&&preferences.quality!=='light'&&reduction<.3,
-      strength:THREE.MathUtils.lerp(reading?.16:.24,.08,cutawayOptics),
-      lens:reading||inspection.expanded?0:(.25+scrollEnergy*.35)*(1-cutawayOptics),
+      strength:reading?.16:.24,
+      lens:reading||inspection.expanded?0:.25+scrollEnergy*.35,
       protectedRects:protectedSurfaces,
     });
     canvas.dataset.cinematicBreath=illumination.breath.toFixed(4);
@@ -378,12 +362,12 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     // Keep physical cursor coordinates even over protected UI. If scrolling
     // uncovers the scene beneath it, the next frame resumes at this position.
     if(isInterface(event.target)){
-      atmosphere.input.leave();cutaway.reset();scanHold=0;scanPlayed=false;return;
+      atmosphere.input.leave();return;
     }
     atmosphere.input.move(pointerTarget[0],pointerTarget[1],event.timeStamp,event.pointerType==='touch');
   }
   function pointerDown(event:PointerEvent){
-    clearCutaway();
+    pointerPresent=false;
     pointerPress=false;
     if(event.button!==0||!lifeAvailable()||isInterface(event.target))return;
     atmosphere.input.press();
@@ -393,10 +377,9 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
     atmosphere.input.release();pointerPress=false;
     pointerMove(event);
   }
-  function clearCutaway(){pointerPresent=false;scanHold=0;scanPlayed=false;cutaway.reset();host.dataset.passageCutaway='false';}
   function leavePointer(){pointerPresent=false;parallaxPresent=false;atmosphere.input.leave();wake();}
   function scrollPointer(){wake();}
-  function resetPointer(){atmosphere.input.reset();clearCutaway();pointerPress=false;parallaxPresent=false;pointerTarget[0]=pointerTarget[1]=0;}
+  function resetPointer(){atmosphere.input.reset();pointerPresent=false;pointerPress=false;parallaxPresent=false;pointerTarget[0]=pointerTarget[1]=0;}
   function visibility(){lastTime=0;cadence.reset();signalCadence.reset();resetPointer();if(document.hidden){cancelVisualFrame(request);request=0;}else wake();}
   function contextLost(event:Event){
     event.preventDefault();unavailable=true;signalCadence.reset();cancelVisualFrame(request);request=0;
@@ -442,7 +425,7 @@ export function createTunnelScene(host:HTMLElement,options:SpatialSceneOptions):
       cancelVisualFrame(request);observer.disconnect();panelObserver.disconnect();offFrame();offPanels();offInspection();offPreferences();offMedia();offViewer();
       panels.forEach(restorePanel);panels.clear();document.removeEventListener('visibilitychange',visibility);document.removeEventListener('pointerleave',leavePointer);window.removeEventListener('scroll',scrollPointer);window.removeEventListener('pointermove',pointerMove);window.removeEventListener('pointerdown',pointerDown);window.removeEventListener('pointerup',pointerUp);window.removeEventListener('pointercancel',resetPointer);window.removeEventListener('blur',resetPointer);
       canvas.removeEventListener('webglcontextlost',contextLost);finePointer.removeEventListener('change',resize);
-      activeTexture?.dispose();cutaway.destroy();architecture.destroy();wormhole.dispose();atmosphere.dispose();signals.destroy();relays.destroy();signalCadence.reset();pulse.reset();environment.dispose();
+      activeTexture?.dispose();architecture.destroy();wormhole.dispose();atmosphere.dispose();signals.destroy();relays.destroy();signalCadence.reset();pulse.reset();environment.dispose();
       studySound.destroy();media.setSuspended('passage-scene-route',false);media.setSuspended('passage-scene-paused',false);media.setSuspended('passage-scene-reduced',false);mediaLease.release();
       cinematic.dispose();scene.clear();cssScene.clear();renderer.dispose();renderer.forceContextLoss();canvas.remove();css.domElement.remove();
     },
