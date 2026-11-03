@@ -4,6 +4,7 @@ export type PassageWormholeQuality = 'light' | 'auto' | 'balanced' | 'detail';
 export type PassageWormholeRect = Readonly<{ left: number; top: number; right: number; bottom: number }>;
 
 const LENGTH = 132, MAX_STREAKS = 1560, RADIAL_SEGMENTS = 96, DEPTH_SEGMENTS = 144;
+const BREATH_PERIOD = 8.6;
 
 /** Shared world-space path for the actual hollow surface and moving stars. */
 const tubeShader = /* glsl */ `
@@ -15,6 +16,19 @@ const tubeShader = /* glsl */ `
   }
   float tubeRadius(float depth) {
     return mix(17.0, 9.4, smoothstep(0.0, 1.0, clamp(depth / 132.0, 0.0, 1.0)));
+  }
+  // A pressure wave travels along the hollow surface. Offset across the
+  // circumference keeps the inhale from reading as a uniform camera zoom.
+  float breathPressure(float depth, float angle) {
+    float phase = uBreathPhase - depth * .035 + sin(angle * 2.0 - depth * .018) * .18;
+    return .5 - .5 * cos(phase);
+  }
+  float breathExpansion(float depth, float angle) {
+    float envelope = smoothstep(-4.0, 8.0, depth) * (1.0 - smoothstep(90.0, 132.0, depth));
+    float pressure = breathPressure(depth, angle);
+    // Always outside the existing wall, with an exact 1.2m upper bound.
+    // The structural tunnel, camera and near/far seams keep their positions.
+    return 1.2 * pressure * pressure * (3.0 - 2.0 * pressure) * envelope;
   }
   // Bend only the current near the pointer ray, never the shared camera.
   vec2 current(vec2 point, float depth) {
@@ -174,6 +188,7 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
   const uniforms = {
     uCloud: { value: field }, uViewport: { value: new THREE.Vector4(0, 0, 1, 1) },
     uScreenSize: { value: new THREE.Vector2(1, 1) }, uFlow: { value: 0 }, uEnergy: { value: 0 },
+    uBreathPhase: { value: 0 },
     uPointer: { value: new THREE.Vector2() }, uPointerStrength: { value: 0 }, uAspect: { value: 1 },
     uParallax: { value: new THREE.Vector2() }, uParallaxVelocity: { value: new THREE.Vector2() },
     uTanHalfFov: { value: Math.tan(THREE.MathUtils.degToRad(59 / 2)) },
@@ -181,7 +196,7 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
     uProtectedRects: { value: protectedRects }, uProtectedCount: { value: 0 },
   };
   const commonVertex = /* glsl */ `
-    uniform float uFlow, uEnergy, uPointerStrength, uAspect, uTanHalfFov;
+    uniform float uFlow, uEnergy, uPointerStrength, uAspect, uTanHalfFov, uBreathPhase;
     uniform vec2 uPointer, uParallax, uParallaxVelocity;
     ${tubeShader}
   `;
@@ -201,26 +216,27 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
       ${commonVertex}
       uniform sampler2D uCloud;
       varying vec2 vTube;
-      varying float vBillow;
+      varying float vBillow, vBreath;
       void main() {
         float angle = uv.x * TAU, depth = uv.y * 132.0;
         float phase = depth * .018 + uFlow * .0024;
         float billow = texture2D(uCloud, vec2(uv.x * 2.0, phase)).r;
         float folds = sin(angle * 5.0 + depth * .086 + billow * 3.5) * .64
           + sin(angle * 9.0 - depth * .119 + billow * 2.0) * .26;
-        float radius = tubeRadius(depth) + (billow - .5) * 2.6 + folds;
+        float radius = tubeRadius(depth) + (billow - .5) * 2.6 + folds + breathExpansion(depth, angle);
         vec2 point = tubeCentre(depth) + vec2(cos(angle), sin(angle)) * radius;
         point += current(point, depth);
         vTube = vec2(angle, depth);
         vBillow = billow;
+        vBreath = breathPressure(depth, angle);
         gl_Position = projectionMatrix * modelViewMatrix * vec4(parallaxPoint(point, depth), 1.0);
       }
     `,
     fragmentShader: /* glsl */ `
       uniform sampler2D uCloud;
-      uniform float uFlow, uEnergy, uCalm, uCompact, uDetail;
+      uniform float uFlow, uEnergy, uCalm, uCompact, uDetail, uBreathPhase;
       varying vec2 vTube;
-      varying float vBillow;
+      varying float vBillow, vBreath;
       ${protectionShader}
       float hash(vec2 p) {
         vec3 q = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973));
@@ -277,6 +293,10 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
         float wisp = crease * smoothstep(.40, .70, first.r) * torn * detailVisibility;
         vec3 rim = mix(vec3(.28, .47, .60), vec3(.80, .61, .39), arm);
         color += rim * wisp * (.095 + crest * .09) * shade;
+        // Light travels with the expanding folds, rather than pumping the
+        // exposure of the scene. Shadows and foreground media stay untouched.
+        color *= .94 + vBreath * .14;
+        color += rim * crest * vBreath * .045;
         // Broad directional cavities retain clean shadows between bright folds.
         color *= .82 + .18 * smoothstep(.22, .70, second.a);
         // Sparse Matrix-like traces are attached to the physical tube wall.
@@ -292,6 +312,18 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
           code *= smoothstep(14.0, 30.0, depth) * (1.0 - smoothstep(72.0, 100.0, depth));
         }
         color += vec3(.25, .30, .27) * code * .16;
+        // Thin, broken latitude scans are printed on the curved atmosphere.
+        // They advance one spacing per breath and dissolve before the throat;
+        // derivative-aware rolloff prevents distant arcs from becoming moire.
+        float scanCoordinate = depth * .075 - uBreathPhase / 6.28318530718;
+        float scanDerivative = max(fwidth(scanCoordinate), .003);
+        float scanDistance = abs(fract(scanCoordinate + .5) - .5);
+        float scan = 1.0 - smoothstep(.012, .012 + scanDerivative, scanDistance);
+        float scanArc = smoothstep(.08, .45, sin(angle * 3.0 + depth * .024));
+        float scanVisibility = smoothstep(6.0, 16.0, depth) * (1.0 - smoothstep(65.0, 96.0, depth))
+          * (1.0 - smoothstep(.045, .15, scanDerivative));
+        color += mix(vec3(.17, .23, .26), vec3(.43, .14, .055), arm)
+          * scan * scanArc * scanVisibility * (.085 + vBreath * .055) * (1.0 - uCompact * .55);
         float ends = smoothstep(-3.0, 8.0, depth) * (1.0 - smoothstep(112.0, 132.0, depth));
         float abyss = 1.0 - smoothstep(77.0, 132.0, depth) * .77;
         float quiet = (1.0 - uCalm * .12) * (1.0 - uCompact * .12);
@@ -324,7 +356,8 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
       varying vec3 vTint;
       vec3 streamPoint(float depth, float angle, float spread) {
         float curvedAngle = angle + sin(depth * .016 + angle * 2.0) * .075;
-        vec2 point = tubeCentre(depth) + vec2(cos(curvedAngle), sin(curvedAngle)) * tubeRadius(depth) * spread;
+        float radius = tubeRadius(depth) + breathExpansion(depth, curvedAngle);
+        vec2 point = tubeCentre(depth) + vec2(cos(curvedAngle), sin(curvedAngle)) * radius * spread;
         return parallaxPoint(point + current(point, depth), depth);
       }
       void main() {
@@ -461,7 +494,13 @@ export function createPassageWormhole(scene: THREE.Scene, renderer: THREE.WebGLR
       // the phase as it would when multiplying an absolute clock by speed.
       // Hold the last atmospheric pose when changing presentation modes;
       // resetting its phase here made resize/reduced-motion toggles jump.
-      if (!still) uniforms.uFlow.value = Math.max(0, time) * 8.4 + Math.max(0, travelDistance) * 1.7;
+      if (!still) {
+        uniforms.uFlow.value = Math.max(0, time) * 8.4 + Math.max(0, travelDistance) * 1.7;
+        // Use the owner's pause-aware clock, not travel distance or a new loop.
+        // Both cos() and the scan's fract() are continuous across this wrap.
+        const seconds = Number.isFinite(time) ? Math.max(0, time) : 0;
+        uniforms.uBreathPhase.value = (seconds % BREATH_PERIOD) * (Math.PI * 2 / BREATH_PERIOD);
+      }
       uniforms.uEnergy.value = still ? 0 : clamp(energy, 0, 1);
       uniforms.uPointer.value.set(still ? 0 : clamp(pointer[0], -1, 1), still ? 0 : clamp(pointer[1], -1, 1));
       uniforms.uPointerStrength.value = still ? 0 : clamp(pointerStrength, 0, 1);

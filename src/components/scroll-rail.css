@@ -1,0 +1,24 @@
+/* Keep the native gutter so enabling the instrument never shifts the layout. */
+html[data-scroll-rail="true"]{scrollbar-color:transparent transparent}
+html[data-scroll-rail="true"]::-webkit-scrollbar-thumb,
+html[data-scroll-rail="true"]::-webkit-scrollbar-track{background:transparent}
+.scroll-rail{position:fixed;right:6px;top:108px;bottom:106px;width:24px;z-index:72;opacity:0;visibility:hidden;pointer-events:none;touch-action:none;user-select:none;outline:none;--scroll-progress:0;transition:opacity .2s ease}
+.scroll-rail[data-visible="true"]{opacity:.66;visibility:visible;pointer-events:auto}
+.scroll-rail:hover,.scroll-rail:focus-visible,.scroll-rail[data-dragging="true"]{opacity:1}
+.scroll-rail__track{position:absolute;left:12px;inset-block:0;width:1px;background:#efeee928}
+.scroll-rail__track:before{content:"";position:absolute;inset:0;background:#ff4d3299;transform:scaleY(var(--scroll-progress));transform-origin:top}
+.scroll-rail__track:after{content:"";position:absolute;inset:-4px -3px;border-block:1px solid #efeee9aa}
+.scroll-rail__marks{position:absolute;inset:0 15px 0 0;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;pointer-events:none}
+.scroll-rail__marks i{height:1px;width:3px;background:#efeee936}
+.scroll-rail__marks i:nth-child(5n+1){width:6px;background:#efeee970}
+.scroll-rail__thumb{position:absolute;left:5px;top:0;width:15px;min-height:48px;background:#080909d9;border:1px solid #efeee99c;border-radius:2px;will-change:transform;cursor:grab;box-shadow:0 2px 5px #0007}
+.scroll-rail__thumb:before,.scroll-rail__thumb:after{content:"";position:absolute;left:4px;right:4px;height:1px;background:#efeee96b}
+.scroll-rail__thumb:before{top:5px}.scroll-rail__thumb:after{bottom:5px}
+.scroll-rail__thumb>i{position:absolute;left:6px;width:1px;inset-block:12px;background:#ff4d32}
+.scroll-rail__thumb>span{position:absolute;right:26px;top:50%;transform:translateY(-50%);font-size:10px;font-variant-numeric:tabular-nums;letter-spacing:.05em;color:#efeee9;background:#080909ee;padding:5px 7px;opacity:0;transition:opacity .15s ease;pointer-events:none}
+.scroll-rail:hover .scroll-rail__thumb>span,.scroll-rail:focus-visible .scroll-rail__thumb>span,.scroll-rail[data-dragging="true"] .scroll-rail__thumb>span{opacity:1}
+.scroll-rail:focus-visible .scroll-rail__thumb{outline:2px solid #ff4d32;outline-offset:3px}
+.scroll-rail[data-dragging="true"] .scroll-rail__thumb{cursor:grabbing;border-color:#ff4d32}
+@media(max-width:1023px),(max-height:659px),(hover:none),(pointer:coarse),(forced-colors:active){.scroll-rail{display:none}}
+@media(prefers-reduced-motion:reduce){.scroll-rail,.scroll-rail__thumb>span{transition:none}}
+html[data-motion="reduced"] .scroll-rail,html[data-motion="reduced"] .scroll-rail__thumb>span{transition:none}
